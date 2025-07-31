@@ -1,0 +1,428 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'dart:io';
+
+import '../../../shared/models/dictation_session.dart';
+import '../../../shared/models/dictation_result.dart';
+import '../../../shared/providers/history_provider.dart';
+import '../widgets/result_detail_card.dart';
+
+class HistoryDetailScreen extends StatefulWidget {
+  final String sessionId;
+
+  const HistoryDetailScreen({
+    super.key,
+    required this.sessionId,
+  });
+
+  @override
+  State<HistoryDetailScreen> createState() => _HistoryDetailScreenState();
+}
+
+class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
+  DictationSession? _session;
+  List<DictationResult> _results = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessionDetails();
+  }
+
+  Future<void> _loadSessionDetails() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final historyProvider = context.read<HistoryProvider>();
+      final session = await historyProvider.getSession(widget.sessionId);
+      final results = await historyProvider.getSessionResults(widget.sessionId);
+
+      if (mounted) {
+        setState(() {
+          _session = session;
+          _results = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '加载详情失败: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('默写详情'),
+        actions: [
+          if (_session != null)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'export':
+                    _exportResults();
+                    break;
+                  case 'retry':
+                    _retryIncorrectWords();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'export',
+                  child: Row(
+                    children: [
+                      Icon(Icons.download),
+                      SizedBox(width: 8),
+                      Text('导出结果'),
+                    ],
+                  ),
+                ),
+                if (_results.any((r) => !r.isCorrect))
+                  const PopupMenuItem(
+                    value: 'retry',
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        SizedBox(width: 8),
+                        Text('重做错题'),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadSessionDetails,
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_session == null) {
+      return const Center(
+        child: Text('会话不存在'),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSessionSummary(),
+          const SizedBox(height: 16),
+          _buildResultsList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionSummary() {
+    final session = _session!;
+    final accuracy = session.accuracy;
+    final duration = session.duration;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.summarize,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '会话概要',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            _buildSummaryRow('文件名', session.wordFileName ?? '未知'),
+            _buildSummaryRow('开始时间', DateFormat('yyyy-MM-dd HH:mm:ss').format(session.startTime)),
+            if (session.endTime != null)
+              _buildSummaryRow('结束时间', DateFormat('yyyy-MM-dd HH:mm:ss').format(session.endTime!)),
+            _buildSummaryRow('模式', _getModeText(session.mode)),
+            _buildSummaryRow('状态', session.isCompleted ? '已完成' : '未完成'),
+            if (duration != null)
+              _buildSummaryRow('用时', '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}'),
+            
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 12),
+            
+            // Statistics
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    '总题数',
+                    session.totalWords.toString(),
+                    Icons.quiz,
+                    Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    '正确',
+                    session.correctCount.toString(),
+                    Icons.check_circle,
+                    Colors.green,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    '错误',
+                    session.incorrectCount.toString(),
+                    Icons.cancel,
+                    Colors.red,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    '准确率',
+                    '${(accuracy * 100).toInt()}%',
+                    Icons.percent,
+                    _getAccuracyColor(accuracy),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const Text(': '),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultsList() {
+    if (_results.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.inbox,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '暂无详细结果',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.list,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '详细结果',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '共 ${_results.length} 题',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _results.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final result = _results[index];
+            return ResultDetailCard(
+              result: result,
+              index: index + 1,
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  String _getModeText(DictationMode mode) {
+    switch (mode) {
+      case DictationMode.sequential:
+        return '顺序默写';
+      case DictationMode.random:
+        return '随机默写';
+      case DictationMode.retry:
+        return '重做错题';
+    }
+  }
+
+  Color _getAccuracyColor(double accuracy) {
+    if (accuracy >= 0.9) {
+      return Colors.green;
+    } else if (accuracy >= 0.7) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  void _exportResults() {
+    // TODO: Implement export functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('导出功能待实现'),
+      ),
+    );
+  }
+
+  void _retryIncorrectWords() {
+    // TODO: Implement retry functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('重做错题功能待实现'),
+      ),
+    );
+  }
+}

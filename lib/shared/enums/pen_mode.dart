@@ -1,0 +1,4 @@
+enum PenMode {
+  pen,
+  eraser,
+}
