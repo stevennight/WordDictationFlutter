@@ -8,6 +8,7 @@ import '../../../core/services/config_service.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
+import 'oss_sync_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -76,6 +77,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: '数据管理',
               icon: Icons.storage,
               children: [
+                SettingsTile(
+                  title: 'OSS云同步',
+                  subtitle: '配置阿里云OSS同步功能',
+                  leading: const Icon(Icons.cloud_sync),
+                  onTap: () => _navigateToOssSettings(),
+                ),
                 SettingsTile(
                   title: '清空历史记录',
                   subtitle: '删除所有默写历史记录',
@@ -243,8 +250,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showBrushSizeDialog() {
-    double currentSize = 3.0; // TODO: Get from settings
+  void _showBrushSizeDialog() async {
+    // Get current brush size from settings
+    final configService = await ConfigService.getInstance();
+    double currentSize = (await configService.getSetting('default_brush_size'))?.toDouble() ?? 3.0;
     
     showDialog(
       context: context,
@@ -275,14 +284,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('取消'),
             ),
             ElevatedButton(
-              onPressed: () {
-                // TODO: Save to settings
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('画笔大小已保存'),
-                  ),
-                );
+              onPressed: () async {
+                try {
+                  // Save brush size to settings
+                  await configService.setSetting('default_brush_size', currentSize);
+                  Navigator.of(context).pop();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('画笔大小已保存'),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('保存失败: $e'),
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                    );
+                  }
+                }
               },
               child: const Text('保存'),
             ),
@@ -454,9 +477,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await historyProvider.loadHistory();
               }
             },
-            child: const Text('确定'),
+            child: const Text('保存'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _navigateToOssSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const OssSyncSettingsScreen(),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/dictation_provider.dart';
 import 'handwriting_canvas.dart';
+import '../../core/services/config_service.dart';
 
 class UnifiedCanvasToolbar extends StatefulWidget {
   final GlobalKey<State<HandwritingCanvas>> canvasKey;
@@ -28,6 +29,28 @@ class _UnifiedCanvasToolbarState extends State<UnifiedCanvasToolbar> {
   bool _isEraserMode = false;
   double _strokeWidth = 3.0;
   Color _penColor = Colors.black;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDefaultBrushSize();
+  }
+
+  Future<void> _loadDefaultBrushSize() async {
+    try {
+      final configService = await ConfigService.getInstance();
+      final defaultSize = (await configService.getSetting('default_brush_size'))?.toDouble() ?? 3.0;
+      if (mounted) {
+        setState(() {
+          _strokeWidth = defaultSize;
+        });
+        _updateCanvasSettings();
+      }
+    } catch (e) {
+      // Use default value if loading fails
+      print('Failed to load default brush size: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

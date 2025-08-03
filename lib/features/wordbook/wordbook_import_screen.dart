@@ -228,7 +228,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
             ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -329,7 +329,8 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                            hintText: '例如：第一单元、Unit 1等',
                          ),
                        ),
-                     ] else ...[
+                     ],
+                    if (!widget.isUnitMode) ...[
                        TextField(
                          controller: _nameController,
                          decoration: const InputDecoration(
@@ -348,7 +349,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                          ),
                          maxLines: 3,
                        ),
-                     ]
+                     ],
                   ],
                 ),
               ),
@@ -359,105 +360,107 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
             // Preview section
             if (_importedWords.isNotEmpty) ...[
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '3. 预览 (${_importedWords.length} 个单词)',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '前5个单词预览:',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              Expanded(
-                child: Card(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(8),
-                    itemCount: _importedWords.length > 5 ? 5 : _importedWords.length,
-                    itemBuilder: (context, index) {
-                      final word = _importedWords[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue[100],
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(color: Colors.blue[800]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '3. 预览 (${_importedWords.length} 个单词)',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        title: Text(
-                          word.prompt,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(word.answer),
-                            if (word.partOfSpeech != null || word.level != null)
-                              Row(
-                                children: [
-                                  if (word.partOfSpeech != null)
-                                    Chip(
-                                      label: Text(
-                                        word.partOfSpeech!,
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                      backgroundColor: Colors.blue[100],
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                  if (word.partOfSpeech != null && word.level != null)
-                                    const SizedBox(width: 4),
-                                  if (word.level != null)
-                                    Chip(
-                                      label: Text(
-                                        word.level!,
-                                        style: const TextStyle(fontSize: 10),
-                                      ),
-                                      backgroundColor: Colors.green[100],
-                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                ],
-                              ),
-                          ],
-                        ),
-                        trailing: word.category != null 
-                            ? Chip(
-                                label: Text(
-                                  word.category!,
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                backgroundColor: Colors.grey[200],
-                              )
-                            : null,
-                      );
-                    },
-                  ),
-                ),
-              ),
-              
-              if (_importedWords.length > 5)
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    '... 还有 ${_importedWords.length - 5} 个单词',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontStyle: FontStyle.italic,
+                          const SizedBox(height: 8),
+                          const Text(
+                            '前5个单词预览:',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+                    SizedBox(
+                      height: 300, // 固定高度
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemCount: _importedWords.length > 5 ? 5 : _importedWords.length,
+                         itemBuilder: (context, index) {
+                           final word = _importedWords[index];
+                           return ListTile(
+                             leading: CircleAvatar(
+                               backgroundColor: Colors.blue[100],
+                               child: Text(
+                                 '${index + 1}',
+                                 style: TextStyle(color: Colors.blue[800]),
+                               ),
+                             ),
+                             title: Text(
+                               word.prompt,
+                               style: const TextStyle(fontWeight: FontWeight.bold),
+                             ),
+                             subtitle: Column(
+                               crossAxisAlignment: CrossAxisAlignment.start,
+                               children: [
+                                 Text(word.answer),
+                                 if (word.partOfSpeech != null || word.level != null)
+                                   Row(
+                                     children: [
+                                       if (word.partOfSpeech != null)
+                                         Chip(
+                                           label: Text(
+                                             word.partOfSpeech!,
+                                             style: const TextStyle(fontSize: 10),
+                                           ),
+                                           backgroundColor: Colors.blue[100],
+                                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                         ),
+                                       if (word.partOfSpeech != null && word.level != null)
+                                         const SizedBox(width: 4),
+                                       if (word.level != null)
+                                         Chip(
+                                           label: Text(
+                                             word.level!,
+                                             style: const TextStyle(fontSize: 10),
+                                           ),
+                                           backgroundColor: Colors.green[100],
+                                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                         ),
+                                     ],
+                                   ),
+                               ],
+                             ),
+                             trailing: word.category != null 
+                                 ? Chip(
+                                     label: Text(
+                                       word.category!,
+                                       style: const TextStyle(fontSize: 12),
+                                     ),
+                                     backgroundColor: Colors.grey[200],
+                                   )
+                                 : null,
+                           );
+                         },
+                       ),
+                     ),
+                     if (_importedWords.length > 5)
+                       Padding(
+                         padding: const EdgeInsets.all(8.0),
+                         child: Text(
+                           '... 还有 ${_importedWords.length - 5} 个单词',
+                           style: TextStyle(
+                             color: Colors.grey[600],
+                             fontStyle: FontStyle.italic,
+                           ),
+                           textAlign: TextAlign.center,
+                         ),
+                       ),
+                   ],
+                 ),
+               ),
             ],
             
             // Save button

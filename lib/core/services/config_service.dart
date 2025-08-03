@@ -1,193 +1,165 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'local_config_service.dart';
 
 class ConfigService {
   static ConfigService? _instance;
-  static SharedPreferences? _prefs;
+  static LocalConfigService? _localConfig;
 
   ConfigService._();
 
   static Future<ConfigService> getInstance() async {
     _instance ??= ConfigService._();
-    _prefs ??= await SharedPreferences.getInstance();
+    _localConfig ??= await LocalConfigService.getInstance();
     return _instance!;
   }
 
-  // Theme settings
-  static const String _themeKey = 'theme_mode';
-  static const String _colorSchemeKey = 'color_scheme';
-  
-  // Dictation settings
-  static const String _autoPlayKey = 'auto_play';
-  static const String _playbackSpeedKey = 'playback_speed';
-  static const String _repeatCountKey = 'repeat_count';
-  static const String _showPinyinKey = 'show_pinyin';
-  static const String _enableHandwritingKey = 'enable_handwriting';
-  
-  // Study settings
-  static const String _dailyGoalKey = 'daily_goal';
-  static const String _reminderEnabledKey = 'reminder_enabled';
-  static const String _reminderTimeKey = 'reminder_time';
-  
-  // Export/Import settings
-  static const String _lastExportPathKey = 'last_export_path';
-  static const String _autoBackupKey = 'auto_backup';
-  static const String _backupIntervalKey = 'backup_interval';
-  
-  // History settings
-  static const String _historyLimitKey = 'history_limit';
+
 
   // Theme settings
   Future<String> getThemeMode() async {
-    return _prefs?.getString(_themeKey) ?? 'system';
+    return await _localConfig!.getThemeMode();
   }
 
   Future<void> setThemeMode(String mode) async {
-    await _prefs?.setString(_themeKey, mode);
+    await _localConfig!.setThemeMode(mode);
   }
 
   Future<String> getColorScheme() async {
-    return _prefs?.getString(_colorSchemeKey) ?? 'blue';
+    return await _localConfig!.getColorScheme();
   }
 
   Future<void> setColorScheme(String scheme) async {
-    await _prefs?.setString(_colorSchemeKey, scheme);
+    await _localConfig!.setColorScheme(scheme);
   }
 
   // Dictation settings
   Future<bool> getAutoPlay() async {
-    return _prefs?.getBool(_autoPlayKey) ?? true;
+    return await _localConfig!.getAutoPlay();
   }
 
   Future<void> setAutoPlay(bool enabled) async {
-    await _prefs?.setBool(_autoPlayKey, enabled);
+    await _localConfig!.setAutoPlay(enabled);
   }
 
   Future<double> getPlaybackSpeed() async {
-    return _prefs?.getDouble(_playbackSpeedKey) ?? 1.0;
+    return await _localConfig!.getPlaybackSpeed();
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
-    await _prefs?.setDouble(_playbackSpeedKey, speed);
+    await _localConfig!.setPlaybackSpeed(speed);
   }
 
   Future<int> getRepeatCount() async {
-    return _prefs?.getInt(_repeatCountKey) ?? 2;
+    return await _localConfig!.getRepeatCount();
   }
 
   Future<void> setRepeatCount(int count) async {
-    await _prefs?.setInt(_repeatCountKey, count);
+    await _localConfig!.setRepeatCount(count);
   }
 
   Future<bool> getShowPinyin() async {
-    return _prefs?.getBool(_showPinyinKey) ?? true;
+    return await _localConfig!.getShowPinyin();
   }
 
   Future<void> setShowPinyin(bool enabled) async {
-    await _prefs?.setBool(_showPinyinKey, enabled);
+    await _localConfig!.setShowPinyin(enabled);
   }
 
   Future<bool> getEnableHandwriting() async {
-    return _prefs?.getBool(_enableHandwritingKey) ?? false;
+    return await _localConfig!.getEnableHandwriting();
   }
 
   Future<void> setEnableHandwriting(bool enabled) async {
-    await _prefs?.setBool(_enableHandwritingKey, enabled);
+    await _localConfig!.setEnableHandwriting(enabled);
   }
 
   // Study settings
   Future<int> getDailyGoal() async {
-    return _prefs?.getInt(_dailyGoalKey) ?? 20;
+    return await _localConfig!.getDailyGoal();
   }
 
   Future<void> setDailyGoal(int goal) async {
-    await _prefs?.setInt(_dailyGoalKey, goal);
+    await _localConfig!.setDailyGoal(goal);
   }
 
   Future<bool> getReminderEnabled() async {
-    return _prefs?.getBool(_reminderEnabledKey) ?? false;
+    return await _localConfig!.getReminderEnabled();
   }
 
   Future<void> setReminderEnabled(bool enabled) async {
-    await _prefs?.setBool(_reminderEnabledKey, enabled);
+    await _localConfig!.setReminderEnabled(enabled);
   }
 
   Future<String> getReminderTime() async {
-    return _prefs?.getString(_reminderTimeKey) ?? '20:00';
+    return await _localConfig!.getReminderTime();
   }
 
   Future<void> setReminderTime(String time) async {
-    await _prefs?.setString(_reminderTimeKey, time);
+    await _localConfig!.setReminderTime(time);
   }
 
   // Export/Import settings
   Future<String?> getLastExportPath() async {
-    return _prefs?.getString(_lastExportPathKey);
+    return await _localConfig!.getLastExportPath();
   }
 
   Future<void> setLastExportPath(String path) async {
-    await _prefs?.setString(_lastExportPathKey, path);
+    await _localConfig!.setLastExportPath(path);
   }
 
   Future<bool> getAutoBackup() async {
-    return _prefs?.getBool(_autoBackupKey) ?? false;
+    return await _localConfig!.getAutoBackup();
   }
 
   Future<void> setAutoBackup(bool enabled) async {
-    await _prefs?.setBool(_autoBackupKey, enabled);
+    await _localConfig!.setAutoBackup(enabled);
   }
 
   Future<int> getBackupInterval() async {
-    return _prefs?.getInt(_backupIntervalKey) ?? 7; // days
+    return await _localConfig!.getBackupInterval();
   }
 
   Future<void> setBackupInterval(int days) async {
-    await _prefs?.setInt(_backupIntervalKey, days);
+    await _localConfig!.setBackupInterval(days);
   }
 
   // Utility methods
   Future<void> clearAllSettings() async {
-    await _prefs?.clear();
+    await _localConfig!.clearAllSettings();
   }
 
   Future<Map<String, dynamic>> getAllSettings() async {
-    final keys = _prefs?.getKeys() ?? <String>{};
-    final settings = <String, dynamic>{};
-    
-    for (final key in keys) {
-      final value = _prefs?.get(key);
-      if (value != null) {
-        settings[key] = value;
-      }
-    }
-    
-    return settings;
+    return await _localConfig!.getAllSettings();
   }
 
   Future<void> importSettings(Map<String, dynamic> settings) async {
-    for (final entry in settings.entries) {
-      final key = entry.key;
-      final value = entry.value;
-      
-      if (value is String) {
-        await _prefs?.setString(key, value);
-      } else if (value is int) {
-        await _prefs?.setInt(key, value);
-      } else if (value is double) {
-        await _prefs?.setDouble(key, value);
-      } else if (value is bool) {
-        await _prefs?.setBool(key, value);
-      } else if (value is List<String>) {
-        await _prefs?.setStringList(key, value);
-      }
-    }
+    await _localConfig!.importSettings(settings);
   }
 
   // History settings
   int getHistoryLimit() {
-    return _prefs?.getInt(_historyLimitKey) ?? 50;
+    return _localConfig!.getHistoryLimit();
   }
 
   Future<void> setHistoryLimit(int limit) async {
-    await _prefs?.setInt(_historyLimitKey, limit);
+    await _localConfig!.setHistoryLimit(limit);
+  }
+
+  // Brush settings
+  Future<double> getDefaultBrushSize() async {
+    return await _localConfig!.getDefaultBrushSize();
+  }
+
+  Future<void> setDefaultBrushSize(double size) async {
+    await _localConfig!.setDefaultBrushSize(size);
+  }
+
+  // Generic settings methods
+  Future<T?> getSetting<T>(String key, {T? defaultValue}) async {
+    final settings = await getAllSettings();
+    return settings[key] as T? ?? defaultValue;
+  }
+
+  Future<void> setSetting<T>(String key, T value) async {
+    await _localConfig!.setSetting(key, value);
   }
 }

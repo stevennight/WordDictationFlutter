@@ -42,6 +42,11 @@ dependencies:
   url_launcher: ^6.2.2
   package_info_plus: ^4.2.0
   
+  # Network and Security
+  http: ^1.1.0
+  crypto: ^3.0.3
+  flutter_oss_aliyun: ^6.4.2
+  
   # Logging
   logger: ^2.0.2+1
 

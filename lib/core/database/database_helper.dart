@@ -24,9 +24,19 @@ class DatabaseHelper {
       // For web platform, use in-memory database
       path = 'word_dictation.db';
     } else {
-      // For mobile/desktop platforms, use file system
-      final documentsDirectory = await getApplicationDocumentsDirectory();
-      path = join(documentsDirectory.path, 'word_dictation.db');
+      // For desktop platforms, use application directory
+      // For mobile platforms, fallback to documents directory
+      String appDir;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Get executable directory for desktop platforms
+        final executablePath = Platform.resolvedExecutable;
+        appDir = dirname(executablePath);
+      } else {
+        // Fallback to documents directory for mobile platforms
+        final documentsDirectory = await getApplicationDocumentsDirectory();
+        appDir = documentsDirectory.path;
+      }
+      path = join(appDir, 'word_dictation.db');
     }
     
     return await openDatabase(
@@ -284,10 +294,28 @@ class DatabaseHelper {
     }
   }
 
+  // Get database file path
+  Future<String> getDatabasePath() async {
+    if (kIsWeb) {
+      return 'word_dictation.db';
+    } else {
+      String appDir;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Get executable directory for desktop platforms
+        final executablePath = Platform.resolvedExecutable;
+        appDir = dirname(executablePath);
+      } else {
+        // Fallback to documents directory for mobile platforms
+        final documentsDirectory = await getApplicationDocumentsDirectory();
+        appDir = documentsDirectory.path;
+      }
+      return join(appDir, 'word_dictation.db');
+    }
+  }
+
   // Get database file size
   Future<int> getDatabaseSize() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'word_dictation.db');
+    final path = await getDatabasePath();
     final file = File(path);
     if (await file.exists()) {
       return await file.length();

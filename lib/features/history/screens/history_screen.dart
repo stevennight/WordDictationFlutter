@@ -354,7 +354,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              historyProvider.deleteSession(session.id.toString());
+              historyProvider.deleteSession(session.sessionId);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
