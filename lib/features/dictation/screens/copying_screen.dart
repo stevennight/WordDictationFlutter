@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
+import '../../../shared/widgets/unified_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
 
 class CopyingScreen extends StatefulWidget {
@@ -15,21 +16,7 @@ class CopyingScreen extends StatefulWidget {
 
 class _CopyingScreenState extends State<CopyingScreen> {
   late DictationProvider _provider;
-  Color _selectedColor = Colors.black;
-  double _strokeWidth = 2.0;
-  bool _isEraserMode = false;
-  final GlobalKey _canvasKey = GlobalKey();
-
-  final List<Color> _availableColors = [
-    Colors.black,
-    Colors.blue,
-    Colors.red,
-    Colors.green,
-    Colors.purple,
-    Colors.orange,
-    Colors.brown,
-    Colors.pink,
-  ];
+  final GlobalKey<State<HandwritingCanvas>> _canvasKey = GlobalKey();
 
   @override
   void initState() {
@@ -270,162 +257,11 @@ class _CopyingScreenState extends State<CopyingScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Canvas toolbar
-            Row(
-              children: [
-                // Left side: Brush, Eraser, Brush size
-                Expanded(
-                  flex: 3,
-                  child: Row(
-                    children: [
-                      // Brush/Eraser toggle
-                      Column(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _isEraserMode = !_isEraserMode;
-                              });
-                              (_canvasKey.currentState as dynamic)?.setDrawingMode(
-                                _isEraserMode ? DrawingMode.eraser : DrawingMode.pen
-                              );
-                            },
-                            icon: Icon(
-                              _isEraserMode ? Icons.auto_fix_normal : Icons.brush,
-                              color: _isEraserMode ? Colors.red : Colors.blue,
-                            ),
-                            style: IconButton.styleFrom(
-                              backgroundColor: _isEraserMode 
-                                  ? Colors.red.withOpacity(0.1) 
-                                  : Colors.blue.withOpacity(0.1),
-                            ),
-                          ),
-                          Text(
-                            _isEraserMode ? '橡皮' : '画笔',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _isEraserMode ? Colors.red : Colors.blue,
-                            ),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(width: 8),
-                      
-                      // Undo button
-                      Column(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              (_canvasKey.currentState as dynamic)?.undo();
-                            },
-                            icon: const Icon(Icons.undo),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.grey.withOpacity(0.1),
-                            ),
-                          ),
-                          const Text(
-                            '撤销',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(width: 16),
-                      
-                      // Brush size
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('大小：${_strokeWidth.toInt()}', 
-                                 style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12)),
-                            Slider(
-                              value: _strokeWidth,
-                              min: 1.0,
-                              max: 10.0,
-                              divisions: 9,
-                              onChanged: (value) {
-                                setState(() {
-                                  _strokeWidth = value;
-                                });
-                                (_canvasKey.currentState as dynamic)?.setStrokeWidth(value);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(width: 16),
-                      
-                      // Clear button
-                      Column(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              (_canvasKey.currentState as dynamic)?.clearCanvas();
-                            },
-                            icon: const Icon(Icons.clear),
-                            tooltip: '清空画板',
-                          ),
-                          const Text(
-                            '清空',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(width: 16),
-                
-                // Right side: Colors
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('颜色：', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 12)),
-                      const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _availableColors.map((color) {
-                            final isSelected = _selectedColor == color;
-                            return GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedColor = color;
-                                  _isEraserMode = false;
-                                });
-                                (_canvasKey.currentState as dynamic)?.setStrokeColor(color);
-                                (_canvasKey.currentState as dynamic)?.setDrawingMode(DrawingMode.pen);
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: isSelected ? Colors.grey[800]! : Colors.grey[400]!,
-                                    width: isSelected ? 3 : 1,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            // 统一工具栏
+            UnifiedCanvasToolbar(
+              canvasKey: _canvasKey,
+              isDictationMode: false,
+              showDictationControls: false,
             ),
             
             const SizedBox(height: 16),

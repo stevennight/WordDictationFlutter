@@ -3,11 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../../shared/models/dictation_session.dart';
+import '../../../shared/models/word.dart';
 import '../../../shared/providers/history_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/providers/app_state_provider.dart';
 import '../widgets/history_filter_dialog.dart';
 import '../widgets/history_card.dart';
 import '../widgets/history_stats_card.dart';
 import 'history_detail_screen.dart';
+
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -363,12 +367,85 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  void _retrySession(HistoryProvider historyProvider, DictationSession session) {
-    // TODO: Implement retry functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('重做功能开发中...'),
-      ),
-    );
+  Future<void> _retrySession(HistoryProvider historyProvider, DictationSession session) async {
+    try {
+      final incorrectResults = await historyProvider.getIncorrectResultsForSession(session.sessionId);
+      
+      if (incorrectResults.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('该会话没有错题可以重做')),
+          );
+        }
+        return;
+      }
+      
+      // 显示重做模式选择对话框
+      final selectedMode = await showDialog<DictationMode>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('选择重做模式'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('共有 ${incorrectResults.length} 个错题需要重做'),
+              const SizedBox(height: 16),
+              const Text('请选择重做顺序：'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(DictationMode.sequential),
+              child: const Text('顺序重做'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(DictationMode.random),
+              child: const Text('乱序重做'),
+            ),
+          ],
+        ),
+      );
+      
+      if (selectedMode == null) return;
+      
+      // 将错题结果转换为Word对象
+      final retryWords = incorrectResults.map((result) => Word(
+        id: result.wordId,
+        prompt: result.prompt,
+        answer: result.answer,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      )).toList();
+      
+      // 使用DictationProvider加载错题并开始重做模式
+      final dictationProvider = context.read<DictationProvider>();
+      final appState = context.read<AppStateProvider>();
+      
+      await dictationProvider.loadWords(retryWords);
+      
+      // 开始重做默写，使用用户选择的模式
+      await dictationProvider.startDictation(
+        mode: selectedMode,
+        wordFileName: '${session.wordFileName ?? '未知文件'} - 错题重做',
+        dictationDirection: session.dictationDirection,
+      );
+      
+      // 进入默写模式
+      appState.enterDictationMode(
+        wordFileName: '${session.wordFileName ?? '未知文件'} - 错题重做',
+        totalWords: retryWords.length,
+      );
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('开始重做错题失败: $e')),
+        );
+      }
+    }
   }
 }

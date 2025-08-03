@@ -32,6 +32,9 @@ class ConfigService {
   static const String _lastExportPathKey = 'last_export_path';
   static const String _autoBackupKey = 'auto_backup';
   static const String _backupIntervalKey = 'backup_interval';
+  
+  // History settings
+  static const String _historyLimitKey = 'history_limit';
 
   // Theme settings
   Future<String> getThemeMode() async {
@@ -177,5 +180,14 @@ class ConfigService {
         await _prefs?.setStringList(key, value);
       }
     }
+  }
+
+  // History settings
+  int getHistoryLimit() {
+    return _prefs?.getInt(_historyLimitKey) ?? 50;
+  }
+
+  Future<void> setHistoryLimit(int limit) async {
+    await _prefs?.setInt(_historyLimitKey, limit);
   }
 }

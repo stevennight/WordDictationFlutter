@@ -87,13 +87,16 @@ class HistoryCard extends StatelessWidget {
               
               const SizedBox(height: 12),
               
-              // Statistics row
+              // Mode and Statistics row
               Row(
                 children: [
+                  // Mode indicator
+                  _buildModeChip(context, session.mode),
+                  const SizedBox(width: 8),
                   _buildStatChip(
                     context,
                     icon: Icons.quiz,
-                    label: '${session.totalWords}题',
+                    label: '${session.totalWords}/${session.expectedTotalWords ?? session.totalWords}题',
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(width: 8),
@@ -200,6 +203,41 @@ class HistoryCard extends StatelessWidget {
     );
   }
 
+  Widget _buildModeChip(BuildContext context, DictationMode mode) {
+    final modeText = _getModeText(mode);
+    final isRetryMode = mode == DictationMode.retry;
+    final color = isRetryMode ? Colors.red : Theme.of(context).colorScheme.secondary;
+    final icon = _getModeIcon(mode);
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: isRetryMode ? Border.all(color: Colors.red, width: 1) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            modeText,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isRetryMode ? FontWeight.bold : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatChip(
     BuildContext context, {
     required IconData icon,
@@ -232,6 +270,28 @@ class HistoryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _getModeText(DictationMode mode) {
+    switch (mode) {
+      case DictationMode.sequential:
+        return '顺序';
+      case DictationMode.random:
+        return '随机';
+      case DictationMode.retry:
+        return '错题';
+    }
+  }
+
+  IconData _getModeIcon(DictationMode mode) {
+    switch (mode) {
+      case DictationMode.sequential:
+        return Icons.format_list_numbered;
+      case DictationMode.random:
+        return Icons.shuffle;
+      case DictationMode.retry:
+        return Icons.refresh;
+    }
   }
 
   Color _getAccuracyColor(double accuracy) {

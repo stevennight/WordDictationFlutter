@@ -94,7 +94,7 @@ class DictationSession {
     return null;
   }
 
-  bool get isCompleted => status == SessionStatus.completed || status == SessionStatus.incomplete;
+  bool get isCompleted => status == SessionStatus.completed;
 
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{

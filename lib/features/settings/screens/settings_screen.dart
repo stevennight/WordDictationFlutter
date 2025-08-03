@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../shared/providers/theme_provider.dart';
 import '../../../shared/providers/history_provider.dart';
+import '../../../core/services/config_service.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
@@ -17,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   PackageInfo? _packageInfo;
+  ConfigService? _configService;
 
   @override
   void initState() {
@@ -109,21 +111,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () => _showBrushSizeDialog(),
                 ),
                 SettingsTile(
-                  title: '自动保存间隔',
-                  subtitle: '设置自动保存的时间间隔',
-                  leading: const Icon(Icons.save),
-                  onTap: () => _showAutoSaveDialog(),
-                ),
-                SettingsTile(
-                  title: '默写提示音',
-                  subtitle: '开启或关闭默写过程中的提示音',
-                  leading: const Icon(Icons.volume_up),
-                  trailing: Switch(
-                    value: true, // TODO: Get from settings
-                    onChanged: (value) {
-                      // TODO: Save to settings
-                    },
-                  ),
+                  title: '历史记录数量限制',
+                  subtitle: '设置保存的历史记录最大数量',
+                  leading: const Icon(Icons.history),
+                  onTap: () => _showHistoryLimitDialog(),
                 ),
               ],
             ),
@@ -405,6 +396,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       applicationName: _packageInfo?.appName ?? 'Word Dictation',
       applicationVersion: _packageInfo?.version ?? '1.0.0',
+    );
+  }
+
+  void _showHistoryLimitDialog() async {
+    _configService ??= await ConfigService.getInstance();
+    final currentLimit = _configService!.getHistoryLimit();
+    final controller = TextEditingController(text: currentLimit.toString());
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('历史记录数量限制'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('设置保存的历史记录最大数量，超出数量后将自动删除最旧的记录。'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '数量限制',
+                hintText: '请输入数字（默认50）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final input = controller.text.trim();
+              final limit = int.tryParse(input);
+              
+              if (limit == null || limit < 1) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请输入有效的数字（大于0）')),
+                );
+                return;
+              }
+              
+              await _configService!.setHistoryLimit(limit);
+              
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('历史记录数量限制已设置为 $limit 条')),
+                );
+                
+                // 重新加载历史记录以应用新的限制
+                final historyProvider = Provider.of<HistoryProvider>(context, listen: false);
+                await historyProvider.loadHistory();
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 }

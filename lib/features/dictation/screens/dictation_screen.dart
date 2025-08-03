@@ -7,7 +7,7 @@ import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
-import '../widgets/dictation_toolbar.dart';
+import '../../../shared/widgets/unified_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
 import '../widgets/answer_review_dialog.dart';
 import '../widgets/completion_dialog.dart';
@@ -294,9 +294,11 @@ class _DictationScreenState extends State<DictationScreen> {
       elevation: 2,
       child: Column(
         children: [
-          // Toolbar
-          DictationToolbar(
+          // 统一工具栏
+          UnifiedCanvasToolbar(
             canvasKey: _canvasKey,
+            isDictationMode: true,
+            showDictationControls: true,
             onClear: () {
               final canvas = _canvasKey.currentState as dynamic;
               if (canvas != null) {

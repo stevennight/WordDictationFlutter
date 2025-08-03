@@ -363,6 +363,7 @@ class DictationProvider extends ChangeNotifier {
           status: SessionStatus.incomplete, // 标记为未完成
           endTime: DateTime.now(),
           totalWords: _results.length, // 实际完成的数量
+          // 保持expectedTotalWords不变，这样历史记录能正确显示预期数量
         );
         
         // 保存到历史记录

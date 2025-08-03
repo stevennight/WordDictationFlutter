@@ -466,7 +466,9 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
       case SessionStatus.completed:
         return '已完成';
       case SessionStatus.incomplete:
-        return '未完成 (${session.correctCount + session.incorrectCount}/${session.totalWords})';
+        // 使用expectedTotalWords显示预期数量，totalWords显示实际完成数量
+        final expectedTotal = session.expectedTotalWords ?? session.totalWords;
+        return '未完成 (${session.correctCount + session.incorrectCount}/$expectedTotal)';
       case SessionStatus.inProgress:
         return '进行中';
       case SessionStatus.paused:

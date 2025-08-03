@@ -3,9 +3,11 @@ import 'package:flutter/foundation.dart';
 import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
 import '../../core/database/database_helper.dart';
+import '../../core/services/config_service.dart';
 
 class HistoryProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  ConfigService? _configService;
   
   List<DictationSession> _sessions = [];
   List<DictationResult> _results = [];
@@ -34,6 +36,9 @@ class HistoryProvider with ChangeNotifier {
       );
       
       _sessions = sessionMaps.map((map) => DictationSession.fromMap(map)).toList();
+      
+      // 检查并删除超出限制的最旧记录
+      await _enforceHistoryLimit();
       
       // Load all results for statistics
       final resultMaps = await db.query('dictation_results');
@@ -213,10 +218,9 @@ class HistoryProvider with ChangeNotifier {
       (sum, session) => sum + (session.duration ?? Duration.zero),
     );
     
-    final averageAccuracy = completedSessions.isNotEmpty
-        ? completedSessions.fold<double>(
-            0.0, (sum, session) => sum + session.accuracy,
-          ) / completedSessions.length
+    // 按照实际完成数量计算整体准确率（总的正确数量/总的实际默写数量）
+    final overallAccuracy = (totalCorrect + totalIncorrect) > 0
+        ? (totalCorrect / (totalCorrect + totalIncorrect)) * 100
         : 0.0;
 
     return {
@@ -224,7 +228,7 @@ class HistoryProvider with ChangeNotifier {
       'totalWords': totalWords,
       'totalCorrect': totalCorrect,
       'totalIncorrect': totalIncorrect,
-      'averageAccuracy': averageAccuracy,
+      'averageAccuracy': overallAccuracy,
       'totalTime': totalTime,
     };
   }
@@ -282,6 +286,25 @@ class HistoryProvider with ChangeNotifier {
     }
   }
 
+  /// Get incorrect results for a specific session
+  Future<List<DictationResult>> getIncorrectResultsForSession(String sessionId) async {
+    try {
+      final db = await _dbHelper.database;
+      
+      final maps = await db.query(
+        'dictation_results',
+        where: 'session_id = ? AND is_correct = 0',
+        whereArgs: [sessionId],
+        orderBy: 'word_index ASC',
+      );
+      
+      return maps.map((map) => DictationResult.fromMap(map)).toList();
+    } catch (e) {
+      _setError('获取错题失败: $e');
+      return [];
+    }
+  }
+
   /// Export history data
   Future<Map<String, dynamic>> exportHistory() async {
     try {
@@ -319,5 +342,39 @@ class HistoryProvider with ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  /// 检查并删除超出限制的最旧记录
+  Future<void> _enforceHistoryLimit() async {
+    _configService ??= await ConfigService.getInstance();
+    final historyLimit = _configService!.getHistoryLimit();
+    
+    if (_sessions.length > historyLimit) {
+      final db = await _dbHelper.database;
+      
+      // 获取需要删除的会话（最旧的记录）
+      final sessionsToDelete = _sessions.skip(historyLimit).toList();
+      
+      for (final session in sessionsToDelete) {
+        // 删除会话相关的结果记录
+        await db.delete(
+          'dictation_results',
+          where: 'session_id = ?',
+          whereArgs: [session.id],
+        );
+        
+        // 删除会话记录
+        await db.delete(
+          'dictation_sessions',
+          where: 'id = ?',
+          whereArgs: [session.id],
+        );
+      }
+      
+      // 更新内存中的会话列表
+      _sessions = _sessions.take(historyLimit).toList();
+      
+      debugPrint('已删除 ${sessionsToDelete.length} 条超出限制的历史记录');
+    }
   }
 }
