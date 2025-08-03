@@ -103,6 +103,7 @@ class DictationProvider extends ChangeNotifier {
     required List<Word> words,
     required String wordbookName,
     required int mode,
+    required int order,
     required int count,
   }) async {
     try {
@@ -113,9 +114,10 @@ class DictationProvider extends ChangeNotifier {
       
       // Start dictation immediately with specified parameters
       await startDictation(
-        mode: mode == 0 ? DictationMode.sequential : DictationMode.random,
+        mode: order == 0 ? DictationMode.sequential : DictationMode.random,
         customQuantity: count,
         wordFileName: wordbookName,
+        dictationDirection: mode, // 传递默写方向参数
       );
     } catch (e) {
       _setError('从词书加载单词失败: $e');
@@ -126,6 +128,7 @@ class DictationProvider extends ChangeNotifier {
     required DictationMode mode,
     int? customQuantity,
     String? wordFileName,
+    int dictationDirection = 0, // 0: 原文→译文, 1: 译文→原文
   }) async {
     try {
       _setState(DictationState.loading);
@@ -149,6 +152,7 @@ class DictationProvider extends ChangeNotifier {
         status: SessionStatus.inProgress,
         totalWords: _sessionWords.length,
         startTime: DateTime.now(),
+        dictationDirection: dictationDirection,
       );
       
       // Ensure all words have IDs (save to database if needed)

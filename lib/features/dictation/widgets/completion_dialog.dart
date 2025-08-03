@@ -18,12 +18,13 @@ class CompletionDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final accuracy = session.accuracy;
     final duration = session.duration;
+    final screenHeight = MediaQuery.of(context).size.height;
     
     return Dialog(
       child: Container(
-        constraints: const BoxConstraints(
+        constraints: BoxConstraints(
           maxWidth: 400,
-          maxHeight: 500,
+          maxHeight: screenHeight * 0.8, // 使用屏幕高度的80%
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -66,8 +67,8 @@ class CompletionDialog extends StatelessWidget {
             ),
             
             // Content
-            Expanded(
-              child: Padding(
+            Flexible(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
@@ -79,7 +80,7 @@ class CompletionDialog extends StatelessWidget {
                     // Performance analysis
                     _buildPerformanceSection(context, accuracy),
                     
-                    const Spacer(),
+                    const SizedBox(height: 20),
                     
                     // Action buttons
                     _buildActionButtons(context),

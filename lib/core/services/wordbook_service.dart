@@ -169,4 +169,36 @@ class WordbookService {
       whereArgs: [wordbookId],
     );
   }
+
+  /// Update a word
+  Future<int> updateWord(Word word) async {
+    final db = await _dbHelper.database;
+    return await db.update(
+      'words',
+      word.toMap(),
+      where: 'id = ?',
+      whereArgs: [word.id],
+    );
+  }
+
+  /// Delete a word
+  Future<int> deleteWord(int wordId) async {
+    final db = await _dbHelper.database;
+    return await db.delete(
+      'words',
+      where: 'id = ?',
+      whereArgs: [wordId],
+    );
+  }
+
+  /// Add a word to wordbook
+  Future<int> addWordToWordbook(Word word) async {
+    final db = await _dbHelper.database;
+    return await db.insert('words', word.toMap());
+  }
+
+  /// Add a word (alias for addWordToWordbook)
+  Future<int> addWord(Word word) async {
+    return await addWordToWordbook(word);
+  }
 }

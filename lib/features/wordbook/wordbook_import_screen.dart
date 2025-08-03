@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../shared/models/word.dart';
+import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/word_import_service.dart';
 
 class WordbookImportScreen extends StatefulWidget {
-  const WordbookImportScreen({super.key});
+  final Wordbook? wordbook;
+  final bool isUnitMode;
+  
+  const WordbookImportScreen({
+    super.key,
+    this.wordbook,
+    this.isUnitMode = false,
+  });
 
   @override
   State<WordbookImportScreen> createState() => _WordbookImportScreenState();
@@ -16,6 +24,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
   final WordImportService _wordImportService = WordImportService();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _unitNameController = TextEditingController();
   
   List<Word> _importedWords = [];
   bool _isImporting = false;
@@ -44,10 +53,17 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
         PlatformFile file = result.files.first;
         _selectedFileName = file.name;
         
-        // Auto-fill wordbook name from filename if empty
-        if (_nameController.text.isEmpty) {
-          final nameWithoutExtension = file.name.split('.').first;
-          _nameController.text = nameWithoutExtension;
+        // Auto-fill name from filename if empty
+        if (widget.isUnitMode) {
+          if (_unitNameController.text.isEmpty) {
+            final nameWithoutExtension = file.name.split('.').first;
+            _unitNameController.text = nameWithoutExtension;
+          }
+        } else {
+          if (_nameController.text.isEmpty) {
+            final nameWithoutExtension = file.name.split('.').first;
+            _nameController.text = nameWithoutExtension;
+          }
         }
 
         List<Word> words;
@@ -85,6 +101,14 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
   }
 
   Future<void> _saveWordbook() async {
+    if (widget.isUnitMode) {
+      await _saveToExistingWordbook();
+    } else {
+      await _saveAsNewWordbook();
+    }
+  }
+
+  Future<void> _saveAsNewWordbook() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,11 +157,69 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
     }
   }
 
+  Future<void> _saveToExistingWordbook() async {
+    final unitName = _unitNameController.text.trim();
+    if (unitName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入单元名称')),
+      );
+      return;
+    }
+
+    if (_importedWords.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先导入单词')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final now = DateTime.now();
+      
+      // 为单词设置单元名称和词书ID
+      final wordsWithUnit = _importedWords.map((word) => word.copyWith(
+        category: unitName,
+        wordbookId: widget.wordbook!.id!,
+        createdAt: now,
+        updatedAt: now,
+      )).toList();
+
+      // 保存单词到数据库
+      for (final word in wordsWithUnit) {
+        await _wordbookService.addWordToWordbook(word);
+      }
+
+      // 更新词书的单词数量
+      await _wordbookService.updateWordbookWordCount(widget.wordbook!.id!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('成功添加 ${_importedWords.length} 个单词到单元"$unitName"')),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存失败: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('导入词书'),
+        title: Text(widget.isUnitMode ? '导入单元' : '导入词书'),
         actions: [
           if (_importedWords.isNotEmpty && !_isSaving)
             TextButton(
@@ -209,32 +291,64 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '2. 词书信息',
-                      style: TextStyle(
+                    Text(
+                      widget.isUnitMode ? '2. 单元信息' : '2. 词书信息',
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        labelText: '词书名称 *',
-                        border: OutlineInputBorder(),
-                        hintText: '请输入词书名称',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: '描述（可选）',
-                        border: OutlineInputBorder(),
-                        hintText: '请输入词书描述',
-                      ),
-                      maxLines: 3,
-                    ),
+                    if (widget.isUnitMode) ...[
+                       if (widget.wordbook != null)
+                         Card(
+                           child: Padding(
+                             padding: const EdgeInsets.all(16),
+                             child: Column(
+                               crossAxisAlignment: CrossAxisAlignment.start,
+                               children: [
+                                 Text(
+                                   '目标词书: ${widget.wordbook!.name}',
+                                   style: Theme.of(context).textTheme.titleMedium,
+                                 ),
+                                 if (widget.wordbook!.description?.isNotEmpty == true)
+                                   Text(
+                                     widget.wordbook!.description!,
+                                     style: Theme.of(context).textTheme.bodyMedium,
+                                   ),
+                               ],
+                             ),
+                           ),
+                         ),
+                       const SizedBox(height: 16),
+                       TextField(
+                         controller: _unitNameController,
+                         decoration: const InputDecoration(
+                           labelText: '单元名称 *',
+                           border: OutlineInputBorder(),
+                           hintText: '例如：第一单元、Unit 1等',
+                         ),
+                       ),
+                     ] else ...[
+                       TextField(
+                         controller: _nameController,
+                         decoration: const InputDecoration(
+                           labelText: '词书名称 *',
+                           border: OutlineInputBorder(),
+                           hintText: '请输入词书名称',
+                         ),
+                       ),
+                       const SizedBox(height: 16),
+                       TextField(
+                         controller: _descriptionController,
+                         decoration: const InputDecoration(
+                           labelText: '描述（可选）',
+                           border: OutlineInputBorder(),
+                           hintText: '请输入词书描述',
+                         ),
+                         maxLines: 3,
+                       ),
+                     ]
                   ],
                 ),
               ),
@@ -370,9 +484,9 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                               Text('保存中...'),
                             ],
                           )
-                        : const Text(
-                            '创建词书',
-                            style: TextStyle(fontSize: 16),
+                        : Text(
+                            widget.isUnitMode ? '保存单元' : '创建词书',
+                            style: const TextStyle(fontSize: 16),
                           ),
                   ),
                 ),

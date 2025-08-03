@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
 import 'wordbook_detail_screen.dart';
-import 'wordbook_import_screen.dart';
+import 'wordbook_create_screen.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -177,13 +177,14 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
             onPressed: () async {
               final result = await Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (context) => const WordbookImportScreen(),
+                  builder: (context) => const WordbookCreateScreen(),
                 ),
               );
               if (result == true) {
                 _loadWordbooks();
               }
             },
+            tooltip: '创建词书',
           ),
         ],
       ),
@@ -230,7 +231,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              _searchQuery.isEmpty ? '点击右上角的 + 按钮导入词书' : '尝试其他搜索关键词',
+                              _searchQuery.isEmpty ? '点击右上角的 + 按钮创建词书' : '尝试其他搜索关键词',
                               style: TextStyle(
                                 color: Colors.grey[500],
                               ),

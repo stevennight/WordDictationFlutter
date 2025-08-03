@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -82,7 +82,8 @@ class DatabaseHelper {
         start_time INTEGER NOT NULL,
         end_time INTEGER,
         is_retry_session INTEGER DEFAULT 0,
-        original_session_id TEXT
+        original_session_id TEXT,
+        dictation_direction INTEGER DEFAULT 0
       )
     ''');
 
@@ -167,6 +168,11 @@ class DatabaseHelper {
       // Add part_of_speech and level columns to words table
       await db.execute('ALTER TABLE words ADD COLUMN part_of_speech TEXT');
       await db.execute('ALTER TABLE words ADD COLUMN level TEXT');
+    }
+    
+    if (oldVersion < 4 && newVersion >= 4) {
+      // Add dictation_direction column to dictation_sessions table
+      await db.execute('ALTER TABLE dictation_sessions ADD COLUMN dictation_direction INTEGER DEFAULT 0');
     }
   }
 

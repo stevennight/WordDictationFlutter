@@ -24,6 +24,7 @@ class DictationSession {
   final DateTime? endTime;
   final bool isRetrySession;
   final String? originalSessionId;
+  final int dictationDirection; // 0: 原文→译文, 1: 译文→原文
 
   const DictationSession({
     this.id,
@@ -39,6 +40,7 @@ class DictationSession {
     this.endTime,
     this.isRetrySession = false,
     this.originalSessionId,
+    this.dictationDirection = 0, // 默认原文→译文
   });
 
   DictationSession copyWith({
@@ -55,6 +57,7 @@ class DictationSession {
     DateTime? endTime,
     bool? isRetrySession,
     String? originalSessionId,
+    int? dictationDirection,
   }) {
     return DictationSession(
       id: id ?? this.id,
@@ -70,6 +73,7 @@ class DictationSession {
       endTime: endTime ?? this.endTime,
       isRetrySession: isRetrySession ?? this.isRetrySession,
       originalSessionId: originalSessionId ?? this.originalSessionId,
+      dictationDirection: dictationDirection ?? this.dictationDirection,
     );
   }
 
@@ -102,6 +106,7 @@ class DictationSession {
       'end_time': endTime?.millisecondsSinceEpoch,
       'is_retry_session': isRetrySession ? 1 : 0,
       'original_session_id': originalSessionId,
+      'dictation_direction': dictationDirection,
     };
   }
 
@@ -122,6 +127,7 @@ class DictationSession {
           : null,
       isRetrySession: (map['is_retry_session'] ?? 0) == 1,
       originalSessionId: map['original_session_id'],
+      dictationDirection: map['dictation_direction']?.toInt() ?? 0,
     );
   }
 

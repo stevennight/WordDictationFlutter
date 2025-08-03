@@ -3,13 +3,18 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../../shared/models/word.dart';
+import '../../../shared/models/wordbook.dart';
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/word_import_service.dart';
+import '../../../core/services/wordbook_service.dart';
 import '../widgets/mode_selection_card.dart';
 import '../widgets/quantity_selection_dialog.dart';
 import '../widgets/file_drop_zone.dart';
+import '../widgets/home_dictation_mode_dialog.dart';
+import '../../wordbook/widgets/wordbook_quantity_selection_dialog.dart';
+import '../../wordbook/widgets/dictation_mode_selection_dialog.dart';
 import '../../wordbook/wordbook_management_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,10 +26,37 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final WordImportService _importService = WordImportService();
+  final WordbookService _wordbookService = WordbookService();
   bool _isLoading = false;
   String? _statusMessage;
   List<Word> _loadedWords = [];
   String? _fileName;
+  List<Wordbook> _wordbooks = [];
+  bool _isLoadingWordbooks = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWordbooks();
+  }
+
+  Future<void> _loadWordbooks() async {
+    setState(() {
+      _isLoadingWordbooks = true;
+    });
+
+    try {
+      final wordbooks = await _wordbookService.getAllWordbooks();
+      setState(() {
+        _wordbooks = wordbooks;
+        _isLoadingWordbooks = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingWordbooks = false;
+      });
+    }
+  }
 
   void _setStatus(String message) {
     setState(() {
@@ -55,6 +87,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 24),
                 _buildWordbookSection(),
                 const SizedBox(height: 24),
+                if (_wordbooks.isNotEmpty) _buildQuickStartSection(),
+                if (_wordbooks.isNotEmpty) const SizedBox(height: 24),
                 _buildFileImportSection(),
                 const SizedBox(height: 24),
                 if (_loadedWords.isNotEmpty) ..._buildModeSelectionSection(),
@@ -95,36 +129,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const WordbookManagementScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.library_books),
-                    label: const Text('管理词书'),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const WordbookManagementScreen(),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const WordbookManagementScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('导入词书'),
-                  ),
-                ),
-              ],
+                ).then((_) => _loadWordbooks()); // 返回时刷新词书列表
+              },
+              icon: const Icon(Icons.library_books),
+              label: const Text('管理词书'),
             ),
           ],
         ),
@@ -240,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '选择默写模式',
+                    '开始默写',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ],
@@ -254,26 +268,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: ModeSelectionCard(
-                      title: '顺序默写',
-                      description: '按照原始顺序进行默写',
-                      icon: Icons.format_list_numbered,
-                      onTap: () => _startDictation(DictationMode.sequential),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: _startDictationWithSettings,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text(
+                    '开始默写',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ModeSelectionCard(
-                      title: '随机默写',
-                      description: '随机打乱顺序进行默写',
-                      icon: Icons.shuffle,
-                      onTap: () => _startDictation(DictationMode.random),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -386,28 +402,259 @@ class _HomeScreenState extends State<HomeScreen> {
     dictationProvider.reset();
   }
 
-  Future<void> _startDictation(DictationMode mode) async {
+  Widget _buildQuickStartSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.flash_on,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '快速开始',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '从已有词书中选择单词进行默写练习',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_isLoadingWordbooks)
+              const Center(child: CircularProgressIndicator())
+            else
+              ..._wordbooks.map((wordbook) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Card(
+                  elevation: 1,
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.book,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(wordbook.name),
+                    subtitle: Text('${wordbook.wordCount} 个单词'),
+                    trailing: const Icon(Icons.arrow_forward_ios),
+                    onTap: () => _selectWordbookForDictation(wordbook),
+                  ),
+                ),
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _selectWordbookForDictation(Wordbook wordbook) async {
+    try {
+      final words = await _wordbookService.getWordbookWords(wordbook.id!);
+      if (words.isEmpty) {
+        _setStatus('词书中没有单词');
+        return;
+      }
+
+      // Organize words by unit
+      final Map<String, List<Word>> unitWords = {};
+      for (final word in words) {
+        final unit = word.category ?? '未分类';
+        if (!unitWords.containsKey(unit)) {
+          unitWords[unit] = [];
+        }
+        unitWords[unit]!.add(word);
+      }
+
+      // Show selection dialog
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          maxChildSize: 0.8,
+          minChildSize: 0.4,
+          builder: (context, scrollController) => Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '选择默写内容 - ${wordbook.name}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Option to select entire wordbook
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.book,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: const Text('整本词书'),
+                    subtitle: Text('${words.length} 个单词'),
+                    trailing: const Icon(Icons.play_arrow),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _loadWordsForDictation(words, wordbook.name);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  '或选择单元',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: unitWords.keys.length,
+                    itemBuilder: (context, index) {
+                      final unitName = unitWords.keys.elementAt(index);
+                      final unitWordsList = unitWords[unitName]!;
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.folder,
+                            color: Colors.green[700],
+                          ),
+                          title: Text(unitName),
+                          subtitle: Text('${unitWordsList.length} 个单词'),
+                          trailing: const Icon(Icons.play_arrow),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _loadWordsForDictation(unitWordsList, '$unitName (${wordbook.name})');
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _setStatus('加载词书失败: $e');
+    }
+  }
+
+  Future<void> _loadWordsForDictation(List<Word> words, String sourceName) async {
+    setState(() {
+      _loadedWords = words;
+      _fileName = sourceName;
+    });
+
+    // Load words into dictation provider
+    final dictationProvider = context.read<DictationProvider>();
+    await dictationProvider.loadWords(words);
+
+    _setStatus('已加载：$sourceName，共 ${words.length} 个单词');
+  }
+
+  Future<void> _startDictationWithSettings() async {
     if (_loadedWords.isEmpty) return;
 
-    // Show quantity selection dialog
+    // Step 1: Show quantity selection dialog
     final quantity = await showDialog<int>(
       context: context,
-      builder: (context) => QuantitySelectionDialog(
+      builder: (context) => WordbookQuantitySelectionDialog(
         totalWords: _loadedWords.length,
       ),
     );
 
     if (quantity == null) return;
 
+    // Step 2: Show mode and order selection dialog
+    final modeResult = await showDialog<Map<String, int>>(
+      context: context,
+      builder: (context) => DictationModeSelectionDialog(
+        quantity: quantity == -1 ? _loadedWords.length : quantity,
+        unitName: _fileName ?? '已导入单词',
+      ),
+    );
+
+    if (modeResult == null) return;
+
+    final mode = modeResult['mode']!;
+    final order = modeResult['order']!;
+    final finalQuantity = quantity == -1 ? _loadedWords.length : quantity;
+
+    try {
+      final dictationProvider = context.read<DictationProvider>();
+      final appState = context.read<AppStateProvider>();
+
+      // Load words into dictation provider
+      await dictationProvider.loadWordsFromWordbook(
+        words: _loadedWords,
+        wordbookName: _fileName ?? '已导入单词',
+        mode: mode,
+        order: order,
+        count: finalQuantity,
+      );
+
+      // Enter dictation mode
+      appState.enterDictationMode(
+        wordFileName: _fileName ?? '已导入单词',
+        totalWords: finalQuantity,
+      );
+    } catch (e) {
+      _setStatus('开始默写失败: $e');
+    }
+  }
+
+  Future<void> _startDictation(DictationMode mode) async {
+    if (_loadedWords.isEmpty) return;
+
+    // Show mode selection dialog
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => HomeDictationModeDialog(
+        totalWords: _loadedWords.length,
+        initialMode: mode,
+      ),
+    );
+
+    if (result == null) return;
+
+    final selectedMode = result['mode'] as DictationMode;
+    final dictationDirection = result['mode'] as int; // 获取默写方向
+    final quantity = result['quantity'] as int;
+ 
     try {
       final dictationProvider = context.read<DictationProvider>();
       final appState = context.read<AppStateProvider>();
 
       // Start dictation
       await dictationProvider.startDictation(
-        mode: mode,
+        mode: selectedMode,
         customQuantity: quantity == -1 ? null : quantity,
         wordFileName: _fileName,
+        dictationDirection: dictationDirection,
       );
 
       // Enter dictation mode

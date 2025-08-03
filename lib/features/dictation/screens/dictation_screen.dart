@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../shared/models/dictation_session.dart';
+import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
@@ -9,6 +10,7 @@ import '../widgets/dictation_toolbar.dart';
 import '../widgets/dictation_progress.dart';
 import '../widgets/answer_review_dialog.dart';
 import '../widgets/completion_dialog.dart';
+import 'dictation_result_screen.dart';
 
 class DictationScreen extends StatefulWidget {
   const DictationScreen({super.key});
@@ -33,7 +35,7 @@ class _DictationScreenState extends State<DictationScreen> {
 
           if (dictationProvider.state == DictationState.completed) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showCompletionDialog(dictationProvider);
+              _navigateToResultScreen(dictationProvider);
             });
           }
 
@@ -89,7 +91,7 @@ class _DictationScreenState extends State<DictationScreen> {
             child: Column(
               children: [
                 // Prompt section
-                _buildPromptSection(currentWord.prompt),
+                _buildPromptSection(provider, currentWord),
                 
                 const SizedBox(height: 16),
                 
@@ -116,7 +118,15 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  Widget _buildPromptSection(String prompt) {
+  Widget _buildPromptSection(DictationProvider provider, Word currentWord) {
+    final session = provider.currentSession;
+    final dictationDirection = session?.dictationDirection ?? 0;
+    
+    // 根据默写方向决定显示内容
+    // 0: 原文→译文 (显示prompt，默写answer)
+    // 1: 译文→原文 (显示answer，默写prompt)
+    final displayText = dictationDirection == 0 ? currentWord.prompt : currentWord.answer;
+    
     return Card(
       elevation: 2,
       child: Container(
@@ -130,15 +140,36 @@ class _DictationScreenState extends State<DictationScreen> {
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(height: 12),
-            Text(
-              '请默写下列内容：',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            
+            // 显示词性和等级信息
+            if (currentWord.partOfSpeech != null || currentWord.level != null)
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (currentWord.partOfSpeech != null)
+                    Chip(
+                      label: Text(
+                        currentWord.partOfSpeech!,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                    ),
+                  if (currentWord.level != null)
+                    Chip(
+                      label: Text(
+                        currentWord.level!,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                    ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
+            
+            if (currentWord.partOfSpeech != null || currentWord.level != null)
+              const SizedBox(height: 12),
+            
             Text(
-              prompt,
+              displayText,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary,
@@ -367,8 +398,26 @@ class _DictationScreenState extends State<DictationScreen> {
 
   void _exitDictation(DictationProvider provider) {
     final appState = context.read<AppStateProvider>();
-    provider.endSession();
+    provider.finishSession();
     appState.exitDictationMode();
+  }
+
+  void _navigateToResultScreen(DictationProvider provider) async {
+    final session = provider.currentSession!;
+    final results = provider.results;
+    
+    // Navigate to result screen
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => DictationResultScreen(
+          session: session,
+          results: results,
+        ),
+      ),
+    );
+    
+    // Clean up the dictation state after navigation
+    provider.finishSession();
   }
 
   void _showCompletionDialog(DictationProvider provider) {
