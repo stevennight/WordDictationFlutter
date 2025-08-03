@@ -8,6 +8,7 @@ enum SessionStatus {
   inProgress,
   completed,
   paused,
+  incomplete, // 未完成（提前退出但有进度）
 }
 
 class DictationSession {
@@ -17,6 +18,7 @@ class DictationSession {
   final DictationMode mode;
   final SessionStatus status;
   final int totalWords;
+  final int? expectedTotalWords; // 预期总数量（用于incomplete状态）
   final int currentWordIndex;
   final int correctCount;
   final int incorrectCount;
@@ -33,6 +35,7 @@ class DictationSession {
     required this.mode,
     required this.status,
     required this.totalWords,
+    this.expectedTotalWords,
     this.currentWordIndex = 0,
     this.correctCount = 0,
     this.incorrectCount = 0,
@@ -50,6 +53,7 @@ class DictationSession {
     DictationMode? mode,
     SessionStatus? status,
     int? totalWords,
+    int? expectedTotalWords,
     int? currentWordIndex,
     int? correctCount,
     int? incorrectCount,
@@ -66,6 +70,7 @@ class DictationSession {
       mode: mode ?? this.mode,
       status: status ?? this.status,
       totalWords: totalWords ?? this.totalWords,
+      expectedTotalWords: expectedTotalWords ?? this.expectedTotalWords,
       currentWordIndex: currentWordIndex ?? this.currentWordIndex,
       correctCount: correctCount ?? this.correctCount,
       incorrectCount: incorrectCount ?? this.incorrectCount,
@@ -89,7 +94,7 @@ class DictationSession {
     return null;
   }
 
-  bool get isCompleted => status == SessionStatus.completed;
+  bool get isCompleted => status == SessionStatus.completed || status == SessionStatus.incomplete;
 
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{
@@ -98,6 +103,7 @@ class DictationSession {
       'mode': mode.index,
       'status': status.index,
       'total_words': totalWords,
+      'expected_total_words': expectedTotalWords,
       'current_word_index': currentWordIndex,
       'correct_count': correctCount,
       'incorrect_count': incorrectCount,
@@ -124,6 +130,7 @@ class DictationSession {
       mode: DictationMode.values[map['mode'] ?? 0],
       status: SessionStatus.values[map['status'] ?? 0],
       totalWords: map['total_words']?.toInt() ?? 0,
+      expectedTotalWords: map['expected_total_words']?.toInt() ?? 0,
       currentWordIndex: map['current_word_index']?.toInt() ?? 0,
       correctCount: map['correct_count']?.toInt() ?? 0,
       incorrectCount: map['incorrect_count']?.toInt() ?? 0,
@@ -139,7 +146,7 @@ class DictationSession {
 
   @override
   String toString() {
-    return 'DictationSession(id: $id, sessionId: $sessionId, wordFileName: $wordFileName, mode: $mode, status: $status, totalWords: $totalWords, currentWordIndex: $currentWordIndex, correctCount: $correctCount, incorrectCount: $incorrectCount, startTime: $startTime, endTime: $endTime, isRetrySession: $isRetrySession, originalSessionId: $originalSessionId)';
+    return 'DictationSession(id: $id, sessionId: $sessionId, wordFileName: $wordFileName, mode: $mode, status: $status, totalWords: $totalWords, expectedTotalWords: $expectedTotalWords, currentWordIndex: $currentWordIndex, correctCount: $correctCount, incorrectCount: $incorrectCount, startTime: $startTime, endTime: $endTime, isRetrySession: $isRetrySession, originalSessionId: $originalSessionId)';
   }
 
   @override

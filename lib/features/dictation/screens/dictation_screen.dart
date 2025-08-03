@@ -230,14 +230,17 @@ class _DictationScreenState extends State<DictationScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // 提示内容
+                // 提示内容（可点击全屏显示）
                 Expanded(
                   flex: 3,
-                  child: Text(
-                    displayText,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
+                  child: GestureDetector(
+                    onTap: () => _showFullScreenText(displayText, provider.dictationDirection),
+                    child: Text(
+                      displayText,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
                 ),
@@ -248,7 +251,7 @@ class _DictationScreenState extends State<DictationScreen> {
                   Expanded(
                     flex: 2,
                     child: GestureDetector(
-                      onTap: () => _showAnswerFullscreen(answerText),
+                      onTap: () => _showAnswerFullscreen(answerText, provider.dictationDirection),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
@@ -516,10 +519,18 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  void _exitDictation(DictationProvider provider) {
+  void _exitDictation(DictationProvider provider) async {
     final appState = context.read<AppStateProvider>();
-    provider.finishSession();
-    appState.exitDictationMode();
+    await provider.endSession(); // 调用endSession保存进度
+    
+    // 如果有结果且状态为completed，导航到结果页面
+    if (provider.state == DictationState.completed && provider.results.isNotEmpty) {
+      _navigateToResultScreen(provider);
+    } else {
+      // 否则直接退出
+      provider.finishSession();
+      appState.exitDictationMode();
+    }
   }
 
   void _navigateToResultScreen(DictationProvider provider) async {
@@ -562,7 +573,9 @@ class _DictationScreenState extends State<DictationScreen> {
     provider.retryIncorrectWords();
   }
 
-  void _showAnswerFullscreen(String answerText) {
+  void _showAnswerFullscreen(String answerText, int dictationDirection) {
+    // 根据默写方向确定标题
+    final title = dictationDirection == 0 ? '正确译文' : '正确原文';
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -595,7 +608,7 @@ class _DictationScreenState extends State<DictationScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '正确答案',
+                          title,
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.bold,
@@ -640,6 +653,88 @@ class _DictationScreenState extends State<DictationScreen> {
                   ],
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullScreenText(String text, int dictationDirection) {
+    // 根据默写方向确定标题
+    final title = dictationDirection == 0 ? '原文内容' : '译文内容';
+    
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.8),
+      builder: (context) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            margin: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      color: Colors.grey.shade600,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    text,
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '点击任意位置关闭',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ),
           ),
         ),

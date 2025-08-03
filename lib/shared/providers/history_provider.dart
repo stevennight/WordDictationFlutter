@@ -25,9 +25,11 @@ class HistoryProvider with ChangeNotifier {
     try {
       final db = await _dbHelper.database;
       
-      // Load sessions
+      // Load sessions (exclude inProgress status)
       final sessionMaps = await db.query(
         'dictation_sessions',
+        where: 'status != ?',
+        whereArgs: ['inProgress'],
         orderBy: 'start_time DESC',
       );
       
@@ -42,6 +44,24 @@ class HistoryProvider with ChangeNotifier {
       _setError('加载历史记录失败: $e');
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Clear all inProgress sessions (called on app startup)
+  Future<void> clearInProgressSessions() async {
+    try {
+      final db = await _dbHelper.database;
+      
+      // Delete all sessions with inProgress status
+      await db.delete(
+        'dictation_sessions',
+        where: 'status = ?',
+        whereArgs: ['inProgress'],
+      );
+      
+      debugPrint('已清除所有inProgress状态的会话记录');
+    } catch (e) {
+      debugPrint('清除inProgress会话失败: $e');
     }
   }
 

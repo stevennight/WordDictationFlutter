@@ -102,11 +102,21 @@ class _DictationToolbarState extends State<DictationToolbar> {
               
               const SizedBox(height: 8),
               
-              // Size control only (color is fixed based on mode)
+              // Size and color controls
               Row(
                 children: [
+                  // 左侧：画笔大小控制
                   Expanded(
+                    flex: 3,
                     child: _buildSizeControl(),
+                  ),
+                  
+                  const SizedBox(width: 16),
+                  
+                  // 右侧：颜色选择器（默写模式和批改模式下隐藏）
+                  Expanded(
+                    flex: 2,
+                    child: _buildColorControl(),
                   ),
                 ],
               ),
@@ -229,6 +239,15 @@ class _DictationToolbarState extends State<DictationToolbar> {
   }
 
   Widget _buildColorControl() {
+    final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
+    final isAnnotationMode = dictationProvider.isAnnotationMode;
+    final isDictationMode = !isAnnotationMode;
+    
+    // 在默写模式和批改模式下都隐藏颜色面板
+    if (isDictationMode || isAnnotationMode) {
+      return const SizedBox.shrink();
+    }
+    
     final colors = [
       Colors.black,
       Colors.blue,
@@ -305,11 +324,12 @@ class _DictationToolbarState extends State<DictationToolbar> {
   void _updateCanvasSettings() {
     final canvas = widget.canvasKey.currentState as dynamic;
     if (canvas != null) {
-      canvas.setPenMode(_currentMode);
       if (_currentMode == PenMode.pen) {
-        canvas.setStrokeWidth(_penSize);
+        canvas.setDrawingMode(DrawingMode.pen);
         canvas.setStrokeColor(_penColor);
+        canvas.setStrokeWidth(_penSize);
       } else {
+        canvas.setDrawingMode(DrawingMode.eraser);
         canvas.setStrokeWidth(_eraserSize);
       }
     }
@@ -318,23 +338,25 @@ class _DictationToolbarState extends State<DictationToolbar> {
   void _showClearConfirmation() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认清空'),
-        content: const Text('确定要清空画布吗？此操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              widget.onClear();
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('确认清空'),
+          content: const Text('确定要清空画布吗？此操作无法撤销。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onClear();
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

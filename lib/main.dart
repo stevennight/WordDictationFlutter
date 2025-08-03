@@ -30,6 +30,10 @@ void main() async {
   // Initialize config service
   await ConfigService.getInstance();
   
+  // Clear inProgress sessions on app startup
+  final historyProvider = HistoryProvider();
+  await historyProvider.clearInProgressSessions();
+  
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

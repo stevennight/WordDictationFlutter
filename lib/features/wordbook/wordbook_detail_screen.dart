@@ -8,6 +8,7 @@ import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../core/services/wordbook_service.dart';
 import 'unit_management_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
+import '../dictation/screens/copying_screen.dart';
 import 'widgets/wordbook_quantity_selection_dialog.dart';
 import 'widgets/dictation_mode_selection_dialog.dart';
 
@@ -464,15 +465,24 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                         ),
                     ],
                   ),
-                  trailing: word.category != null
-                      ? Chip(
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _startWordCopying(word),
+                        tooltip: '抄写',
+                      ),
+                      if (word.category != null)
+                        Chip(
                           label: Text(
                             word.category!,
                             style: const TextStyle(fontSize: 12),
                           ),
                           backgroundColor: Colors.grey[200],
-                        )
-                      : null,
+                        ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -534,6 +544,11 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _startUnitCopying(unitName, unitWords),
+                        tooltip: '抄写',
+                      ),
                       IconButton(
                         icon: const Icon(Icons.play_arrow),
                         onPressed: () => _startUnitDictation(unitName, unitWords),
@@ -726,30 +741,118 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                             ),
                         ],
                       ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _startWordCopying(word),
+                        tooltip: '抄写',
+                      ),
                     ),
                   );
                 },
               ),
             ),
-            // Start dictation button
+            // Action buttons
             Padding(
               padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _startUnitDictation(unitName, unitWords);
-                  },
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('开始默写'),
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _startUnitCopying(unitName, unitWords);
+                      },
+                      icon: const Icon(Icons.edit),
+                      label: const Text('抄写'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _startUnitDictation(unitName, unitWords);
+                      },
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('默写'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  void _startWordCopying(Word word) async {
+    try {
+      final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
+      
+      // Load single word for copying
+      await dictationProvider.loadWordsFromWordbook(
+        words: [word],
+        wordbookName: widget.wordbook.name,
+        mode: 1, // copying mode
+        order: 0, // order doesn't matter for single word
+        count: 1,
+      );
+
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _startUnitCopying(String unitName, List<Word> unitWords) async {
+    if (unitWords.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该单元没有单词')),
+      );
+      return;
+    }
+
+    try {
+      final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
+      
+      // Load all words in unit for copying
+      await dictationProvider.loadWordsFromWordbook(
+        words: unitWords,
+        wordbookName: widget.wordbook.name,
+        mode: 1, // copying mode
+        order: 0, // sequential order
+        count: unitWords.length,
+      );
+
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
+        );
+      }
+    }
   }
 
   String _formatDate(DateTime date) {

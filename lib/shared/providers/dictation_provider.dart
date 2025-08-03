@@ -48,6 +48,7 @@ class DictationProvider extends ChangeNotifier {
   String? get originalImagePath => _originalImagePath;
   String? get annotatedImagePath => _annotatedImagePath;
   bool get isAnnotationMode => _isAnnotationMode;
+  int get dictationDirection => _currentSession?.dictationDirection ?? 0;
   
   String? get currentAnswerText {
     if (_currentWord == null || (_state != DictationState.judging)) return null;
@@ -163,6 +164,7 @@ class DictationProvider extends ChangeNotifier {
         mode: mode,
         status: SessionStatus.inProgress,
         totalWords: _sessionWords.length,
+        expectedTotalWords: _sessionWords.length,
         startTime: DateTime.now(),
         dictationDirection: dictationDirection,
       );
@@ -175,17 +177,8 @@ class DictationProvider extends ChangeNotifier {
         }
       }
       
-      // Save session to database
-      await _dictationService.createSession(_currentSession!);
-      
-      // Save session words
-      for (int i = 0; i < _sessionWords.length; i++) {
-        await _dictationService.addWordToSession(
-          _currentSession!.sessionId,
-          _sessionWords[i].id!,
-          i,
-        );
-      }
+      // 不在开始时保存session，改为在完成或退出时保存
+      // Session will be saved only when completing or exiting with progress
       
       _results.clear();
       _showNextWord();
@@ -253,8 +246,7 @@ class DictationProvider extends ChangeNotifier {
       
       _results.add(result);
       
-      // Save result to database
-      await _dictationService.saveResult(result);
+      // 不在此处保存result，改为在完成或退出时统一保存
       
       // Update session - increment index and counts
       _currentSession = _currentSession!.copyWith(
@@ -263,7 +255,7 @@ class DictationProvider extends ChangeNotifier {
         incorrectCount: !isCorrect ? _currentSession!.incorrectCount + 1 : _currentSession!.incorrectCount,
       );
       
-      await _dictationService.updateSession(_currentSession!);
+      // 不在此处更新session到数据库
       
       // Show next word without incrementing index again
       _showNextWord();
@@ -281,10 +273,46 @@ class DictationProvider extends ChangeNotifier {
         endTime: DateTime.now(),
       );
       
-      await _dictationService.updateSession(_currentSession!);
+      // 完成默写时保存session到历史记录
+      await _saveSessionToHistory();
       _setState(DictationState.completed);
     } catch (e) {
       _setError('完成默写失败: $e');
+    }
+  }
+  
+  /// 保存session到历史记录
+  Future<void> _saveSessionToHistory() async {
+    if (_currentSession == null) return;
+    
+    try {
+      // 确保所有单词都有ID
+      for (int i = 0; i < _sessionWords.length; i++) {
+        if (_sessionWords[i].id == null) {
+          final wordId = await _wordService.insertWord(_sessionWords[i]);
+          _sessionWords[i] = _sessionWords[i].copyWith(id: wordId);
+        }
+      }
+      
+      // 保存session到数据库
+      await _dictationService.createSession(_currentSession!);
+      
+      // 保存session words
+      for (int i = 0; i < _sessionWords.length; i++) {
+        await _dictationService.addWordToSession(
+          _currentSession!.sessionId,
+          _sessionWords[i].id!,
+          i,
+        );
+      }
+      
+      // 保存所有结果
+      for (final result in _results) {
+        await _dictationService.saveResult(result);
+      }
+    } catch (e) {
+      debugPrint('保存session到历史记录失败: $e');
+      rethrow;
     }
   }
   
@@ -308,6 +336,7 @@ class DictationProvider extends ChangeNotifier {
         isRetrySession: true,
         originalSessionId: _currentSession!.sessionId,
         totalWords: incorrectWords.length,
+        expectedTotalWords: incorrectWords.length,
       );
       
       await _dictationService.updateSession(_currentSession!);
@@ -324,15 +353,28 @@ class DictationProvider extends ChangeNotifier {
     _showNextWord();
   }
   
-  void endSession() {
+  Future<void> endSession() async {
     if (_currentSession == null) return;
     
-    _currentSession = _currentSession!.copyWith(
-      status: SessionStatus.completed,
-      endTime: DateTime.now(),
-    );
-    
-    _setState(DictationState.completed);
+    try {
+      // 如果已经默写了至少1个单词，保存到历史记录并显示结果
+      if (_results.isNotEmpty) {
+        _currentSession = _currentSession!.copyWith(
+          status: SessionStatus.incomplete, // 标记为未完成
+          endTime: DateTime.now(),
+          totalWords: _results.length, // 实际完成的数量
+        );
+        
+        // 保存到历史记录
+        await _saveSessionToHistory();
+        _setState(DictationState.completed); // 显示结果界面
+      } else {
+        // 没有默写任何单词，直接结束不保存
+        _setState(DictationState.idle);
+      }
+    } catch (e) {
+      _setError('结束默写失败: $e');
+    }
   }
   
   void finishSession() {
@@ -374,5 +416,58 @@ class DictationProvider extends ChangeNotifier {
     if (_state == DictationState.error) {
       _setState(DictationState.idle);
     }
+  }
+
+  // Copying mode methods
+  void initializeCopying(List<Word> words, int startIndex) {
+    _words = words;
+    _sessionWords = List.from(words);
+    _currentSession = DictationSession(
+      sessionId: _uuid.v4(),
+      mode: DictationMode.sequential,
+      status: SessionStatus.inProgress,
+      totalWords: words.length,
+      expectedTotalWords: words.length,
+      currentWordIndex: startIndex,
+      startTime: DateTime.now(),
+      dictationDirection: 0,
+    );
+    _currentWord = _sessionWords[startIndex];
+    _setState(DictationState.inProgress);
+  }
+
+  void goToNextWord() {
+    if (_currentSession == null) return;
+    
+    final nextIndex = _currentSession!.currentWordIndex + 1;
+    if (nextIndex < _sessionWords.length) {
+      _currentSession = _currentSession!.copyWith(
+        currentWordIndex: nextIndex,
+      );
+      _currentWord = _sessionWords[nextIndex];
+      clearCanvas();
+      notifyListeners();
+    }
+  }
+
+  void goToPreviousWord() {
+    if (_currentSession == null) return;
+    
+    final prevIndex = _currentSession!.currentWordIndex - 1;
+    if (prevIndex >= 0) {
+      _currentSession = _currentSession!.copyWith(
+        currentWordIndex: prevIndex,
+      );
+      _currentWord = _sessionWords[prevIndex];
+      clearCanvas();
+      notifyListeners();
+    }
+  }
+
+  // Canvas methods
+  void clearCanvas() {
+    // This method will be called to clear the handwriting canvas
+    // The actual canvas clearing will be handled by the canvas widget
+    notifyListeners();
   }
 }

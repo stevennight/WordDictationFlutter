@@ -23,8 +23,10 @@ class HistoryDetailScreen extends StatefulWidget {
 class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
   DictationSession? _session;
   List<DictationResult> _results = [];
+  List<DictationResult> _filteredResults = [];
   bool _isLoading = true;
   String? _error;
+  bool _showOnlyErrors = false;
 
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
         setState(() {
           _session = session;
           _results = results;
+          _filteredResults = _getFilteredResults();
           _isLoading = false;
         });
       }
@@ -193,7 +196,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
             if (session.endTime != null)
               _buildSummaryRow('结束时间', DateFormat('yyyy-MM-dd HH:mm:ss').format(session.endTime!)),
             _buildSummaryRow('模式', _getModeText(session.mode)),
-            _buildSummaryRow('状态', session.isCompleted ? '已完成' : '未完成'),
+            _buildSummaryRow('状态', _getStatusText(session)),
             if (duration != null)
               _buildSummaryRow('用时', '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}'),
             
@@ -360,8 +363,26 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
               ),
             ),
             const Spacer(),
+            // 过滤按钮
+            OutlinedButton.icon(
+              onPressed: _toggleErrorFilter,
+              icon: Icon(
+                _showOnlyErrors ? Icons.filter_alt : Icons.filter_alt_outlined,
+                size: 18,
+              ),
+              label: Text(
+                _showOnlyErrors ? '仅错误' : '全部',
+                style: const TextStyle(fontSize: 12),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            const SizedBox(width: 8),
             Text(
-              '共 ${_results.length} 题',
+              '共 ${_filteredResults.length} 题',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -373,10 +394,10 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _results.length,
+          itemCount: _filteredResults.length,
           separatorBuilder: (context, index) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
-            final result = _results[index];
+            final result = _filteredResults[index];
             return ResultDetailCard(
               result: result,
               index: index + 1,
@@ -424,5 +445,34 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
         content: Text('重做错题功能待实现'),
       ),
     );
+  }
+
+  List<DictationResult> _getFilteredResults() {
+    if (_showOnlyErrors) {
+      return _results.where((result) => !result.isCorrect).toList();
+    }
+    return _results;
+  }
+
+  void _toggleErrorFilter() {
+    setState(() {
+      _showOnlyErrors = !_showOnlyErrors;
+      _filteredResults = _getFilteredResults();
+    });
+  }
+  
+  String _getStatusText(DictationSession session) {
+    switch (session.status) {
+      case SessionStatus.completed:
+        return '已完成';
+      case SessionStatus.incomplete:
+        return '未完成 (${session.correctCount + session.incorrectCount}/${session.totalWords})';
+      case SessionStatus.inProgress:
+        return '进行中';
+      case SessionStatus.paused:
+        return '已暂停';
+      default:
+        return '未知状态';
+    }
   }
 }

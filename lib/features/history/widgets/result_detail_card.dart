@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'dart:io';
 
 import '../../../shared/models/dictation_result.dart';
+import '../../../shared/models/word.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../core/services/word_service.dart';
+import '../../dictation/screens/copying_screen.dart';
 
-class ResultDetailCard extends StatelessWidget {
+class ResultDetailCard extends StatefulWidget {
   final DictationResult result;
   final int index;
 
@@ -13,6 +18,45 @@ class ResultDetailCard extends StatelessWidget {
     required this.result,
     required this.index,
   });
+
+  @override
+  State<ResultDetailCard> createState() => _ResultDetailCardState();
+}
+
+class _ResultDetailCardState extends State<ResultDetailCard> {
+  Word? _word;
+  bool _isLoadingWord = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWordDetails();
+  }
+
+  Future<void> _loadWordDetails() async {
+    if (widget.result.wordId <= 0) return;
+    
+    setState(() {
+      _isLoadingWord = true;
+    });
+    
+    try {
+      final wordService = WordService();
+      final word = await wordService.getWordById(widget.result.wordId);
+      if (mounted) {
+        setState(() {
+          _word = word;
+          _isLoadingWord = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingWord = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,20 +74,20 @@ class ResultDetailCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: result.isCorrect
+                    color: widget.result.isCorrect
                         ? Colors.green.withOpacity(0.1)
                         : Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: result.isCorrect ? Colors.green : Colors.red,
+                      color: widget.result.isCorrect ? Colors.green : Colors.red,
                     ),
                   ),
                   child: Center(
                     child: Text(
-                      index.toString(),
+                      widget.index.toString(),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: result.isCorrect ? Colors.green : Colors.red,
+                        color: widget.result.isCorrect ? Colors.green : Colors.red,
                       ),
                     ),
                   ),
@@ -54,14 +98,14 @@ class ResultDetailCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '提示: ${result.prompt}',
+                        '提示: ${widget.result.prompt}',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        DateFormat('HH:mm:ss').format(result.timestamp),
+                        DateFormat('HH:mm:ss').format(widget.result.timestamp),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -69,37 +113,77 @@ class ResultDetailCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Status indicator
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: result.isCorrect
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: result.isCorrect ? Colors.green : Colors.red,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        result.isCorrect ? Icons.check : Icons.close,
-                        size: 14,
-                        color: result.isCorrect ? Colors.green : Colors.red,
+                // Status indicator and copy button
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: widget.result.isCorrect
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: widget.result.isCorrect ? Colors.green : Colors.red,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        result.isCorrect ? '正确' : '错误',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: result.isCorrect ? Colors.green : Colors.red,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            widget.result.isCorrect ? Icons.check : Icons.close,
+                            size: 14,
+                            color: widget.result.isCorrect ? Colors.green : Colors.red,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.result.isCorrect ? '正确' : '错误',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: widget.result.isCorrect ? Colors.green : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Copy button
+                    InkWell(
+                      onTap: () => _startCopying(context),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.blue.withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.edit,
+                              size: 14,
+                              color: Colors.blue,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '抄写',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -126,11 +210,54 @@ class ResultDetailCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    result.answer,
+                    widget.result.answer,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  
+                  // 词性和等级信息
+                  if (_word != null && (_word!.partOfSpeech != null || _word!.level != null)) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        if (_word!.partOfSpeech != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _word!.partOfSpeech!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        if (_word!.partOfSpeech != null && _word!.level != null)
+                          const SizedBox(width: 8),
+                        if (_word!.level != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _word!.level!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onTertiaryContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -138,11 +265,11 @@ class ResultDetailCard extends StatelessWidget {
             const SizedBox(height: 12),
             
             // Handwriting images
-            if (result.originalImagePath != null || result.annotatedImagePath != null)
+            if (widget.result.originalImagePath != null || widget.result.annotatedImagePath != null)
               _buildHandwritingSection(context),
             
             // Notes section
-            if (result.userNotes != null && result.userNotes!.isNotEmpty)
+            if (widget.result.userNotes != null && widget.result.userNotes!.isNotEmpty)
               _buildNotesSection(context),
           ],
         ),
@@ -164,22 +291,22 @@ class ResultDetailCard extends StatelessWidget {
         
         Row(
           children: [
-            if (result.originalImagePath != null)
+            if (widget.result.originalImagePath != null)
               Expanded(
                 child: _buildImageCard(
                   context,
                   '原始手写',
-                  result.originalImagePath!,
+                  widget.result.originalImagePath!,
                 ),
               ),
-            if (result.originalImagePath != null && result.annotatedImagePath != null)
+            if (widget.result.originalImagePath != null && widget.result.annotatedImagePath != null)
               const SizedBox(width: 8),
-            if (result.annotatedImagePath != null)
+            if (widget.result.annotatedImagePath != null)
               Expanded(
                 child: _buildImageCard(
                   context,
                   '批注版本',
-                  result.annotatedImagePath!,
+                  widget.result.annotatedImagePath!,
                 ),
               ),
           ],
@@ -303,7 +430,7 @@ class ResultDetailCard extends StatelessWidget {
             ),
           ),
           child: Text(
-            result.userNotes!,
+            widget.result.userNotes!,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
@@ -342,5 +469,42 @@ class ResultDetailCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _startCopying(BuildContext context) async {
+    try {
+      final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
+      
+      // Use the loaded word if available, otherwise create a basic word object
+      final word = _word ?? Word(
+        prompt: widget.result.prompt,
+        answer: widget.result.answer,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      
+      // Load single word for copying
+      await dictationProvider.loadWordsFromWordbook(
+        words: [word],
+        wordbookName: '历史记录',
+        mode: 1, // copying mode
+        order: 0, // order doesn't matter for single word
+        count: 1,
+      );
+
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
+        );
+      }
+    }
   }
 }

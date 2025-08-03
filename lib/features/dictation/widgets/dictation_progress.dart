@@ -5,6 +5,7 @@ class DictationProgress extends StatelessWidget {
   final int total;
   final int correct;
   final int incorrect;
+  final bool showStats;
 
   const DictationProgress({
     super.key,
@@ -12,7 +13,22 @@ class DictationProgress extends StatelessWidget {
     required this.total,
     required this.correct,
     required this.incorrect,
+    this.showStats = true,
   });
+
+  // Alternative constructor for copying mode
+  const DictationProgress.copying({
+    super.key,
+    required int currentIndex,
+    required int totalCount,
+    required double accuracy,
+    required int correctCount,
+    bool? showStats,
+  }) : current = currentIndex,
+       total = totalCount,
+       correct = correctCount,
+       incorrect = 0,
+       showStats = showStats ?? false;
 
   @override
   Widget build(BuildContext context) {
@@ -77,42 +93,44 @@ class DictationProgress extends StatelessWidget {
               ],
             ),
             
-            const SizedBox(height: 16),
-            
-            // Statistics
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard(
-                    context,
-                    icon: Icons.check_circle,
-                    label: '正确',
-                    value: correct.toString(),
-                    color: Colors.green,
+            if (showStats) ...[
+              const SizedBox(height: 16),
+              
+              // Statistics
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      icon: Icons.check_circle,
+                      label: '正确',
+                      value: correct.toString(),
+                      color: Colors.green,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    context,
-                    icon: Icons.cancel,
-                    label: '错误',
-                    value: incorrect.toString(),
-                    color: Colors.red,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      icon: Icons.cancel,
+                      label: '错误',
+                      value: incorrect.toString(),
+                      color: Colors.red,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStatCard(
-                    context,
-                    icon: Icons.percent,
-                    label: '准确率',
-                    value: '${(accuracy * 100).round()}%',
-                    color: _getAccuracyColor(accuracy),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildStatCard(
+                      context,
+                      icon: Icons.percent,
+                      label: '准确率',
+                      value: '${(accuracy * 100).round()}%',
+                      color: _getAccuracyColor(accuracy),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

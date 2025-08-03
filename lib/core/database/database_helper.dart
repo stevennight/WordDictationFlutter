@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -76,6 +76,7 @@ class DatabaseHelper {
         mode INTEGER NOT NULL,
         status INTEGER NOT NULL,
         total_words INTEGER NOT NULL,
+        expected_total_words INTEGER DEFAULT 0,
         current_word_index INTEGER DEFAULT 0,
         correct_count INTEGER DEFAULT 0,
         incorrect_count INTEGER DEFAULT 0,
@@ -173,6 +174,11 @@ class DatabaseHelper {
     if (oldVersion < 4 && newVersion >= 4) {
       // Add dictation_direction column to dictation_sessions table
       await db.execute('ALTER TABLE dictation_sessions ADD COLUMN dictation_direction INTEGER DEFAULT 0');
+    }
+    
+    if (oldVersion < 5 && newVersion >= 5) {
+      // Add expected_total_words column to dictation_sessions table
+      await db.execute('ALTER TABLE dictation_sessions ADD COLUMN expected_total_words INTEGER DEFAULT 0');
     }
   }
 
