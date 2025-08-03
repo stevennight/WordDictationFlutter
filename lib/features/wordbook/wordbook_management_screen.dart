@@ -4,6 +4,7 @@ import '../../core/services/wordbook_service.dart';
 import 'wordbook_detail_screen.dart';
 import 'wordbook_create_screen.dart';
 import 'wordbook_import_screen.dart';
+import '../sync/sync_settings_screen.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -198,12 +199,30 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                 if (result == true) {
                   _loadWordbooks();
                 }
+              } else if (value == 'sync') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const SyncSettingsScreen(),
+                  ),
+                );
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
               const PopupMenuItem<String>(
                 value: 'import',
-                child: Text('导入词书'),
+                child: ListTile(
+                  leading: Icon(Icons.upload),
+                  title: Text('导入词书'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'sync',
+                child: ListTile(
+                  leading: Icon(Icons.sync),
+                  title: Text('同步设置'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ],
           ),

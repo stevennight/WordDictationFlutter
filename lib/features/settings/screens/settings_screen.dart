@@ -8,6 +8,7 @@ import '../../../core/services/config_service.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
+import '../../sync/sync_settings_screen.dart';
 
 
 class SettingsScreen extends StatefulWidget {
@@ -77,7 +78,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: '数据管理',
               icon: Icons.storage,
               children: [
-
+                SettingsTile(
+                  title: '同步设置',
+                  subtitle: '配置云端同步服务',
+                  leading: const Icon(Icons.sync),
+                  onTap: () => _navigateToSyncSettings(),
+                ),
                 SettingsTile(
                   title: '清空历史记录',
                   subtitle: '删除所有默写历史记录',
@@ -417,6 +423,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _navigateToSyncSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const SyncSettingsScreen(),
+      ),
+    );
+  }
+
   void _showHistoryLimitDialog() async {
     _configService ??= await ConfigService.getInstance();
     final currentLimit = _configService!.getHistoryLimit();
@@ -478,6 +492,4 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
-
 }

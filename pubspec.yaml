@@ -44,6 +44,7 @@ dependencies:
   
   # Network and Security
   http: ^1.1.0
+  dio: ^5.4.0
   crypto: ^3.0.3
   
   # Logging
