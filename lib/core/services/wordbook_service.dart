@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import '../database/database_helper.dart';
@@ -195,6 +197,105 @@ class WordbookService {
   Future<int> addWordToWordbook(Word word) async {
     final db = await _dbHelper.database;
     return await db.insert('words', word.toMap());
+  }
+
+  /// Export a single wordbook and its words to a JSON string
+  Future<String> exportSingleWordbook(int wordbookId) async {
+    final wordbook = await getWordbookById(wordbookId);
+    if (wordbook == null) {
+      throw Exception('词书不存在');
+    }
+
+    final words = await getWordbookWords(wordbookId);
+    final wordbookMap = wordbook.toMap();
+    wordbookMap['words'] = words.map((w) => w.toMap()).toList();
+
+    // Use a structured format for the final JSON
+    final singleExport = {
+      'version': '1.0.0',
+      'createdAt': DateTime.now().toIso8601String(),
+      'wordbooks': [wordbookMap],
+    };
+
+    return jsonEncode(singleExport);
+  }
+
+  /// Import and update existing wordbook or create new one
+  Future<Wordbook> importAndUpdateWordbook({
+    required String name,
+    required List<Word> words,
+    String? description,
+    String? originalFileName,
+  }) async {
+    final db = await _dbHelper.database;
+    final now = DateTime.now();
+    
+    return await db.transaction((txn) async {
+      // Check if wordbook with same name exists
+      final existingWordbooks = await txn.query(
+        'wordbooks',
+        where: 'name = ?',
+        whereArgs: [name],
+      );
+      
+      int wordbookId;
+      Wordbook wordbook;
+      
+      if (existingWordbooks.isNotEmpty) {
+        // Update existing wordbook
+        wordbookId = existingWordbooks.first['id'] as int;
+        
+        // Delete all existing words in this wordbook
+        await txn.delete(
+          'words',
+          where: 'wordbook_id = ?',
+          whereArgs: [wordbookId],
+        );
+        
+        // Update wordbook info
+        wordbook = Wordbook(
+          id: wordbookId,
+          name: name,
+          description: description,
+          originalFileName: originalFileName,
+          wordCount: words.length,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(existingWordbooks.first['created_at'] as int),
+          updatedAt: now,
+        );
+        
+        await txn.update(
+          'wordbooks',
+          wordbook.toMap(),
+          where: 'id = ?',
+          whereArgs: [wordbookId],
+        );
+      } else {
+        // Create new wordbook
+        wordbook = Wordbook(
+          name: name,
+          description: description,
+          originalFileName: originalFileName,
+          wordCount: words.length,
+          createdAt: now,
+          updatedAt: now,
+        );
+        
+        wordbookId = await txn.insert('wordbooks', wordbook.toMap());
+        wordbook = wordbook.copyWith(id: wordbookId);
+      }
+      
+      // Insert new words
+      for (final word in words) {
+        final wordWithBookId = word.copyWith(
+          wordbookId: wordbookId,
+          createdAt: now,
+          updatedAt: now,
+        );
+        await txn.insert('words', wordWithBookId.toMap());
+      }
+      
+      return wordbook;
+    });
   }
 
   /// Add a word (alias for addWordToWordbook)

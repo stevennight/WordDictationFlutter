@@ -3,6 +3,7 @@ import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
 import 'wordbook_detail_screen.dart';
 import 'wordbook_create_screen.dart';
+import 'wordbook_import_screen.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -185,6 +186,26 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
               }
             },
             tooltip: '创建词书',
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'import') {
+                final result = await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const WordbookImportScreen(),
+                  ),
+                );
+                if (result == true) {
+                  _loadWordbooks();
+                }
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'import',
+                child: Text('导入词书'),
+              ),
+            ],
           ),
         ],
       ),

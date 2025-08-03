@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
@@ -81,6 +83,39 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('加载单词失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportWordbook() async {
+    try {
+      final jsonString = await _wordbookService.exportSingleWordbook(widget.wordbook.id!);
+      
+      // Let user pick a directory and file name
+      final now = DateTime.now();
+      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+      final String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: '请选择保存导出的文件',
+        fileName: '${widget.wordbook.name}_export_$timestamp.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (outputFile != null) {
+        final file = File(outputFile);
+        await file.writeAsString(jsonString);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('词书「${widget.wordbook.name}」已成功导出到: $outputFile')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
         );
       }
     }
@@ -200,6 +235,11 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       appBar: AppBar(
         title: Text(widget.wordbook.name),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: _exportWordbook,
+            tooltip: '导出词书',
+          ),
           IconButton(
             icon: Icon(_isWordView ? Icons.view_list : Icons.view_module),
             onPressed: () {

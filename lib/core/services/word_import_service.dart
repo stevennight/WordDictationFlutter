@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as Math;
@@ -126,6 +127,89 @@ class WordImportService {
   /// Validate if a file is a valid .docx file
   static bool isValidDocxFile(String filePath) {
     return filePath.toLowerCase().endsWith('.docx');
+  }
+
+  /// Import words from a JSON file
+  Future<List<Word>> importFromJson(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('文件不存在');
+      }
+
+      final jsonString = await file.readAsString();
+      final jsonData = jsonDecode(jsonString);
+
+      return _extractWordsFromJson(jsonData);
+    } catch (e) {
+      throw Exception('导入失败: $e');
+    }
+  }
+
+  /// Extract wordbook info from JSON for smart import
+  Future<Map<String, dynamic>> extractWordbookInfoFromJson(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('文件不存在');
+      }
+
+      final jsonString = await file.readAsString();
+      final jsonData = jsonDecode(jsonString);
+
+      if (jsonData['wordbooks'] == null || jsonData['wordbooks'] is! List) {
+        throw Exception('无效的JSON格式: 缺少 `wordbooks` 列表');
+      }
+
+      final List<dynamic> wordbooksData = jsonData['wordbooks'];
+      if (wordbooksData.isEmpty) {
+        throw Exception('JSON文件中没有词书数据');
+      }
+
+      // For now, we'll import the first wordbook found
+      final firstWordbook = wordbooksData.first;
+      final List<Word> words = [];
+      
+      if (firstWordbook['words'] != null && firstWordbook['words'] is List) {
+        final List<dynamic> wordsData = firstWordbook['words'];
+        for (final wordData in wordsData) {
+          words.add(Word.fromMap(wordData));
+        }
+      }
+
+      return {
+        'name': firstWordbook['name'] ?? '导入的词书',
+        'description': firstWordbook['description'],
+        'words': words,
+        'originalFileName': filePath.split('/').last.split('\\').last,
+      };
+    } catch (e) {
+      throw Exception('解析JSON文件失败: $e');
+    }
+  }
+
+  List<Word> _extractWordsFromJson(Map<String, dynamic> jsonData) {
+    if (jsonData['wordbooks'] == null || jsonData['wordbooks'] is! List) {
+      throw Exception('无效的JSON格式: 缺少 `wordbooks` 列表');
+    }
+
+    final List<Word> allWords = [];
+    final List<dynamic> wordbooksData = jsonData['wordbooks'];
+
+    for (final wordbookData in wordbooksData) {
+      if (wordbookData['words'] != null && wordbookData['words'] is List) {
+        final List<dynamic> wordsData = wordbookData['words'];
+        for (final wordData in wordsData) {
+          allWords.add(Word.fromMap(wordData));
+        }
+      }
+    }
+
+    if (allWords.isEmpty) {
+      throw Exception('JSON文件中未找到有效的单词数据');
+    }
+
+    return allWords;
   }
 
   /// Get file info without importing

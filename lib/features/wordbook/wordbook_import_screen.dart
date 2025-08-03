@@ -46,7 +46,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
 
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'docx', 'csv'],
+        allowedExtensions: ['xlsx', 'docx', 'csv', 'json'],
       );
 
       if (result != null) {
@@ -73,6 +73,18 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
           words = await _wordImportService.importFromDocx(file.path!);
         } else if (file.extension?.toLowerCase() == 'csv') {
           words = await _wordImportService.importFromCsv(file.path!);
+        } else if (file.extension?.toLowerCase() == 'json') {
+          // For JSON files, use smart import to extract wordbook info
+          final wordbookInfo = await _wordImportService.extractWordbookInfoFromJson(file.path!);
+          words = wordbookInfo['words'] as List<Word>;
+          
+          // Auto-fill wordbook information from JSON
+          if (!widget.isUnitMode) {
+            _nameController.text = wordbookInfo['name'] as String;
+            if (wordbookInfo['description'] != null) {
+              _descriptionController.text = wordbookInfo['description'] as String;
+            }
+          } 
         } else {
           throw Exception('不支持的文件格式');
         }
@@ -129,20 +141,41 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
         _isSaving = true;
       });
 
-      await _wordbookService.importWordsToWordbook(
-        name: name,
-        words: _importedWords,
-        description: _descriptionController.text.trim().isEmpty 
-            ? null 
-            : _descriptionController.text.trim(),
-        originalFileName: _selectedFileName,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('词书「$name」创建成功')),
+      // Check if this is a JSON import (smart import)
+      if (_selectedFileName?.toLowerCase().endsWith('.json') == true) {
+        // Use smart import for JSON files
+        final wordbook = await _wordbookService.importAndUpdateWordbook(
+          name: name,
+          words: _importedWords,
+          description: _descriptionController.text.trim().isEmpty 
+              ? null 
+              : _descriptionController.text.trim(),
+          originalFileName: _selectedFileName,
         );
-        Navigator.of(context).pop(true);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('词书「${wordbook.name}」已成功导入/更新，包含 ${wordbook.wordCount} 个单词')),
+          );
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        // Use regular import for other file types
+        await _wordbookService.importWordsToWordbook(
+          name: name,
+          words: _importedWords,
+          description: _descriptionController.text.trim().isEmpty 
+              ? null 
+              : _descriptionController.text.trim(),
+          originalFileName: _selectedFileName,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('词书「$name」创建成功')),
+          );
+          Navigator.of(context).pop(true);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -249,7 +282,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '支持 .xlsx、.docx 和 .csv 格式的文件\nExcel格式：单词 | 词性 | 中文 | 等级',
+                      '支持 .xlsx、.docx、.csv 和 .json 格式的文件\nExcel格式：单词 | 词性 | 中文 | 等级\nJSON格式：支持智能导入，自动识别同名词书并更新',
                       style: TextStyle(color: Colors.grey),
                     ),
                     const SizedBox(height: 16),
