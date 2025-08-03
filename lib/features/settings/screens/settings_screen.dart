@@ -8,7 +8,7 @@ import '../../../core/services/config_service.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
-import 'oss_sync_settings_screen.dart';
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -77,12 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: '数据管理',
               icon: Icons.storage,
               children: [
-                SettingsTile(
-                  title: 'OSS云同步',
-                  subtitle: '配置阿里云OSS同步功能',
-                  leading: const Icon(Icons.cloud_sync),
-                  onTap: () => _navigateToOssSettings(),
-                ),
+
                 SettingsTile(
                   title: '清空历史记录',
                   subtitle: '删除所有默写历史记录',
@@ -484,11 +479,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _navigateToOssSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const OssSyncSettingsScreen(),
-      ),
-    );
-  }
+
 }
