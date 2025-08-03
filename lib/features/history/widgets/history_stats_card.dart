@@ -84,7 +84,7 @@ class HistoryStatsCard extends StatelessWidget {
                     context,
                     icon: Icons.trending_up,
                     label: '平均准确率',
-                    value: '${(averageAccuracy * 100).toInt()}%',
+                    value: '${averageAccuracy.toInt()}%',
                     color: _getAccuracyColor(averageAccuracy),
                   ),
                 ),

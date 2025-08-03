@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -31,6 +32,10 @@ class _DictationScreenState extends State<DictationScreen> {
         builder: (context, dictationProvider, appState, child) {
           if (dictationProvider.state == DictationState.idle) {
             return _buildIdleState();
+          }
+
+          if (dictationProvider.state == DictationState.error) {
+            return _buildErrorState(dictationProvider);
           }
 
           if (dictationProvider.state == DictationState.completed) {
@@ -68,6 +73,57 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
+  Widget _buildErrorState(DictationProvider provider) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '默写出现错误',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              provider.errorMessage ?? '未知错误',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: () {
+                    provider.clearError();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('返回'),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    provider.clearError();
+                  },
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDictationInterface(DictationProvider provider, AppStateProvider appState) {
     final currentWord = provider.currentWord;
     if (currentWord == null) {
@@ -90,8 +146,8 @@ class _DictationScreenState extends State<DictationScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Prompt section
-                _buildPromptSection(provider, currentWord),
+                // Prompt section (now includes answer when showing)
+                _buildPromptSection(),
                 
                 const SizedBox(height: 16),
                 
@@ -99,12 +155,6 @@ class _DictationScreenState extends State<DictationScreen> {
                 Expanded(
                   child: _buildCanvasSection(),
                 ),
-                
-                const SizedBox(height: 16),
-                
-                // Answer section (if in review mode)
-                if (provider.state == DictationState.showingAnswer)
-                  _buildAnswerSection(currentWord.answer),
                 
                 const SizedBox(height: 16),
                 
@@ -118,63 +168,115 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  Widget _buildPromptSection(DictationProvider provider, Word currentWord) {
-    final session = provider.currentSession;
-    final dictationDirection = session?.dictationDirection ?? 0;
+  Widget _buildPromptSection() {
+    final provider = context.watch<DictationProvider>();
+    final currentWord = provider.currentWord!;
     
-    // 根据默写方向决定显示内容
-    // 0: 原文→译文 (显示prompt，默写answer)
-    // 1: 译文→原文 (显示answer，默写prompt)
-    final displayText = dictationDirection == 0 ? currentWord.prompt : currentWord.answer;
+    final displayText = provider.currentPromptText;
+    final answerText = provider.currentAnswerText;
     
     return Card(
       elevation: 2,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Icon(
-              Icons.quiz,
-              size: 32,
-              color: Theme.of(context).colorScheme.primary,
+            // 词性和等级信息行
+            Row(
+              children: [
+                Icon(
+                  Icons.quiz,
+                  size: 24,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                
+                // 显示词性和等级信息
+                if (currentWord.partOfSpeech != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      currentWord.partOfSpeech!,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                
+                if (currentWord.partOfSpeech != null && currentWord.level != null)
+                  const SizedBox(width: 8),
+                  
+                if (currentWord.level != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      currentWord.level!,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+              ],
             ),
+            
             const SizedBox(height: 12),
             
-            // 显示词性和等级信息
-            if (currentWord.partOfSpeech != null || currentWord.level != null)
-              Wrap(
-                spacing: 8,
-                children: [
-                  if (currentWord.partOfSpeech != null)
-                    Chip(
-                      label: Text(
-                        currentWord.partOfSpeech!,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+            // 提示内容和答案行
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // 提示内容
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    displayText,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                  if (currentWord.level != null)
-                    Chip(
-                      label: Text(
-                        currentWord.level!,
-                        style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                
+                // 答案显示（如果在批改模式）
+                if (answerText != null) ...[  
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 2,
+                    child: GestureDetector(
+                      onTap: () => _showAnswerFullscreen(answerText),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.green.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              answerText,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
                     ),
+                  ),
                 ],
-              ),
-            
-            if (currentWord.partOfSpeech != null || currentWord.level != null)
-              const SizedBox(height: 12),
-            
-            Text(
-              displayText,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              textAlign: TextAlign.center,
+              ],
             ),
           ],
         ),
@@ -183,6 +285,8 @@ class _DictationScreenState extends State<DictationScreen> {
   }
 
   Widget _buildCanvasSection() {
+    final provider = context.read<DictationProvider>();
+    
     return Card(
       elevation: 2,
       child: Column(
@@ -217,6 +321,8 @@ class _DictationScreenState extends State<DictationScreen> {
               child: HandwritingCanvas(
                 key: _canvasKey,
                 backgroundColor: Theme.of(context).colorScheme.surface,
+                isAnnotationMode: provider.isAnnotationMode,
+                backgroundImagePath: provider.isAnnotationMode ? provider.originalImagePath : null,
               ),
             ),
           ),
@@ -225,41 +331,7 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  Widget _buildAnswerSection(String answer) {
-    return Card(
-      elevation: 2,
-      color: Theme.of(context).colorScheme.secondaryContainer,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Icon(
-              Icons.lightbulb,
-              size: 32,
-              color: Theme.of(context).colorScheme.onSecondaryContainer,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '正确答案：',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              answer,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSecondaryContainer,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildControlButtons(DictationProvider provider) {
     if (provider.state == DictationState.inProgress) {
@@ -289,7 +361,7 @@ class _DictationScreenState extends State<DictationScreen> {
           ),
         ],
       );
-    } else if (provider.state == DictationState.showingAnswer) {
+    } else if (provider.state == DictationState.showingAnswer || provider.state == DictationState.judging) {
       return Row(
         children: [
           Expanded(
@@ -327,16 +399,27 @@ class _DictationScreenState extends State<DictationScreen> {
     });
 
     try {
-      // Save canvas image
+      // Save original canvas image
       String? imagePath;
-       final canvas = _canvasKey.currentState as dynamic;
-       if (canvas != null) {
-         imagePath = await canvas.saveAsImage('dictation_${DateTime.now().millisecondsSinceEpoch}.png');
-       }
+      final canvas = _canvasKey.currentState as dynamic;
+      if (canvas != null) {
+        imagePath = await canvas.saveAsImage('dictation_${DateTime.now().millisecondsSinceEpoch}.png');
+      }
       
       if (imagePath != null) {
+        // 保存原始画板路径
         provider.setOriginalImagePath(imagePath);
+        
+        // 提交答案
         await provider.submitAnswer();
+        
+        // 清空画板准备批改
+        if (canvas != null) {
+          canvas.clearCanvas();
+        }
+        
+        // 进入批改模式
+        provider.enterAnnotationMode();
       } else {
         throw Exception('保存手写内容失败');
       }
@@ -359,17 +442,54 @@ class _DictationScreenState extends State<DictationScreen> {
   }
 
   Future<void> _markCorrect(DictationProvider provider) async {
+    // 保存批改后的画板
+    await _saveAnnotatedImage(provider);
     await provider.recordResult(true);
-    _nextWord(provider);
+    // recordResult already calls _showNextWord, no need to call nextWord again
+    (_canvasKey.currentState as dynamic)?.clear();
   }
 
   Future<void> _markIncorrect(DictationProvider provider) async {
+    // 保存批改后的画板
+    await _saveAnnotatedImage(provider);
     await provider.recordResult(false);
-    _nextWord(provider);
+    // recordResult already calls _showNextWord, no need to call nextWord again
+    (_canvasKey.currentState as dynamic)?.clear();
+  }
+
+  Future<void> _saveAnnotatedImage(DictationProvider provider) async {
+    try {
+      final canvas = _canvasKey.currentState as dynamic;
+      if (canvas != null) {
+        final imagePath = await canvas.saveAsImage('annotated_${DateTime.now().millisecondsSinceEpoch}.png');
+        if (imagePath != null) {
+          provider.setAnnotatedImagePath(imagePath);
+        }
+      }
+    } catch (e) {
+      // 批改图片保存失败不影响主流程
+      debugPrint('保存批改图片失败: $e');
+    }
   }
 
   void _nextWord(DictationProvider provider) {
-    (_canvasKey.currentState as dynamic)?.clear();
+    // 清空画板
+    final canvas = _canvasKey.currentState as dynamic;
+    if (canvas != null) {
+      canvas.clear();
+    }
+    
+    // 重置批改模式状态
+    if (provider.isAnnotationMode) {
+      provider.setOriginalImagePath(null);
+      provider.setAnnotatedImagePath(null);
+    }
+    
+    // 重置画笔颜色为黑色
+    if (canvas != null) {
+      canvas.setStrokeColor(Colors.black);
+    }
+    
     provider.nextWord();
   }
 
@@ -440,5 +560,90 @@ class _DictationScreenState extends State<DictationScreen> {
 
   void _retryIncorrectWords(DictationProvider provider) {
     provider.retryIncorrectWords();
+  }
+
+  void _showAnswerFullscreen(String answerText) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            color: Colors.black54,
+            child: Center(
+              child: Container(
+                margin: const EdgeInsets.all(32),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '正确答案',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close),
+                          color: Colors.grey.shade600,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.green.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Text(
+                        answerText,
+                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '点击任意位置关闭',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

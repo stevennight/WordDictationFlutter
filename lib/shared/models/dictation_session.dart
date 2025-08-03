@@ -92,8 +92,7 @@ class DictationSession {
   bool get isCompleted => status == SessionStatus.completed;
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
+    final map = <String, dynamic>{
       'session_id': sessionId,
       'word_file_name': wordFileName,
       'mode': mode.index,
@@ -108,6 +107,13 @@ class DictationSession {
       'original_session_id': originalSessionId,
       'dictation_direction': dictationDirection,
     };
+    
+    // Only include id if it's not null (for updates)
+    if (id != null) {
+      map['id'] = id;
+    }
+    
+    return map;
   }
 
   factory DictationSession.fromMap(Map<String, dynamic> map) {

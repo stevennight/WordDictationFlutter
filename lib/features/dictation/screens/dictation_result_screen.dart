@@ -8,6 +8,8 @@ import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/dictation_service.dart';
 import '../../../core/services/word_service.dart';
+import '../../history/screens/history_detail_screen.dart';
+import '../../../main.dart';
 
 class DictationResultScreen extends StatefulWidget {
   final DictationSession session;
@@ -209,7 +211,7 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${(accuracy * 100).toInt()}%',
+                  '${accuracy.toInt()}%',
                   style: const TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -572,23 +574,39 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (hasIncorrectWords)
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _retryIncorrectWords,
-                icon: const Icon(Icons.refresh),
-                label: const Text('重做错题'),
+          // 第一行：查看详情按钮
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _viewDetails,
+              icon: const Icon(Icons.visibility),
+              label: const Text('查看详情'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 第二行：重做错题和返回首页
+          Row(
+            children: [
+              if (hasIncorrectWords)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _retryIncorrectWords,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('重做错题'),
+                  ),
+                ),
+              if (hasIncorrectWords) const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _returnToHome,
+                  icon: const Icon(Icons.home),
+                  label: const Text('返回首页'),
+                ),
               ),
-            ),
-          if (hasIncorrectWords) const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _returnToHome,
-              icon: const Icon(Icons.home),
-              label: const Text('返回首页'),
-            ),
+            ],
           ),
         ],
       ),
@@ -635,6 +653,16 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
     }
   }
 
+  void _viewDetails() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => HistoryDetailScreen(
+          sessionId: widget.session.sessionId,
+        ),
+      ),
+    );
+  }
+
   void _retryIncorrectWords() {
     final dictationProvider = context.read<DictationProvider>();
     dictationProvider.retryIncorrectWords();
@@ -648,6 +676,10 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
     dictationProvider.finishSession();
     appState.exitDictationMode();
     
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    // Use pushAndRemoveUntil to ensure we return to the main screen
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const MainScreen()),
+      (route) => false,
+    );
   }
 }

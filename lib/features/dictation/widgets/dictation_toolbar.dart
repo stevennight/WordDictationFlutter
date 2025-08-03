@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../shared/widgets/handwriting_canvas.dart';
 import '../../../shared/providers/theme_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/enums/pen_mode.dart';
 
 class DictationToolbar extends StatefulWidget {
@@ -29,85 +30,90 @@ class _DictationToolbarState extends State<DictationToolbar> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Mode and action buttons
-          Row(
+    return Consumer<DictationProvider>(
+      builder: (context, dictationProvider, child) {
+        // 根据批改模式设置固定颜色
+        final isAnnotationMode = dictationProvider.isAnnotationMode;
+        final newPenColor = isAnnotationMode ? Colors.red : Colors.black;
+        
+        // 如果颜色发生变化，更新画笔颜色
+        if (_penColor != newPenColor) {
+          _penColor = newPenColor;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _updateCanvasSettings();
+          });
+        }
+        
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Pen mode button
-              _buildModeButton(
-                icon: Icons.edit,
-                label: '画笔',
-                mode: PenMode.pen,
-                isSelected: _currentMode == PenMode.pen,
-                onTap: () => _setMode(PenMode.pen),
+              // Mode and action buttons
+              Row(
+                children: [
+                  // Pen mode button
+                  _buildModeButton(
+                    icon: Icons.edit,
+                    label: '画笔',
+                    mode: PenMode.pen,
+                    isSelected: _currentMode == PenMode.pen,
+                    onTap: () => _setMode(PenMode.pen),
+                  ),
+                  const SizedBox(width: 8),
+                  
+                  // Eraser mode button
+                  _buildModeButton(
+                    icon: Icons.auto_fix_high,
+                    label: '橡皮',
+                    mode: PenMode.eraser,
+                    isSelected: _currentMode == PenMode.eraser,
+                    onTap: () => _setMode(PenMode.eraser),
+                  ),
+                  
+                  const Spacer(),
+                  
+                  // Undo button
+                  IconButton(
+                    onPressed: widget.onUndo,
+                    icon: const Icon(Icons.undo),
+                    tooltip: '撤销',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  
+                  // Clear button
+                  IconButton(
+                    onPressed: () => _showClearConfirmation(),
+                    icon: const Icon(Icons.clear_all),
+                    tooltip: '清空',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
               
-              // Eraser mode button
-              _buildModeButton(
-                icon: Icons.auto_fix_high,
-                label: '橡皮',
-                mode: PenMode.eraser,
-                isSelected: _currentMode == PenMode.eraser,
-                onTap: () => _setMode(PenMode.eraser),
-              ),
+              const SizedBox(height: 8),
               
-              const Spacer(),
-              
-              // Undo button
-              IconButton(
-                onPressed: widget.onUndo,
-                icon: const Icon(Icons.undo),
-                tooltip: '撤销',
-                style: IconButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.surface,
-                ),
-              ),
-              const SizedBox(width: 8),
-              
-              // Clear button
-              IconButton(
-                onPressed: () => _showClearConfirmation(),
-                icon: const Icon(Icons.clear_all),
-                tooltip: '清空',
-                style: IconButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.surface,
-                ),
+              // Size control only (color is fixed based on mode)
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSizeControl(),
+                  ),
+                ],
               ),
             ],
           ),
-          
-          const SizedBox(height: 8),
-          
-          // Size and color controls
-          Row(
-            children: [
-              // Size control
-              Expanded(
-                flex: 3,
-                child: _buildSizeControl(),
-              ),
-              
-              const SizedBox(width: 16),
-              
-              // Color control (only for pen mode)
-              if (_currentMode == PenMode.pen)
-                Expanded(
-                  flex: 2,
-                  child: _buildColorControl(),
-                ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -285,6 +291,14 @@ class _DictationToolbarState extends State<DictationToolbar> {
     setState(() {
       _currentMode = mode;
     });
+    
+    if (mode == PenMode.pen) {
+      // 根据批改模式设置颜色
+      final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
+      final isAnnotationMode = dictationProvider.isAnnotationMode;
+      _penColor = isAnnotationMode ? Colors.red : Colors.black;
+    }
+    
     _updateCanvasSettings();
   }
 

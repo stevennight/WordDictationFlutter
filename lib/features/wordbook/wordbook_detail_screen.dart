@@ -4,6 +4,7 @@ import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/dictation_session.dart';
 import '../../shared/providers/dictation_provider.dart';
+import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../core/services/wordbook_service.dart';
 import 'unit_management_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
@@ -171,33 +172,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       return;
     }
 
-    // Step 1: Select quantity
-    final quantity = await showDialog<int>(
+    // Show unified dictation config dialog
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => WordbookQuantitySelectionDialog(
+      builder: (context) => UnifiedDictationConfigDialog(
         totalWords: wordsToUse.length,
-        unitName: _selectedUnit,
-      ),
-    );
-
-    if (quantity == null) return;
-
-    // Step 2: Select mode and order
-    final result = await showDialog<Map<String, int>>(
-      context: context,
-      builder: (context) => DictationModeSelectionDialog(
-        quantity: quantity == -1 ? wordsToUse.length : quantity,
-        unitName: _selectedUnit,
+        sourceName: _selectedUnit ?? widget.wordbook.name,
+        showQuantitySelection: true,
       ),
     );
 
     if (result == null) return;
 
-    final mode = result['mode']!;
-    final order = result['order']!;
-    final finalQuantity = quantity == -1 ? wordsToUse.length : quantity;
+    final mode = result['mode'] as int;
+    final order = result['order'] as int;
+    final quantity = result['quantity'] as int;
 
-    _startFilteredDictation(mode, order, wordsToUse, finalQuantity);
+    _startFilteredDictation(mode, order, wordsToUse, quantity);
   }
 
 
@@ -566,33 +557,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       return;
     }
 
-    // Step 1: Select quantity
-    final quantity = await showDialog<int>(
+    // Show unified dictation config dialog
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => WordbookQuantitySelectionDialog(
+      builder: (context) => UnifiedDictationConfigDialog(
         totalWords: unitWords.length,
-        unitName: unitName,
-      ),
-    );
-
-    if (quantity == null) return;
-
-    // Step 2: Select mode and order
-    final result = await showDialog<Map<String, int>>(
-      context: context,
-      builder: (context) => DictationModeSelectionDialog(
-        quantity: quantity == -1 ? unitWords.length : quantity,
-        unitName: unitName,
+        sourceName: unitName,
+        showQuantitySelection: true,
       ),
     );
 
     if (result == null) return;
 
-    final mode = result['mode']!;
-    final order = result['order']!;
-    final finalQuantity = quantity == -1 ? unitWords.length : quantity;
+    final mode = result['mode'] as int;
+    final order = result['order'] as int;
+    final quantity = result['quantity'] as int;
 
-    _startUnitDictationWithCount(mode, order, unitWords, finalQuantity);
+    _startUnitDictationWithCount(mode, order, unitWords, quantity);
   }
 
 

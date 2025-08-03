@@ -59,7 +59,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       child: HistoryStatsCard(
                         totalSessions: historyProvider.sessions.length,
                         completedSessions: historyProvider.sessions.where((s) => s.isCompleted).length,
-                        averageAccuracy: historyProvider.sessions.isEmpty ? 0.0 : historyProvider.sessions.map((s) => s.accuracy).reduce((a, b) => a + b) / historyProvider.sessions.length,
+                        averageAccuracy: historyProvider.sessions.where((s) => s.isCompleted).isEmpty ? 0.0 : historyProvider.sessions.where((s) => s.isCompleted).map((s) => s.accuracy).reduce((a, b) => a + b) / historyProvider.sessions.where((s) => s.isCompleted).length,
                         totalTime: historyProvider.sessions.fold(Duration.zero, (total, session) => total + (session.duration ?? Duration.zero)),
                       ),
                     ),
@@ -331,7 +331,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   void _navigateToDetail(DictationSession session) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => HistoryDetailScreen(sessionId: session.id.toString()),
+        builder: (context) => HistoryDetailScreen(sessionId: session.sessionId),
       ),
     );
   }

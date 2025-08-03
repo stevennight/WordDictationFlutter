@@ -234,7 +234,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
                 Expanded(
                   child: _buildStatCard(
                     '准确率',
-                    '${(accuracy * 100).toInt()}%',
+                    '${accuracy.toInt()}%',
                     Icons.percent,
                     _getAccuracyColor(accuracy),
                   ),

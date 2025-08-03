@@ -71,7 +71,7 @@ class HistoryProvider with ChangeNotifier {
       final db = await _dbHelper.database;
       final maps = await db.query(
         'dictation_sessions',
-        where: 'id = ?',
+        where: 'session_id = ?',
         whereArgs: [sessionId],
       );
       

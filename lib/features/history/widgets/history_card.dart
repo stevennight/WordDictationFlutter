@@ -135,7 +135,7 @@ class HistoryCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       Text(
-                        '${(accuracy * 100).toInt()}%',
+                        '${accuracy.toInt()}%',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: _getAccuracyColor(accuracy),

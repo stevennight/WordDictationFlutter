@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../enums/pen_mode.dart';
@@ -16,11 +17,13 @@ class DrawingPoint {
   final Offset offset;
   final Paint paint;
   final bool isEraser;
+  final bool isAnnotation; // 标识是否为批改笔迹
 
   DrawingPoint({
     required this.offset,
     required this.paint,
     this.isEraser = false,
+    this.isAnnotation = false,
   });
 }
 
@@ -30,6 +33,7 @@ class HandwritingCanvas extends StatefulWidget {
   final Color backgroundColor;
   final Function(String?)? onImageSaved;
   final bool isAnnotationMode;
+  final String? backgroundImagePath;
 
   const HandwritingCanvas({
     super.key,
@@ -38,6 +42,7 @@ class HandwritingCanvas extends StatefulWidget {
     this.backgroundColor = Colors.white,
     this.onImageSaved,
     this.isAnnotationMode = false,
+    this.backgroundImagePath,
   });
 
   @override
@@ -48,11 +53,52 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   final GlobalKey _canvasKey = GlobalKey();
   List<List<DrawingPoint>> _strokes = [];
   List<DrawingPoint> _currentStroke = [];
-  
   DrawingMode _drawingMode = DrawingMode.pen;
-  double _strokeWidth = 3.0;
+  double _strokeWidth = 2.0;
   Color _strokeColor = Colors.black;
   Color _annotationColor = Colors.red;
+  bool _isErasing = false;
+  ui.Image? _backgroundImage;
+  
+  @override
+  void initState() {
+    super.initState();
+    if (widget.backgroundImagePath != null) {
+      _loadBackgroundImage();
+    }
+  }
+  
+  @override
+  void didUpdateWidget(HandwritingCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.backgroundImagePath != oldWidget.backgroundImagePath) {
+      if (widget.backgroundImagePath != null) {
+        _loadBackgroundImage();
+      } else {
+        setState(() {
+          _backgroundImage = null;
+        });
+      }
+    }
+  }
+  
+  void _loadBackgroundImage() async {
+    if (widget.backgroundImagePath == null) return;
+    
+    try {
+      final File imageFile = File(widget.backgroundImagePath!);
+      if (await imageFile.exists()) {
+        final Uint8List bytes = await imageFile.readAsBytes();
+        final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+        final ui.FrameInfo frameInfo = await codec.getNextFrame();
+        setState(() {
+          _backgroundImage = frameInfo.image;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading background image: $e');
+    }
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -77,6 +123,7 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
                 strokes: _strokes,
                 currentStroke: _currentStroke,
                 backgroundColor: widget.backgroundColor,
+                backgroundImage: _backgroundImage,
               ),
               size: Size.infinite,
             ),
@@ -90,19 +137,27 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     final RenderBox renderBox = context.findRenderObject() as RenderBox;
     final localPosition = renderBox.globalToLocal(details.globalPosition);
     
-    _currentStroke = [];
-    _addPoint(localPosition);
+    if (_drawingMode == DrawingMode.eraser) {
+      _eraseAtPoint(localPosition);
+    } else {
+      _currentStroke = [];
+      _addPoint(localPosition);
+    }
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
     final RenderBox renderBox = context.findRenderObject() as RenderBox;
     final localPosition = renderBox.globalToLocal(details.globalPosition);
     
-    _addPoint(localPosition);
+    if (_drawingMode == DrawingMode.eraser) {
+      _eraseAtPoint(localPosition);
+    } else {
+      _addPoint(localPosition);
+    }
   }
 
   void _onPanEnd(DragEndDetails details) {
-    if (_currentStroke.isNotEmpty) {
+    if (_drawingMode != DrawingMode.eraser && _currentStroke.isNotEmpty) {
       setState(() {
         _strokes.add(List.from(_currentStroke));
         _currentStroke = [];
@@ -118,19 +173,54 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
-    if (_drawingMode == DrawingMode.eraser) {
-      paint.blendMode = BlendMode.clear;
-    }
-
     final point = DrawingPoint(
       offset: offset,
       paint: paint,
-      isEraser: _drawingMode == DrawingMode.eraser,
+      isEraser: false,
+      isAnnotation: widget.isAnnotationMode, // 标记是否为批改笔迹
     );
 
     setState(() {
       _currentStroke.add(point);
     });
+  }
+
+  void _eraseAtPoint(Offset point) {
+    final eraserRadius = _strokeWidth;
+    final List<int> strokesToRemove = [];
+    
+    for (int i = 0; i < _strokes.length; i++) {
+      final stroke = _strokes[i];
+      if (stroke.isEmpty) continue;
+      
+      // 在批改模式下，只能擦除批改笔迹
+      if (widget.isAnnotationMode && !stroke.first.isAnnotation) {
+        continue;
+      }
+      
+      // 检查笔迹是否与橡皮擦区域相交
+      bool shouldErase = false;
+      for (final strokePoint in stroke) {
+        final distance = (strokePoint.offset - point).distance;
+        if (distance <= eraserRadius) {
+          shouldErase = true;
+          break;
+        }
+      }
+      
+      if (shouldErase) {
+        strokesToRemove.add(i);
+      }
+    }
+    
+    if (strokesToRemove.isNotEmpty) {
+      setState(() {
+        // 从后往前删除，避免索引问题
+        for (int i = strokesToRemove.length - 1; i >= 0; i--) {
+          _strokes.removeAt(strokesToRemove[i]);
+        }
+      });
+    }
   }
 
   // Public methods for controlling the canvas
@@ -184,7 +274,14 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
 
   void clearCanvas() {
     setState(() {
-      _strokes.clear();
+      if (widget.isAnnotationMode) {
+        // 批改模式下只清空批改笔迹
+        _strokes.removeWhere((stroke) => 
+          stroke.isNotEmpty && stroke.first.isAnnotation);
+      } else {
+        // 默写模式下清空所有笔迹
+        _strokes.clear();
+      }
       _currentStroke.clear();
     });
   }
@@ -201,7 +298,18 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   void undo() {
     if (_strokes.isNotEmpty) {
       setState(() {
-        _strokes.removeLast();
+        if (widget.isAnnotationMode) {
+          // 批改模式下只能撤销批改笔迹
+          for (int i = _strokes.length - 1; i >= 0; i--) {
+            if (_strokes[i].isNotEmpty && _strokes[i].first.isAnnotation) {
+              _strokes.removeAt(i);
+              break;
+            }
+          }
+        } else {
+          // 默写模式下可以撤销所有笔迹
+          _strokes.removeLast();
+        }
       });
     }
   }
@@ -251,11 +359,13 @@ class HandwritingPainter extends CustomPainter {
   final List<List<DrawingPoint>> strokes;
   final List<DrawingPoint> currentStroke;
   final Color backgroundColor;
+  final ui.Image? backgroundImage;
 
   HandwritingPainter({
     required this.strokes,
     required this.currentStroke,
     required this.backgroundColor,
+    this.backgroundImage,
   });
 
   @override
@@ -263,6 +373,11 @@ class HandwritingPainter extends CustomPainter {
     // Fill background
     final backgroundPaint = Paint()..color = backgroundColor;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
+
+    // Draw background image if provided
+    if (backgroundImage != null) {
+      _drawBackgroundImage(canvas, size);
+    }
 
     // Draw completed strokes
     for (final stroke in strokes) {
@@ -272,6 +387,30 @@ class HandwritingPainter extends CustomPainter {
     // Draw current stroke
     if (currentStroke.isNotEmpty) {
       _drawStroke(canvas, currentStroke);
+    }
+  }
+
+  void _drawBackgroundImage(Canvas canvas, Size size) {
+    if (backgroundImage != null) {
+      final double imageWidth = backgroundImage!.width.toDouble();
+      final double imageHeight = backgroundImage!.height.toDouble();
+      
+      // Calculate scale to fit the image within the canvas while maintaining aspect ratio
+      final double scaleX = size.width / imageWidth;
+      final double scaleY = size.height / imageHeight;
+      final double scale = scaleX < scaleY ? scaleX : scaleY;
+      
+      final double scaledWidth = imageWidth * scale;
+      final double scaledHeight = imageHeight * scale;
+      
+      // Center the image
+      final double offsetX = (size.width - scaledWidth) / 2;
+      final double offsetY = (size.height - scaledHeight) / 2;
+      
+      final Rect srcRect = Rect.fromLTWH(0, 0, imageWidth, imageHeight);
+      final Rect dstRect = Rect.fromLTWH(offsetX, offsetY, scaledWidth, scaledHeight);
+      
+      canvas.drawImageRect(backgroundImage!, srcRect, dstRect, Paint());
     }
   }
 

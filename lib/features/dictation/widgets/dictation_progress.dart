@@ -91,7 +91,7 @@ class DictationProgress extends StatelessWidget {
                     color: Colors.green,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: _buildStatCard(
                     context,
@@ -101,13 +101,13 @@ class DictationProgress extends StatelessWidget {
                     color: Colors.red,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: _buildStatCard(
                     context,
                     icon: Icons.percent,
                     label: '准确率',
-                    value: '${(accuracy * 100).toInt()}%',
+                    value: '${(accuracy * 100).round()}%',
                     color: _getAccuracyColor(accuracy),
                   ),
                 ),
@@ -127,32 +127,27 @@ class DictationProgress extends StatelessWidget {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: color.withOpacity(0.3),
         ),
       ),
-      child: Column(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
-            size: 20,
+            size: 14,
             color: color,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(width: 4),
           Text(
-            value,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          Text(
-            label,
+            '$label: $value',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w500,
               color: color,
             ),
           ),

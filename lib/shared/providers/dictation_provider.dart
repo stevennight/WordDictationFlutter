@@ -49,6 +49,18 @@ class DictationProvider extends ChangeNotifier {
   String? get annotatedImagePath => _annotatedImagePath;
   bool get isAnnotationMode => _isAnnotationMode;
   
+  String? get currentAnswerText {
+    if (_currentWord == null || (_state != DictationState.judging)) return null;
+    final dictationDirection = _currentSession?.dictationDirection ?? 0;
+    return dictationDirection == 0 ? _currentWord!.answer : _currentWord!.prompt;
+  }
+  
+  String get currentPromptText {
+    if (_currentWord == null) return '';
+    final dictationDirection = _currentSession?.dictationDirection ?? 0;
+    return dictationDirection == 0 ? _currentWord!.prompt : _currentWord!.answer;
+  }
+  
   // Computed properties
   bool get hasWords => _words.isNotEmpty;
   bool get hasCurrentWord => _currentWord != null;
@@ -244,7 +256,7 @@ class DictationProvider extends ChangeNotifier {
       // Save result to database
       await _dictationService.saveResult(result);
       
-      // Update session
+      // Update session - increment index and counts
       _currentSession = _currentSession!.copyWith(
         currentWordIndex: _currentSession!.currentWordIndex + 1,
         correctCount: isCorrect ? _currentSession!.correctCount + 1 : _currentSession!.correctCount,
@@ -253,6 +265,7 @@ class DictationProvider extends ChangeNotifier {
       
       await _dictationService.updateSession(_currentSession!);
       
+      // Show next word without incrementing index again
       _showNextWord();
     } catch (e) {
       _setError('记录结果失败: $e');
@@ -307,11 +320,7 @@ class DictationProvider extends ChangeNotifier {
   void nextWord() {
     if (_currentSession == null) return;
     
-    final nextIndex = _currentSession!.currentWordIndex + 1;
-    _currentSession = _currentSession!.copyWith(
-      currentWordIndex: nextIndex,
-    );
-    
+    // Don't increment index here as it's already incremented in recordResult
     _showNextWord();
   }
   

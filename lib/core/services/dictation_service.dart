@@ -54,7 +54,7 @@ class DictationService {
       'session_words',
       where: 'session_id = ?',
       whereArgs: [sessionId],
-      orderBy: 'word_index ASC',
+      orderBy: 'word_order ASC',
     );
   }
 

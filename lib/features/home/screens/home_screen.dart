@@ -7,6 +7,7 @@ import '../../../shared/models/wordbook.dart';
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
+import '../../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../../core/services/word_import_service.dart';
 import '../../../core/services/wordbook_service.dart';
 import '../widgets/mode_selection_card.dart';
@@ -573,36 +574,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final dictationProvider = context.read<DictationProvider>();
     await dictationProvider.loadWords(words);
 
-    _setStatus('已加载：$sourceName，共 ${words.length} 个单词');
+    // _setStatus('已加载：$sourceName，共 ${words.length} 个单词');
   }
 
   Future<void> _startDictationWithSettings() async {
     if (_loadedWords.isEmpty) return;
 
-    // Step 1: Show quantity selection dialog
-    final quantity = await showDialog<int>(
+    // Show unified dictation config dialog
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => WordbookQuantitySelectionDialog(
+      builder: (context) => UnifiedDictationConfigDialog(
         totalWords: _loadedWords.length,
+        sourceName: _fileName ?? '已导入单词',
+        showQuantitySelection: true,
       ),
     );
 
-    if (quantity == null) return;
+    if (result == null) return;
 
-    // Step 2: Show mode and order selection dialog
-    final modeResult = await showDialog<Map<String, int>>(
-      context: context,
-      builder: (context) => DictationModeSelectionDialog(
-        quantity: quantity == -1 ? _loadedWords.length : quantity,
-        unitName: _fileName ?? '已导入单词',
-      ),
-    );
-
-    if (modeResult == null) return;
-
-    final mode = modeResult['mode']!;
-    final order = modeResult['order']!;
-    final finalQuantity = quantity == -1 ? _loadedWords.length : quantity;
+    final mode = result['mode'] as int;
+    final order = result['order'] as int;
+    final quantity = result['quantity'] as int;
 
     try {
       final dictationProvider = context.read<DictationProvider>();
@@ -614,13 +606,13 @@ class _HomeScreenState extends State<HomeScreen> {
         wordbookName: _fileName ?? '已导入单词',
         mode: mode,
         order: order,
-        count: finalQuantity,
+        count: quantity,
       );
 
       // Enter dictation mode
       appState.enterDictationMode(
         wordFileName: _fileName ?? '已导入单词',
-        totalWords: finalQuantity,
+        totalWords: quantity,
       );
     } catch (e) {
       _setStatus('开始默写失败: $e');
@@ -630,20 +622,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startDictation(DictationMode mode) async {
     if (_loadedWords.isEmpty) return;
 
-    // Show mode selection dialog
+    // Show unified dictation config dialog
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => HomeDictationModeDialog(
+      builder: (context) => UnifiedDictationConfigDialog(
         totalWords: _loadedWords.length,
+        sourceName: _fileName ?? '未知文件',
+        showQuantitySelection: true,
         initialMode: mode,
       ),
     );
 
     if (result == null) return;
 
-    final selectedMode = result['mode'] as DictationMode;
     final dictationDirection = result['mode'] as int; // 获取默写方向
+    final order = result['order'] as int;
     final quantity = result['quantity'] as int;
+    final selectedMode = order == 0 ? DictationMode.sequential : DictationMode.random;
  
     try {
       final dictationProvider = context.read<DictationProvider>();
@@ -652,7 +647,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Start dictation
       await dictationProvider.startDictation(
         mode: selectedMode,
-        customQuantity: quantity == -1 ? null : quantity,
+        customQuantity: quantity,
         wordFileName: _fileName,
         dictationDirection: dictationDirection,
       );
@@ -660,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Enter dictation mode
       appState.enterDictationMode(
         wordFileName: _fileName ?? '未知文件',
-        totalWords: quantity == -1 ? _loadedWords.length : quantity,
+        totalWords: quantity,
       );
     } catch (e) {
       _setStatus('开始默写失败: $e');
