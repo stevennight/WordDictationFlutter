@@ -77,6 +77,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('首页'),
+      ),
       body: Consumer2<DictationProvider, AppStateProvider>(
         builder: (context, dictationProvider, appState, child) {
           return SingleChildScrollView(

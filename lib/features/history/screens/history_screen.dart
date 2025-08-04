@@ -42,6 +42,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('历史记录'),
+      ),
       body: Consumer<HistoryProvider>(
         builder: (context, historyProvider, child) {
           if (historyProvider.isLoading) {
