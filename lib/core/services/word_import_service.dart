@@ -4,11 +4,196 @@ import 'dart:typed_data';
 import 'dart:math' as Math;
 import 'package:uuid/uuid.dart';
 import 'package:excel/excel.dart';
+import 'package:archive/archive.dart';
 
 import '../../shared/models/word.dart';
 
 class WordImportService {
   static const Uuid _uuid = Uuid();
+  
+  /// WPS compatibility preprocessing for Excel bytes
+  Uint8List _preprocessWpsBytes(Uint8List bytes) {
+    try {
+      // First, let's examine the actual content to understand the format
+      String content = utf8.decode(bytes, allowMalformed: true);
+      print('开始WPS预处理，原始内容长度: ${content.length}');
+      
+      // Debug: Check if this is actually an Excel file or ZIP archive
+      if (content.startsWith('PK')) {
+        print('检测到ZIP格式的Excel文件，需要解压处理');
+        // This is a ZIP-based Excel file, we need different handling
+        return _preprocessZipBasedExcel(bytes);
+      }
+      
+      // For XML-based content, continue with existing logic
+      int replacements = 0;
+      String originalContent = content;
+      
+      // Strategy 1: More comprehensive numFmtId pattern matching
+       content = content.replaceAllMapped(
+         RegExp(r'numFmtId\s*=\s*["\x27]41["\x27]'),
+         (match) {
+           replacements++;
+           return 'numFmtId="0"'; // Use General format
+         },
+       );
+      print('替换了 $replacements 个 numFmtId="41" 实例');
+      
+      // Strategy 2: Remove entire numFmt elements with problematic IDs
+       content = content.replaceAll(
+         RegExp(r'<numFmt[^>]*numFmtId\s*=\s*["\x27]41["\x27][^>]*/?>', dotAll: true),
+         '',
+       );
+      
+      // Strategy 3: Handle other problematic numFmtId values
+       content = content.replaceAllMapped(
+         RegExp(r'numFmtId\s*=\s*["\x27]([0-9]+)["\x27]'),
+         (match) {
+           int id = int.tryParse(match.group(1) ?? '0') ?? 0;
+           if (id == 41 || (id > 0 && id < 164 && id != 14 && id != 22)) {
+             // Replace problematic IDs
+             return 'numFmtId="0"';
+           }
+           return match.group(0) ?? '';
+         },
+       );
+      
+      // Strategy 4: Completely remove numFmts section if it exists
+      content = content.replaceAll(
+        RegExp(r'<numFmts[^>]*>.*?</numFmts>', dotAll: true),
+        '',
+      );
+      
+      print('WPS预处理完成，处理后内容长度: ${content.length}');
+      return Uint8List.fromList(utf8.encode(content));
+    } catch (e) {
+      print('WPS预处理异常: $e');
+      return bytes; // Return original bytes if preprocessing fails
+    }
+  }
+  
+  /// Handle ZIP-based Excel files (XLSX format)
+  Uint8List _preprocessZipBasedExcel(Uint8List bytes) {
+    try {
+      // Decode the ZIP archive
+      final archive = ZipDecoder().decodeBytes(bytes);
+      
+      // Find and modify xl/styles.xml
+      List<ArchiveFile> modifiedFiles = [];
+      bool stylesModified = false;
+      
+      for (final file in archive.files) {
+        if (file.name == 'xl/styles.xml' && file.isFile) {
+          // Get the content of styles.xml
+          final content = utf8.decode(file.content as List<int>);
+          
+          // Apply WPS compatibility fixes to styles.xml
+          String modifiedContent = _fixStylesXmlContent(content);
+          
+          if (modifiedContent != content) {
+             // Create a new ArchiveFile with modified content
+             final newContent = utf8.encode(modifiedContent);
+             final newFile = ArchiveFile(file.name, newContent.length, newContent);
+             modifiedFiles.add(newFile);
+             stylesModified = true;
+           } else {
+             modifiedFiles.add(file);
+           }
+        } else {
+          modifiedFiles.add(file);
+        }
+      }
+      
+      if (stylesModified) {
+        // Create a new archive with modified files
+        final newArchive = Archive();
+        for (final file in modifiedFiles) {
+          newArchive.addFile(file);
+        }
+        
+        // Repackage the ZIP
+        final encoder = ZipEncoder();
+        final newZipBytes = encoder.encode(newArchive);
+        return Uint8List.fromList(newZipBytes ?? bytes);
+      } else {
+        return bytes;
+      }
+    } catch (e) {
+      print('ZIP预处理失败: $e');
+      return bytes;
+    }
+  }
+  
+  /// Fix numFmtId issues in styles.xml content
+  String _fixStylesXmlContent(String content) {
+    try {
+      String modifiedContent = content;
+      
+      // Strategy 1: Simply remove the entire numFmts section if it exists
+      if (content.contains('<numFmts')) {
+        modifiedContent = modifiedContent.replaceAll(
+          RegExp(r'<numFmts[^>]*>.*?</numFmts>', dotAll: true),
+          '',
+        );
+      }
+      
+      // Strategy 2: Replace any remaining numFmtId references with default (General format)
+      modifiedContent = modifiedContent.replaceAllMapped(
+        RegExp(r'numFmtId\s*=\s*["\x27]([0-9]+)["\x27]'),
+        (match) {
+          int id = int.tryParse(match.group(1) ?? '0') ?? 0;
+          // Only allow built-in format IDs (0-22)
+          if (id > 22) {
+            return 'numFmtId="0"'; // General format
+          }
+          return match.group(0) ?? '';
+        },
+      );
+      
+      return modifiedContent;
+    } catch (e) {
+      print('修复styles.xml时出错: $e');
+      return content; // Return original content if fixing fails
+    }
+  }
+  
+  /// Enhanced WPS-compatible Excel decoding
+  Excel? _decodeWithWpsCompatibility(Uint8List bytes) {
+    try {
+      // Strategy: Try multiple Excel creation approaches for WPS files
+      
+      // Approach 1: Try with preprocessed bytes first (most likely to work)
+      try {
+        final processedBytes = _preprocessWpsBytes(bytes);
+        final excel = Excel.decodeBytes(processedBytes);
+        return excel;
+      } catch (e) {
+        // Continue to next approach
+      }
+      
+      // Approach 2: Standard decode with error catching
+      try {
+        return Excel.decodeBytes(bytes);
+      } catch (e) {
+        // Continue to next approach
+      }
+      
+      // Approach 3: Try creating empty Excel and decoding (last resort)
+      try {
+        final excel = Excel.createExcel();
+        // Clear any existing sheets
+        excel.tables.clear();
+        // Try to decode the original bytes
+        return Excel.decodeBytes(bytes);
+      } catch (e) {
+        // Final fallback failed
+      }
+      
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
 
 
 
@@ -144,9 +329,7 @@ class WordImportService {
         throw Exception('文件不存在');
       }
 
-      print('开始解析Excel文件: $filePath');
       final bytes = await file.readAsBytes();
-      print('文件大小: ${bytes.length} 字节');
       
       // Try multiple decoding strategies for better compatibility
       Excel? excel;
@@ -154,53 +337,74 @@ class WordImportService {
       
       // Strategy 1: Standard decoding
       try {
-        print('尝试标准解码...');
         excel = Excel.decodeBytes(bytes);
-        print('标准解码成功');
       } catch (e) {
-        print('标准解码失败: $e');
         lastError = e.toString();
       }
       
-      // Strategy 2: Try with different options if first attempt fails
+      // Strategy 2: WPS compatibility mode - try to handle numFmtId issues
+      if (excel == null && lastError != null && (lastError!.contains('custom numFmtId') || lastError!.contains('numFmtId'))) {
+        try {
+          excel = _decodeWithWpsCompatibility(bytes);
+        } catch (e) {
+          lastError = e.toString();
+        }
+      }
+      
+      // Strategy 3: Try with different options if first attempts fail
       if (excel == null) {
         try {
-          print('尝试备用解码策略...');
           // Create a new Excel instance and try to decode with more lenient settings
           excel = Excel.createExcel();
           excel = Excel.decodeBytes(bytes);
-          print('备用解码成功');
         } catch (e) {
-          print('备用解码失败: $e');
           lastError = e.toString();
         }
       }
       
-      // Strategy 3: Try to force decode with different approach
+      // Strategy 4: Try to force decode with different approach
       if (excel == null) {
         try {
-          print('尝试强制解码策略...');
           // Try to create a fresh Excel instance and decode
           final tempExcel = Excel.createExcel();
           excel = Excel.decodeBytes(bytes);
-          print('强制解码成功');
         } catch (e) {
-          print('强制解码失败: $e');
           lastError = e.toString();
         }
       }
       
-      // If all strategies fail, provide helpful error message
+      // If all strategies fail, provide helpful error message with WPS-specific guidance
       if (excel == null) {
-        throw Exception('无法解析Excel文件。\n可能的解决方案：\n1. 请尝试在Excel中另存为新的.xlsx文件\n2. 确保文件没有密码保护\n3. 检查文件是否包含复杂的格式或公式\n\n技术详情: $lastError');
+        String errorMessage = '无法解析Excel文件。';
+        
+        if (lastError != null && (lastError!.contains('custom numFmtId') || lastError!.contains('numFmtId'))) {
+          errorMessage += '\n\n检测到WPS Office兼容性问题：\n';
+          errorMessage += '• WPS生成的Excel文件使用了非标准的数字格式定义\n';
+          errorMessage += '• 这会导致标准Excel解析库无法正确读取文件\n\n';
+          errorMessage += 'WPS文件解决方案（推荐按顺序尝试）：\n\n';
+          errorMessage += '方案1：在WPS中重新保存\n';
+          errorMessage += '• 在WPS中打开文件\n';
+          errorMessage += '• 选择"文件" → "另存为"\n';
+          errorMessage += '• 格式选择"Excel工作簿(.xlsx)"\n';
+          errorMessage += '• 确保兼容性设置为"Excel 2016"或更高版本\n\n';
+          errorMessage += '方案2：转换为CSV格式\n';
+          errorMessage += '• 在WPS中选择"文件" → "另存为"\n';
+          errorMessage += '• 格式选择"CSV (逗号分隔)(*.csv)"\n';
+          errorMessage += '• 使用本应用的CSV导入功能\n\n';
+          errorMessage += '方案3：使用Microsoft Excel\n';
+          errorMessage += '• 在Microsoft Excel中打开文件\n';
+          errorMessage += '• 另存为新的.xlsx文件\n';
+        } else {
+          errorMessage += '\n可能的解决方案：\n1. 请尝试在Excel中另存为新的.xlsx文件\n2. 确保文件没有密码保护\n3. 检查文件是否包含复杂的格式或公式';
+        }
+        
+        errorMessage += '\n\n技术详情: $lastError';
+        throw Exception(errorMessage);
       }
       
       if (excel.tables.isEmpty) {
         throw Exception('Excel文件中没有工作表');
       }
-      
-      print('发现工作表数量: ${excel.tables.length}');
-      print('工作表名称: ${excel.tables.keys.toList()}');
       
       // Use the first sheet only
       final sheetName = excel.tables.keys.first;
@@ -209,14 +413,9 @@ class WordImportService {
         throw Exception('无法读取Excel工作表');
       }
       
-      print('使用工作表: $sheetName');
-      print('工作表行数: ${sheet.maxRows}');
-      print('工作表列数: ${sheet.maxColumns}');
-      
       // Handle case where maxRows/maxColumns might be 0 due to parsing issues
       if (sheet.maxRows == 0) {
         // Try to access rows directly
-        print('尝试直接访问行数据...');
         int actualRows = 0;
         for (int i = 0; i < 1000; i++) { // Check up to 1000 rows
           try {
@@ -230,11 +429,9 @@ class WordImportService {
             break;
           }
         }
-        print('实际发现行数: $actualRows');
         
         if (actualRows == 0) {
            // Try alternative approach: read raw cell data
-           print('尝试原始单元格数据读取...');
            try {
              // Try to access cells directly using row/column indices
              for (int r = 0; r < 50; r++) {
@@ -242,7 +439,6 @@ class WordImportService {
                  try {
                    final cellData = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
                    if (cellData != null && cellData.value != null && cellData.value.toString().trim().isNotEmpty) {
-                     print('发现数据在位置 [$r,$c]: ${cellData.value}');
                      actualRows = Math.max(actualRows, r + 1);
                    }
                  } catch (e) {
@@ -252,7 +448,7 @@ class WordImportService {
                if (actualRows > 0 && r > actualRows + 5) break; // Stop if no more data found
              }
            } catch (e) {
-             print('原始单元格读取失败: $e');
+             // Ignore raw cell reading errors
            }
            
            if (actualRows == 0) {
@@ -270,23 +466,6 @@ class WordImportService {
       
       // Determine actual row count to process
       int maxRowsToProcess = sheet.maxRows > 0 ? sheet.maxRows : 1000;
-      
-      // Print first few rows for debugging
-      print('\n前3行数据预览:');
-      for (int i = 0; i < Math.min(3, maxRowsToProcess); i++) {
-        try {
-          final row = sheet.rows[i];
-          if (row != null) {
-            final rowData = row.map((cell) => cell?.value?.toString() ?? 'null').toList();
-            print('第${i + 1}行: $rowData');
-          } else {
-            print('第${i + 1}行: null');
-          }
-        } catch (e) {
-          print('第${i + 1}行: 读取错误 - $e');
-        }
-      }
-      print('');
       
       for (int rowIndex = 1; rowIndex < maxRowsToProcess; rowIndex++) {
         try {
@@ -309,14 +488,12 @@ class WordImportService {
           }
           
           if (row.isEmpty) {
-            if (rowIndex <= 5) print('第${rowIndex + 1}行: 空行，跳过');
             skippedRows++;
             continue;
           }
           
           // More flexible row length check - allow at least 2 columns (word + meaning)
           if (row.length < 2) {
-            if (rowIndex <= 5) print('第${rowIndex + 1}行: 列数不足(${row.length})，跳过');
             skippedRows++;
             continue;
           }
@@ -333,20 +510,13 @@ class WordImportService {
             partOfSpeech = null;
           }
           
-          // Debug output for first few rows
-          if (rowIndex <= 3) {
-            print('第${rowIndex + 1}行解析结果: 单词="$word", 词性="$partOfSpeech", 含义="$meaning", 等级="$level"');
-          }
-          
           // Validate essential data
           if (word == null || word.isEmpty) {
-            if (rowIndex <= 5) print('第${rowIndex + 1}行: 单词为空，跳过');
             skippedRows++;
             continue;
           }
           
           if (meaning == null || meaning.isEmpty) {
-            if (rowIndex <= 5) print('第${rowIndex + 1}行: 含义为空，跳过');
             skippedRows++;
             continue;
           }
@@ -382,9 +552,6 @@ class WordImportService {
         errorMsg += '\n• 使用简单的文本格式，避免复杂的单元格格式';
         throw Exception(errorMsg);
       }
-      
-      // Add processing summary to success case
-      print('Excel导入完成: 成功处理 $processedRows 行，跳过 $skippedRows 行');
       
       return words;
     } catch (e) {
