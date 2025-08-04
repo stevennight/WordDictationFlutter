@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/dictation_result.dart';
@@ -393,13 +395,65 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
     }
   }
 
-  void _exportResults() {
-    // TODO: Implement export functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('导出功能待实现'),
-      ),
-    );
+  Future<void> _exportResults() async {
+    try {
+      if (_session == null || _results.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('没有可导出的数据'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // 准备导出数据
+      final exportData = {
+        'session': _session!.toMap(),
+        'results': _results.map((r) => r.toMap()).toList(),
+        'exportTime': DateTime.now().toIso8601String(),
+        'version': '1.0.0',
+      };
+
+      final jsonString = jsonEncode(exportData);
+      
+      // 生成文件名
+      final now = DateTime.now();
+      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+      final fileName = 'dictation_session_${_session!.sessionId}_$timestamp.json';
+      
+      // 使用FilePicker保存文件
+      final String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: '请选择保存导出的文件',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: utf8.encode(jsonString), // 添加字节数据以支持Android/iOS
+      );
+
+      if (outputFile != null) {
+        final file = File(outputFile);
+        await file.writeAsString(jsonString);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('默写记录已成功导出到: $outputFile'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('导出失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _retryIncorrectWords() {

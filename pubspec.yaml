@@ -1,5 +1,5 @@
 name: flutter_word_dictation
-description: A cross-platform word dictation app built with Flutter, based on the original Python wordDictation tool.
+description: 默写小助手 - 一个跨平台的单词默写应用，基于原Python wordDictation工具构建。
 version: 1.0.0+1
 
 environment:

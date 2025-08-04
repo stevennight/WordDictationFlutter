@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
@@ -100,6 +101,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         fileName: '${widget.wordbook.name}_export_$timestamp.json',
         type: FileType.custom,
         allowedExtensions: ['json'],
+        bytes: utf8.encode(jsonString), // 添加字节数据以支持Android/iOS
       );
 
       if (outputFile != null) {
