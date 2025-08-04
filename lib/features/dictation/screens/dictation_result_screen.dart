@@ -197,6 +197,29 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          // 时间信息
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.play_arrow,
+                  label: '开始时间',
+                  value: _formatTime(widget.session.startTime),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.stop,
+                  label: '结束时间',
+                  value: widget.session.endTime != null 
+                      ? _formatTime(widget.session.endTime!) 
+                      : '未完成',
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           
           // 准确率
@@ -390,5 +413,9 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
       MaterialPageRoute(builder: (context) => const MainScreen()),
       (route) => false,
     );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    return '${dateTime.year.toString().padLeft(4, '0')}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }
