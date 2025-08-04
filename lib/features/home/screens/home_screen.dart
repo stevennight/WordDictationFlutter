@@ -77,28 +77,36 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('首页'),
-      ),
       body: Consumer2<DictationProvider, AppStateProvider>(
         builder: (context, dictationProvider, appState, child) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildWelcomeSection(),
-                const SizedBox(height: 24),
-                _buildWordbookSection(),
-                const SizedBox(height: 24),
-                if (_wordbooks.isNotEmpty) _buildQuickStartSection(),
-                if (_wordbooks.isNotEmpty) const SizedBox(height: 24),
-                _buildFileImportSection(),
-                const SizedBox(height: 24),
-                if (_loadedWords.isNotEmpty) ..._buildModeSelectionSection(),
-                if (_statusMessage != null) ..._buildStatusSection(),
-              ],
-            ),
+          return CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                title: const Text('首页'),
+                floating: true,
+                snap: true,
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+                surfaceTintColor: Theme.of(context).colorScheme.primary,
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    _buildWelcomeSection(),
+                    const SizedBox(height: 24),
+                    _buildWordbookSection(),
+                    const SizedBox(height: 24),
+                    if (_wordbooks.isNotEmpty) _buildQuickStartSection(),
+                    if (_wordbooks.isNotEmpty) const SizedBox(height: 24),
+                    _buildFileImportSection(),
+                    const SizedBox(height: 24),
+                    if (_loadedWords.isNotEmpty) ..._buildModeSelectionSection(),
+                    if (_statusMessage != null) ..._buildStatusSection(),
+                  ]),
+                ),
+              ),
+            ],
           );
         },
       ),

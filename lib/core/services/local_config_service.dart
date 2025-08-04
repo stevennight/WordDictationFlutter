@@ -249,6 +249,24 @@ class LocalConfigService {
     await _saveConfig();
   }
 
+  // Accuracy color settings
+  Future<Map<String, int>> getAccuracyColorRanges() async {
+    return {
+      'red_max': _config?['accuracy_red_max'] ?? 59,
+      'yellow_max': _config?['accuracy_yellow_max'] ?? 79,
+      'blue_max': _config?['accuracy_blue_max'] ?? 89,
+      'green_min': _config?['accuracy_green_min'] ?? 90,
+    };
+  }
+
+  Future<void> setAccuracyColorRanges(Map<String, int> ranges) async {
+    _config!['accuracy_red_max'] = ranges['red_max'];
+    _config!['accuracy_yellow_max'] = ranges['yellow_max'];
+    _config!['accuracy_blue_max'] = ranges['blue_max'];
+    _config!['accuracy_green_min'] = ranges['green_min'];
+    await _saveConfig();
+  }
+
   // Generic setting methods
   Future<void> setSetting<T>(String key, T value) async {
     _config![key] = value;

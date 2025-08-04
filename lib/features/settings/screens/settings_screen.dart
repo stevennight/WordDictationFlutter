@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../shared/providers/theme_provider.dart';
 import '../../../shared/providers/history_provider.dart';
 import '../../../core/services/config_service.dart';
+import '../../../core/services/local_config_service.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
@@ -40,13 +41,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('设置'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            title: const Text('设置'),
+            floating: true,
+            snap: true,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
+            surfaceTintColor: Theme.of(context).colorScheme.primary,
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
             // Appearance section
             SettingsSection(
               title: '外观设置',
@@ -67,6 +75,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     );
                   },
+                ),
+                SettingsTile(
+                  title: '准确率颜色设置',
+                  subtitle: '自定义准确率颜色区间',
+                  leading: const Icon(Icons.color_lens),
+                  onTap: () => _showAccuracyColorDialog(),
                 ),
               ],
             ),
@@ -183,9 +197,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             
-            const SizedBox(height: 32),
-          ],
-        ),
+                const SizedBox(height: 32),
+              ]),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -490,6 +506,233 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showAccuracyColorDialog() async {
+    final configService = await LocalConfigService.getInstance();
+    final currentRanges = await configService.getAccuracyColorRanges();
+    
+    showDialog(
+      context: context,
+      builder: (context) => _AccuracyColorDialog(
+        configService: configService,
+        currentRanges: currentRanges,
+      ),
+    );
+  }
+}
+
+class _AccuracyColorDialog extends StatefulWidget {
+  final LocalConfigService configService;
+  final Map<String, int> currentRanges;
+
+  const _AccuracyColorDialog({
+    required this.configService,
+    required this.currentRanges,
+  });
+
+  @override
+  State<_AccuracyColorDialog> createState() => _AccuracyColorDialogState();
+}
+
+class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
+  late TextEditingController redMaxController;
+  late TextEditingController yellowMaxController;
+  late TextEditingController blueMaxController;
+
+  @override
+  void initState() {
+    super.initState();
+    redMaxController = TextEditingController(text: widget.currentRanges['red_max'].toString());
+    yellowMaxController = TextEditingController(text: widget.currentRanges['yellow_max'].toString());
+    blueMaxController = TextEditingController(text: widget.currentRanges['blue_max'].toString());
+    
+    // 添加监听器以实现自动更新
+    redMaxController.addListener(_updateUI);
+    yellowMaxController.addListener(_updateUI);
+    blueMaxController.addListener(_updateUI);
+  }
+
+  @override
+  void dispose() {
+    redMaxController.dispose();
+    yellowMaxController.dispose();
+    blueMaxController.dispose();
+    super.dispose();
+  }
+
+  void _updateUI() {
+    setState(() {});
+  }
+
+  int _getYellowStart() {
+    try {
+      return int.parse(redMaxController.text) + 1;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  int _getBlueStart() {
+    try {
+      return int.parse(yellowMaxController.text) + 1;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  int _getGreenStart() {
+    try {
+      return int.parse(blueMaxController.text) + 1;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('准确率颜色设置'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('设置不同准确率区间对应的颜色：'),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  color: Colors.red,
+                ),
+                const SizedBox(width: 8),
+                const Text('红色: 0 - '),
+                Expanded(
+                  child: TextField(
+                    controller: redMaxController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  color: Colors.yellow[700],
+                ),
+                const SizedBox(width: 8),
+                Text('黄色: ${_getYellowStart()} - '),
+                Expanded(
+                  child: TextField(
+                    controller: yellowMaxController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  color: Colors.blue,
+                ),
+                const SizedBox(width: 8),
+                Text('蓝色: ${_getBlueStart()} - '),
+                Expanded(
+                  child: TextField(
+                    controller: blueMaxController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 8),
+                Text('绿色: ${_getGreenStart()} - 100'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '注意：请确保区间完整覆盖0-100，且不重叠',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () async {
+            try {
+              final redMax = int.parse(redMaxController.text);
+              final yellowMax = int.parse(yellowMaxController.text);
+              final blueMax = int.parse(blueMaxController.text);
+              final greenMin = _getGreenStart(); // 自动计算绿色区间开始值
+              
+              // 验证区间是否合理
+              if (redMax < 0 || redMax >= 100 ||
+                  yellowMax <= redMax || yellowMax >= 100 ||
+                  blueMax <= yellowMax || blueMax >= 100 ||
+                  greenMin <= blueMax || greenMin > 100) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('区间设置不合理，请检查数值')),
+                );
+                return;
+              }
+              
+              final newRanges = {
+                'red_max': redMax,
+                'yellow_max': yellowMax,
+                'blue_max': blueMax,
+                'green_min': greenMin,
+              };
+              
+              await widget.configService.setAccuracyColorRanges(newRanges);
+              
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('准确率颜色设置已保存')),
+                );
+              }
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('请输入有效的数字')),
+              );
+            }
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

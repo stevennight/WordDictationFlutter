@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../shared/models/dictation_result.dart';
+import '../../../core/services/local_config_service.dart';
+import '../../../shared/providers/theme_provider.dart';
 
 import '../../../shared/models/dictation_session.dart';
 
@@ -30,40 +34,54 @@ class CompletionDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: _getHeaderColor(context, accuracy),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    _getHeaderIcon(accuracy),
-                    size: 48,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _getHeaderTitle(accuracy),
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _getHeaderSubtitle(accuracy),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
+            FutureBuilder<Color>(
+              future: _getHeaderColor(context, accuracy),
+              builder: (context, colorSnapshot) {
+                final headerColor = colorSnapshot.data ?? Colors.grey;
+                
+                return FutureBuilder<IconData>(
+                  future: _getHeaderIcon(accuracy),
+                  builder: (context, iconSnapshot) {
+                    final headerIcon = iconSnapshot.data ?? Icons.help;
+                    
+                    return Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: headerColor,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            headerIcon,
+                            size: 48,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _getHeaderTitle(accuracy),
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getHeaderSubtitle(accuracy),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
             ),
             
             // Content
@@ -206,40 +224,48 @@ class CompletionDialog extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.percent,
-                color: _getAccuracyColor(accuracy),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '准确率',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${(accuracy * 100).toInt()}%',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: _getAccuracyColor(accuracy),
-            ),
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: accuracy,
-            backgroundColor: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-            valueColor: AlwaysStoppedAnimation<Color>(
-              _getAccuracyColor(accuracy),
-            ),
-            minHeight: 6,
-          ),
+          FutureBuilder<Color>(
+            future: _getAccuracyColor(accuracy),
+            builder: (context, snapshot) {
+              final color = snapshot.data ?? Theme.of(context).colorScheme.primary;
+              return Column(
+                children: [
+                  Row(
+                     mainAxisAlignment: MainAxisAlignment.center,
+                     children: [
+                      Icon(
+                        Icons.percent,
+                        color: color,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '准确率',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(accuracy * 100).toInt()}%',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: accuracy,
+                    backgroundColor: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                     minHeight: 6,
+                   ),
+                 ],
+               );
+             },
+           ),
         ],
       ),
     );
@@ -274,23 +300,35 @@ class CompletionDialog extends StatelessWidget {
     );
   }
 
-  Color _getHeaderColor(BuildContext context, double accuracy) {
-    if (accuracy >= 0.9) {
+  Future<Color> _getHeaderColor(BuildContext context, double accuracy) async {
+    final configService = await LocalConfigService.getInstance();
+    final ranges = await configService.getAccuracyColorRanges();
+    final accuracyPercent = accuracy * 100;
+    
+    if (accuracyPercent >= ranges['green_min']!) {
       return Colors.green;
-    } else if (accuracy >= 0.7) {
-      return Colors.orange;
+    } else if (accuracyPercent > ranges['blue_max']!) {
+      return Colors.blue;
+    } else if (accuracyPercent > ranges['red_max']!) {
+      return Colors.yellow[700]!;
     } else {
       return Colors.red;
     }
   }
 
-  IconData _getHeaderIcon(double accuracy) {
-    if (accuracy >= 0.9) {
+  Future<IconData> _getHeaderIcon(double accuracy) async {
+    final configService = await LocalConfigService.getInstance();
+    final ranges = await configService.getAccuracyColorRanges();
+    final accuracyPercent = accuracy * 100;
+    
+    if (accuracyPercent >= ranges['green_min']!) {
       return Icons.emoji_events;
-    } else if (accuracy >= 0.7) {
+    } else if (accuracyPercent > ranges['blue_max']!) {
       return Icons.thumb_up;
-    } else {
+    } else if (accuracyPercent > ranges['yellow_max']!) {
       return Icons.sentiment_neutral;
+    } else {
+      return Icons.sentiment_dissatisfied;
     }
   }
 
@@ -314,11 +352,17 @@ class CompletionDialog extends StatelessWidget {
     }
   }
 
-  Color _getAccuracyColor(double accuracy) {
-    if (accuracy >= 0.9) {
+  Future<Color> _getAccuracyColor(double accuracy) async {
+    final configService = await LocalConfigService.getInstance();
+    final ranges = await configService.getAccuracyColorRanges();
+    final accuracyPercent = accuracy * 100;
+    
+    if (accuracyPercent >= ranges['green_min']!) {
       return Colors.green;
-    } else if (accuracy >= 0.7) {
-      return Colors.orange;
+    } else if (accuracyPercent > ranges['yellow_max']!) {
+      return Colors.blue;
+    } else if (accuracyPercent > ranges['red_max']!) {
+      return Colors.yellow[700]!;
     } else {
       return Colors.red;
     }

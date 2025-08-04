@@ -8,6 +8,7 @@ import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/dictation_service.dart';
 import '../../../core/services/word_service.dart';
+import '../../../core/services/local_config_service.dart';
 import '../../history/screens/history_detail_screen.dart';
 import '../../../main.dart';
 
@@ -106,21 +107,31 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
         ? '${duration.inMinutes}分${duration.inSeconds % 60}秒'
         : '未知';
     
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _getHeaderColor(accuracy),
-        borderRadius: const BorderRadius.vertical(
-          bottom: Radius.circular(20),
-        ),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            _getHeaderIcon(accuracy),
-            size: 48,
-            color: Colors.white,
-          ),
+    return FutureBuilder<Color>(
+      future: _getHeaderColor(accuracy),
+      builder: (context, colorSnapshot) {
+        final headerColor = colorSnapshot.data ?? Colors.grey;
+        
+        return FutureBuilder<IconData>(
+          future: _getHeaderIcon(accuracy),
+          builder: (context, iconSnapshot) {
+            final headerIcon = iconSnapshot.data ?? Icons.help;
+            
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: headerColor,
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    headerIcon,
+                    size: 48,
+                    color: Colors.white,
+                  ),
           const SizedBox(height: 12),
           Text(
             _getHeaderTitle(accuracy),
@@ -227,9 +238,13 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -273,17 +288,53 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
   }
 
   Widget _buildResultsList() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: widget.results.length,
-      itemBuilder: (context, index) {
-        final result = widget.results[index];
-        final word = _words.isNotEmpty && index < _words.length 
-            ? _words[index] 
-            : null;
-        
-        return _buildResultItem(result, word, index + 1);
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 默写内容标题
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.list_alt,
+                color: Theme.of(context).colorScheme.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '默写内容详情',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '共${widget.results.length}题',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // 默写结果列表
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: widget.results.length,
+            itemBuilder: (context, index) {
+              final result = widget.results[index];
+              final word = _words.isNotEmpty && index < _words.length 
+                  ? _words[index] 
+                  : null;
+              
+              return _buildResultItem(result, word, index + 1);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -613,21 +664,31 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
     );
   }
 
-  Color _getHeaderColor(double accuracy) {
-    if (accuracy >= 90) {
+  Future<Color> _getHeaderColor(double accuracy) async {
+    final configService = await LocalConfigService.getInstance();
+    final ranges = await configService.getAccuracyColorRanges();
+    
+    if (accuracy >= ranges['green_min']!) {
       return Colors.green;
-    } else if (accuracy >= 70) {
-      return Colors.orange;
+    } else if (accuracy > ranges['blue_max']!) {
+      return Colors.blue;
+    } else if (accuracy > ranges['red_max']!) {
+      return Colors.yellow[700]!;
     } else {
       return Colors.red;
     }
   }
 
-  IconData _getHeaderIcon(double accuracy) {
-    if (accuracy >= 90) {
+  Future<IconData> _getHeaderIcon(double accuracy) async {
+    final configService = await LocalConfigService.getInstance();
+    final ranges = await configService.getAccuracyColorRanges();
+    
+    if (accuracy >= ranges['green_min']!) {
       return Icons.emoji_events;
-    } else if (accuracy >= 70) {
+    } else if (accuracy > ranges['blue_max']!) {
       return Icons.thumb_up;
+    } else if (accuracy > ranges['yellow_max']!) {
+      return Icons.sentiment_neutral;
     } else {
       return Icons.sentiment_dissatisfied;
     }

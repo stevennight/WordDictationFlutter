@@ -42,13 +42,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('历史记录'),
-      ),
       body: Consumer<HistoryProvider>(
         builder: (context, historyProvider, child) {
           if (historyProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  title: const Text('历史记录'),
+                  floating: true,
+                  snap: true,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  surfaceTintColor: Theme.of(context).colorScheme.primary,
+                ),
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            );
           }
 
           final sessions = _getFilteredSessions(historyProvider.sessions);
@@ -58,6 +69,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
+                SliverAppBar(
+                  title: const Text('历史记录'),
+                  floating: true,
+                  snap: true,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  surfaceTintColor: Theme.of(context).colorScheme.primary,
+                ),
+                
                 // Statistics section
                 if (historyProvider.sessions.isNotEmpty)
                   SliverToBoxAdapter(
