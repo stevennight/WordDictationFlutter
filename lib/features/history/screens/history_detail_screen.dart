@@ -401,6 +401,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
             return ResultDetailCard(
               result: result,
               index: index + 1,
+              dictationDirection: _session?.dictationDirection ?? 0,
             );
           },
         ),

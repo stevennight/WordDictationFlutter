@@ -12,11 +12,13 @@ import '../../dictation/screens/copying_screen.dart';
 class ResultDetailCard extends StatefulWidget {
   final DictationResult result;
   final int index;
+  final int dictationDirection; // 0: 原文→译文, 1: 译文→原文
 
   const ResultDetailCard({
     super.key,
     required this.result,
     required this.index,
+    required this.dictationDirection,
   });
 
   @override
@@ -98,7 +100,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '提示: ${widget.result.prompt}',
+                        '提示: ${widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer}',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -210,7 +212,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    widget.result.answer,
+                    widget.dictationDirection == 0 ? widget.result.answer : widget.result.prompt,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

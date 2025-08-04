@@ -53,12 +53,8 @@ class _WordbookCreateScreenState extends State<WordbookCreateScreen> {
           const SnackBar(content: Text('词书创建成功')),
         );
         
-        // 导航到词书详情页面
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => WordbookDetailScreen(wordbook: createdWordbook),
-          ),
-        );
+        // 返回true表示创建成功，让调用页面刷新列表
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
