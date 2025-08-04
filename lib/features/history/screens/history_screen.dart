@@ -11,6 +11,7 @@ import '../widgets/history_filter_dialog.dart';
 import '../widgets/history_card.dart';
 import '../widgets/history_stats_card.dart';
 import 'history_detail_screen.dart';
+import '../../dictation/screens/dictation_result_screen.dart';
 
 
 class HistoryScreen extends StatefulWidget {
@@ -118,6 +119,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               onRetry: session.incorrectCount > 0
                                   ? () => _retrySession(historyProvider, session)
                                   : null,
+                              onShare: () => _shareSession(historyProvider, session),
                             ),
                           );
                         },
@@ -467,6 +469,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('开始重做错题失败: $e')),
+        );
+      }
+    }
+  }
+
+  void _shareSession(HistoryProvider historyProvider, DictationSession session) async {
+    try {
+      // 获取session的详细结果
+      final results = await historyProvider.getSessionResults(session.sessionId);
+      
+      // 导航到默写结果页面
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => DictationResultScreen(
+              session: session,
+              results: results,
+            ),
+          ),
+        );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('加载分享数据失败: $e')),
         );
       }
     }

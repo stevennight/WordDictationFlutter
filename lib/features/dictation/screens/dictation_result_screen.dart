@@ -342,7 +342,7 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 第一行：查看详情和重做错题（如果有错题）
+          // 第一行：查看详情和重做错题（如果有错题且不是来自历史页面）
           Row(
             children: [
               Expanded(
@@ -354,17 +354,11 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: hasIncorrectWords
-                    ? OutlinedButton.icon(
-                        onPressed: _retryIncorrectWords,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('重做错题'),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: _returnToHome,
-                        icon: const Icon(Icons.home),
-                        label: const Text('返回首页'),
-                      ),
+                child: ElevatedButton.icon(
+                  onPressed: _returnToHome,
+                  icon: const Icon(Icons.home),
+                  label: const Text('返回首页'),
+                ),
               ),
             ],
           ),
@@ -397,18 +391,7 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
               ),
             ],
           ),
-          // 第三行：如果有错题，显示返回首页按钮
-          if (hasIncorrectWords) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _returnToHome,
-                icon: const Icon(Icons.home),
-                label: const Text('返回首页'),
-              ),
-            ),
-          ],
+
         ],
       ),
     );
@@ -424,12 +407,6 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
         ),
       ),
     );
-  }
-
-  void _retryIncorrectWords() {
-    final dictationProvider = context.read<DictationProvider>();
-    dictationProvider.retryIncorrectWords();
-    Navigator.of(context).pop();
   }
 
   void _returnToHome() {

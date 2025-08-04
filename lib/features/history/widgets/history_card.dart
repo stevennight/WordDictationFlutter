@@ -8,6 +8,7 @@ class HistoryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback? onRetry;
+  final VoidCallback? onShare;
 
   const HistoryCard({
     super.key,
@@ -15,6 +16,7 @@ class HistoryCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onRetry,
+    this.onShare,
   });
 
   @override
@@ -183,6 +185,15 @@ class HistoryCard extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: onShare,
+                    icon: const Icon(Icons.share, size: 20),
+                    tooltip: '分享',
+                    style: IconButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 8),
