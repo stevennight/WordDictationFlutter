@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/services/sync_service.dart';
-import '../../core/services/object_storage_sync_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
 
@@ -163,9 +162,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         existingConfig: existingConfig,
         onSave: (config) async {
           await _syncService.addConfig(config);
-          // 注册提供商
-          final provider = ObjectStorageSyncProvider(config);
-          _syncService.registerProvider(config.id, provider);
+          // 提供商会在addConfig时自动注册
           
           if (mounted) {
             setState(() {});
@@ -230,13 +227,13 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.cloud_upload),
                 title: const Text('上传到云端'),
-                subtitle: const Text('将本地词书上传到云端'),
+                subtitle: const Text('将本地词书上传到云端\n⚠️ 需要本地有词书数据'),
                 onTap: () => Navigator.of(context).pop('upload'),
               ),
               ListTile(
                 leading: const Icon(Icons.cloud_download),
                 title: const Text('从云端下载'),
-                subtitle: const Text('从云端下载词书到本地'),
+                subtitle: const Text('从云端下载词书到本地\n⚠️ 会覆盖同名本地词书'),
                 onTap: () => Navigator.of(context).pop('download'),
               ),
             ],

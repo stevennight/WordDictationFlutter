@@ -3,6 +3,7 @@ import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import 'wordbook_service.dart';
 import 'local_config_service.dart';
+import 'object_storage_sync_provider.dart';
 
 /// 同步数据类型枚举
 enum SyncDataType {
@@ -143,6 +144,10 @@ class SyncService {
   Future<void> addConfig(SyncConfig config) async {
     _configs.removeWhere((c) => c.id == config.id);
     _configs.add(config);
+    
+    // 自动注册提供商
+    _registerProviderForConfig(config);
+    
     await _saveConfigs();
   }
 
@@ -176,6 +181,12 @@ class SyncService {
       if (upload) {
         // 上传本地词书数据
         final wordbooksData = await _exportAllWordbooks();
+        
+        // 检查是否为空数据
+        if (!_isValidDataForUpload(wordbooksData)) {
+          return SyncResult.failure('本地数据为空或无效，为避免覆盖远端数据，请先添加词书后再同步');
+        }
+        
         final result = await provider.uploadData(SyncDataType.wordbooks, wordbooksData);
         
         if (result.success) {
@@ -202,6 +213,11 @@ class SyncService {
         final result = await provider.downloadData(SyncDataType.wordbooks);
         
         if (result.success && result.data != null) {
+          // 检查下载的数据是否有效
+          if (!_isValidDataForImport(result.data!)) {
+            return SyncResult.failure('远端数据为空或格式无效');
+          }
+          
           await _importWordbooks(result.data!);
           
           // 更新最后同步时间
@@ -249,11 +265,16 @@ class SyncService {
        final configsData = await localConfig.getSetting<List<dynamic>>('sync_configs') ?? [];
       
       _configs.clear();
+      _providers.clear(); // 清空现有提供商
+      
       for (final configData in configsData) {
         if (configData is Map<String, dynamic>) {
           try {
             final config = SyncConfig.fromMap(configData);
             _configs.add(config);
+            
+            // 自动注册提供商
+            _registerProviderForConfig(config);
           } catch (e) {
             print('Failed to load sync config: $e');
           }
@@ -261,10 +282,24 @@ class SyncService {
       }
       
       _initialized = true;
-      print('Loaded ${_configs.length} sync configs');
+      print('Loaded ${_configs.length} sync configs and registered providers');
     } catch (e) {
       print('Failed to load sync configs: $e');
       _initialized = true;
+    }
+  }
+  
+  /// 为配置自动注册提供商
+  void _registerProviderForConfig(SyncConfig config) {
+    try {
+      if (config.providerType == SyncProviderType.objectStorage) {
+        final provider = ObjectStorageSyncProvider(config);
+        _providers[config.id] = provider;
+        print('Registered ObjectStorage provider for config: ${config.name}');
+      }
+      // 未来可以在这里添加其他类型的提供商
+    } catch (e) {
+      print('Failed to register provider for config ${config.name}: $e');
     }
   }
 
@@ -306,6 +341,59 @@ class SyncService {
       'createdAt': DateTime.now().toIso8601String(),
       'wordbooks': exportData,
     };
+  }
+
+  /// 验证上传数据是否有效
+  bool _isValidDataForUpload(Map<String, dynamic> data) {
+    // 检查基本格式
+    if (data['wordbooks'] == null || data['wordbooks'] is! List) {
+      return false;
+    }
+    
+    final List<dynamic> wordbooks = data['wordbooks'];
+    
+    // 检查是否有词书
+    if (wordbooks.isEmpty) {
+      return false;
+    }
+    
+    // 检查是否至少有一个词书包含单词
+    bool hasValidWordbook = false;
+    for (final wordbook in wordbooks) {
+      if (wordbook is Map<String, dynamic> && 
+          wordbook['words'] is List && 
+          (wordbook['words'] as List).isNotEmpty) {
+        hasValidWordbook = true;
+        break;
+      }
+    }
+    
+    return hasValidWordbook;
+  }
+  
+  /// 验证导入数据是否有效
+  bool _isValidDataForImport(Map<String, dynamic> data) {
+    // 检查基本格式
+    if (data['wordbooks'] == null || data['wordbooks'] is! List) {
+      return false;
+    }
+    
+    final List<dynamic> wordbooks = data['wordbooks'];
+    
+    // 允许空词书列表（用户可能想清空本地数据）
+    // 但需要确保格式正确
+    for (final wordbook in wordbooks) {
+      if (wordbook is! Map<String, dynamic>) {
+        return false;
+      }
+      
+      // 检查词书必需字段
+      if (wordbook['name'] == null || wordbook['name'] is! String) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   /// 导入词书数据（内部方法）
