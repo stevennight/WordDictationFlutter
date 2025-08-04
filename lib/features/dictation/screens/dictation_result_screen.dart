@@ -9,6 +9,7 @@ import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/dictation_service.dart';
 import '../../../core/services/word_service.dart';
 import '../../../core/services/local_config_service.dart';
+import '../../../shared/utils/accuracy_header_utils.dart';
 import '../../history/screens/history_detail_screen.dart';
 import '../../../main.dart';
 
@@ -108,12 +109,12 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
         : '未知';
     
     return FutureBuilder<Color>(
-      future: _getHeaderColor(accuracy),
+      future: AccuracyHeaderUtils.getHeaderColor(accuracy),
       builder: (context, colorSnapshot) {
         final headerColor = colorSnapshot.data ?? Colors.grey;
         
         return FutureBuilder<IconData>(
-          future: _getHeaderIcon(accuracy),
+          future: AccuracyHeaderUtils.getHeaderIcon(accuracy),
           builder: (context, iconSnapshot) {
             final headerIcon = iconSnapshot.data ?? Icons.help;
             
@@ -133,21 +134,68 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
                     color: Colors.white,
                   ),
           const SizedBox(height: 12),
-          Text(
-            _getHeaderTitle(accuracy),
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          FutureBuilder<String>(
+            future: AccuracyHeaderUtils.getHeaderTitle(accuracy),
+            builder: (context, snapshot) {
+              return Text(
+                snapshot.data ?? '加载中...',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              );
+            },
           ),
           const SizedBox(height: 8),
-          Text(
-            _getHeaderSubtitle(accuracy),
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
+          if (widget.session.wordFileName != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.description,
+                    size: 16,
+                    color: Colors.white70,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      widget.session.wordFileName!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 8),
+          ],
+          FutureBuilder<String>(
+            future: AccuracyHeaderUtils.getHeaderSubtitle(accuracy),
+            builder: (context, snapshot) {
+              return Text(
+                snapshot.data ?? '加载中...',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+              );
+            },
           ),
           const SizedBox(height: 16),
           
@@ -455,6 +503,8 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 3,
                   ),
                 ],
               ),
@@ -491,6 +541,8 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
                       fontWeight: FontWeight.bold,
                       color: Colors.green.shade700,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 3,
                   ),
                 ],
               ),
@@ -664,55 +716,7 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
     );
   }
 
-  Future<Color> _getHeaderColor(double accuracy) async {
-    final configService = await LocalConfigService.getInstance();
-    final ranges = await configService.getAccuracyColorRanges();
-    
-    if (accuracy >= ranges['green_min']!) {
-      return Colors.green;
-    } else if (accuracy > ranges['blue_max']!) {
-      return Colors.blue;
-    } else if (accuracy > ranges['red_max']!) {
-      return Colors.yellow[700]!;
-    } else {
-      return Colors.red;
-    }
-  }
-
-  Future<IconData> _getHeaderIcon(double accuracy) async {
-    final configService = await LocalConfigService.getInstance();
-    final ranges = await configService.getAccuracyColorRanges();
-    
-    if (accuracy >= ranges['green_min']!) {
-      return Icons.emoji_events;
-    } else if (accuracy > ranges['blue_max']!) {
-      return Icons.thumb_up;
-    } else if (accuracy > ranges['yellow_max']!) {
-      return Icons.sentiment_neutral;
-    } else {
-      return Icons.sentiment_dissatisfied;
-    }
-  }
-
-  String _getHeaderTitle(double accuracy) {
-    if (accuracy >= 90) {
-      return '优秀！';
-    } else if (accuracy >= 70) {
-      return '良好！';
-    } else {
-      return '继续努力！';
-    }
-  }
-
-  String _getHeaderSubtitle(double accuracy) {
-    if (accuracy >= 90) {
-      return '表现出色，继续保持！';
-    } else if (accuracy >= 70) {
-      return '不错的成绩，再接再厉！';
-    } else {
-      return '多加练习，你会更好的！';
-    }
-  }
+  // 使用共享工具类AccuracyHeaderUtils替代重复方法
 
   void _viewDetails() {
     Navigator.of(context).push(

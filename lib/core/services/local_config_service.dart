@@ -250,20 +250,58 @@ class LocalConfigService {
   }
 
   // Accuracy color settings
-  Future<Map<String, int>> getAccuracyColorRanges() async {
+  Future<Map<String, Map<String, int>>> getAccuracyColorRanges() async {
+    final accuracyConfig = _config?['accuracy_color_ranges'] as Map<String, dynamic>?;
+    
+    if (accuracyConfig == null) {
+      // 返回默认配置
+      return {
+        'red': {'min': 0, 'max': 59},
+        'yellow': {'min': 60, 'max': 79},
+        'blue': {'min': 80, 'max': 89},
+        'green': {'min': 90, 'max': 100},
+      };
+    }
+    
     return {
-      'red_max': _config?['accuracy_red_max'] ?? 59,
-      'yellow_max': _config?['accuracy_yellow_max'] ?? 79,
-      'blue_max': _config?['accuracy_blue_max'] ?? 89,
-      'green_min': _config?['accuracy_green_min'] ?? 90,
+      'red': {
+        'min': accuracyConfig['red']?['min'] ?? 0,
+        'max': accuracyConfig['red']?['max'] ?? 59,
+      },
+      'yellow': {
+        'min': accuracyConfig['yellow']?['min'] ?? 60,
+        'max': accuracyConfig['yellow']?['max'] ?? 79,
+      },
+      'blue': {
+        'min': accuracyConfig['blue']?['min'] ?? 80,
+        'max': accuracyConfig['blue']?['max'] ?? 89,
+      },
+      'green': {
+        'min': accuracyConfig['green']?['min'] ?? 90,
+        'max': accuracyConfig['green']?['max'] ?? 100,
+      },
     };
   }
 
-  Future<void> setAccuracyColorRanges(Map<String, int> ranges) async {
-    _config!['accuracy_red_max'] = ranges['red_max'];
-    _config!['accuracy_yellow_max'] = ranges['yellow_max'];
-    _config!['accuracy_blue_max'] = ranges['blue_max'];
-    _config!['accuracy_green_min'] = ranges['green_min'];
+  Future<void> setAccuracyColorRanges(Map<String, Map<String, int>> ranges) async {
+    _config!['accuracy_color_ranges'] = {
+      'red': {
+        'min': ranges['red']!['min'],
+        'max': ranges['red']!['max'],
+      },
+      'yellow': {
+        'min': ranges['yellow']!['min'],
+        'max': ranges['yellow']!['max'],
+      },
+      'blue': {
+        'min': ranges['blue']!['min'],
+        'max': ranges['blue']!['max'],
+      },
+      'green': {
+        'min': ranges['green']!['min'],
+        'max': ranges['green']!['max'],
+      },
+    };
     await _saveConfig();
   }
 

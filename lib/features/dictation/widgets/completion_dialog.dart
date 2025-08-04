@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../shared/models/dictation_result.dart';
 import '../../../core/services/local_config_service.dart';
 import '../../../shared/providers/theme_provider.dart';
+import '../../../shared/utils/accuracy_header_utils.dart';
 
 import '../../../shared/models/dictation_session.dart';
 
@@ -35,12 +36,12 @@ class CompletionDialog extends StatelessWidget {
           children: [
             // Header
             FutureBuilder<Color>(
-              future: _getHeaderColor(context, accuracy),
+              future: AccuracyHeaderUtils.getHeaderColor(accuracy),
               builder: (context, colorSnapshot) {
                 final headerColor = colorSnapshot.data ?? Colors.grey;
                 
                 return FutureBuilder<IconData>(
-                  future: _getHeaderIcon(accuracy),
+                  future: AccuracyHeaderUtils.getHeaderIcon(accuracy),
                   builder: (context, iconSnapshot) {
                     final headerIcon = iconSnapshot.data ?? Icons.help;
                     
@@ -60,21 +61,31 @@ class CompletionDialog extends StatelessWidget {
                             color: Colors.white,
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            _getHeaderTitle(accuracy),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                          FutureBuilder<String>(
+                            future: AccuracyHeaderUtils.getHeaderTitle(accuracy, isCompletion: true),
+                            builder: (context, snapshot) {
+                              return Text(
+                                snapshot.data ?? '加载中...',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              );
+                            },
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            _getHeaderSubtitle(accuracy),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.white70,
-                            ),
+                          FutureBuilder<String>(
+                            future: AccuracyHeaderUtils.getHeaderSubtitle(accuracy),
+                            builder: (context, snapshot) {
+                              return Text(
+                                snapshot.data ?? '加载中...',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white70,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -300,68 +311,19 @@ class CompletionDialog extends StatelessWidget {
     );
   }
 
-  Future<Color> _getHeaderColor(BuildContext context, double accuracy) async {
-    final configService = await LocalConfigService.getInstance();
-    final ranges = await configService.getAccuracyColorRanges();
-    final accuracyPercent = accuracy * 100;
-    
-    if (accuracyPercent >= ranges['green_min']!) {
-      return Colors.green;
-    } else if (accuracyPercent > ranges['blue_max']!) {
-      return Colors.blue;
-    } else if (accuracyPercent > ranges['red_max']!) {
-      return Colors.yellow[700]!;
-    } else {
-      return Colors.red;
-    }
-  }
-
-  Future<IconData> _getHeaderIcon(double accuracy) async {
-    final configService = await LocalConfigService.getInstance();
-    final ranges = await configService.getAccuracyColorRanges();
-    final accuracyPercent = accuracy * 100;
-    
-    if (accuracyPercent >= ranges['green_min']!) {
-      return Icons.emoji_events;
-    } else if (accuracyPercent > ranges['blue_max']!) {
-      return Icons.thumb_up;
-    } else if (accuracyPercent > ranges['yellow_max']!) {
-      return Icons.sentiment_neutral;
-    } else {
-      return Icons.sentiment_dissatisfied;
-    }
-  }
-
-  String _getHeaderTitle(double accuracy) {
-    if (accuracy >= 0.9) {
-      return '太棒了！';
-    } else if (accuracy >= 0.7) {
-      return '不错！';
-    } else {
-      return '继续努力！';
-    }
-  }
-
-  String _getHeaderSubtitle(double accuracy) {
-    if (accuracy >= 0.9) {
-      return '你的表现非常出色';
-    } else if (accuracy >= 0.7) {
-      return '你的表现还不错';
-    } else {
-      return '多练习会更好';
-    }
-  }
+  // 使用共享工具类AccuracyHeaderUtils替代重复方法
 
   Future<Color> _getAccuracyColor(double accuracy) async {
     final configService = await LocalConfigService.getInstance();
     final ranges = await configService.getAccuracyColorRanges();
-    final accuracyPercent = accuracy * 100;
+    // accuracy已经是百分比值(0-100)，不需要再乘以100
     
-    if (accuracyPercent >= ranges['green_min']!) {
+    // 使用严格的区间判断，避免边界值重叠
+    if (accuracy >= ranges['green']!['min']!) {
       return Colors.green;
-    } else if (accuracyPercent > ranges['yellow_max']!) {
+    } else if (accuracy >= ranges['blue']!['min']!) {
       return Colors.blue;
-    } else if (accuracyPercent > ranges['red_max']!) {
+    } else if (accuracy >= ranges['yellow']!['min']!) {
       return Colors.yellow[700]!;
     } else {
       return Colors.red;

@@ -525,7 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 class _AccuracyColorDialog extends StatefulWidget {
   final LocalConfigService configService;
-  final Map<String, int> currentRanges;
+  final Map<String, Map<String, int>> currentRanges;
 
   const _AccuracyColorDialog({
     required this.configService,
@@ -537,57 +537,171 @@ class _AccuracyColorDialog extends StatefulWidget {
 }
 
 class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
+  late TextEditingController redMinController;
   late TextEditingController redMaxController;
+  late TextEditingController yellowMinController;
   late TextEditingController yellowMaxController;
+  late TextEditingController blueMinController;
   late TextEditingController blueMaxController;
+  late TextEditingController greenMinController;
+  late TextEditingController greenMaxController;
+
+  bool _isUpdating = false; // 防止循环更新
 
   @override
   void initState() {
     super.initState();
-    redMaxController = TextEditingController(text: widget.currentRanges['red_max'].toString());
-    yellowMaxController = TextEditingController(text: widget.currentRanges['yellow_max'].toString());
-    blueMaxController = TextEditingController(text: widget.currentRanges['blue_max'].toString());
+    redMinController = TextEditingController(text: widget.currentRanges['red']!['min'].toString());
+    redMaxController = TextEditingController(text: widget.currentRanges['red']!['max'].toString());
+    yellowMinController = TextEditingController(text: widget.currentRanges['yellow']!['min'].toString());
+    yellowMaxController = TextEditingController(text: widget.currentRanges['yellow']!['max'].toString());
+    blueMinController = TextEditingController(text: widget.currentRanges['blue']!['min'].toString());
+    blueMaxController = TextEditingController(text: widget.currentRanges['blue']!['max'].toString());
+    greenMinController = TextEditingController(text: widget.currentRanges['green']!['min'].toString());
+    greenMaxController = TextEditingController(text: widget.currentRanges['green']!['max'].toString());
     
-    // 添加监听器以实现自动更新
-    redMaxController.addListener(_updateUI);
-    yellowMaxController.addListener(_updateUI);
-    blueMaxController.addListener(_updateUI);
+    // 添加监听器
+    _addListeners();
+  }
+
+  void _addListeners() {
+    // 红色区间监听器
+    redMaxController.addListener(() => _updateAdjacentRange('redMax'));
+    
+    // 黄色区间监听器
+    yellowMinController.addListener(() => _updateAdjacentRange('yellowMin'));
+    yellowMaxController.addListener(() => _updateAdjacentRange('yellowMax'));
+    
+    // 蓝色区间监听器
+    blueMinController.addListener(() => _updateAdjacentRange('blueMin'));
+    blueMaxController.addListener(() => _updateAdjacentRange('blueMax'));
+    
+    // 绿色区间监听器
+    greenMinController.addListener(() => _updateAdjacentRange('greenMin'));
+  }
+
+  void _updateAdjacentRange(String changedField) {
+    if (_isUpdating) return;
+    _isUpdating = true;
+    
+    try {
+      switch (changedField) {
+        case 'redMax':
+          final redMax = int.tryParse(redMaxController.text);
+          if (redMax != null && redMax >= 0 && redMax <= 100) {
+            final newYellowMin = redMax + 1;
+            if (newYellowMin <= 100) {
+              yellowMinController.text = newYellowMin.toString();
+            }
+          }
+          break;
+          
+        case 'yellowMin':
+          final yellowMin = int.tryParse(yellowMinController.text);
+          if (yellowMin != null && yellowMin >= 0 && yellowMin <= 100) {
+            final newRedMax = yellowMin - 1;
+            if (newRedMax >= 0) {
+              redMaxController.text = newRedMax.toString();
+            }
+          }
+          break;
+          
+        case 'yellowMax':
+          final yellowMax = int.tryParse(yellowMaxController.text);
+          if (yellowMax != null && yellowMax >= 0 && yellowMax <= 100) {
+            final newBlueMin = yellowMax + 1;
+            if (newBlueMin <= 100) {
+              blueMinController.text = newBlueMin.toString();
+            }
+          }
+          break;
+          
+        case 'blueMin':
+          final blueMin = int.tryParse(blueMinController.text);
+          if (blueMin != null && blueMin >= 0 && blueMin <= 100) {
+            final newYellowMax = blueMin - 1;
+            if (newYellowMax >= 0) {
+              yellowMaxController.text = newYellowMax.toString();
+            }
+          }
+          break;
+          
+        case 'blueMax':
+          final blueMax = int.tryParse(blueMaxController.text);
+          if (blueMax != null && blueMax >= 0 && blueMax <= 100) {
+            final newGreenMin = blueMax + 1;
+            if (newGreenMin <= 100) {
+              greenMinController.text = newGreenMin.toString();
+            }
+          }
+          break;
+          
+        case 'greenMin':
+          final greenMin = int.tryParse(greenMinController.text);
+          if (greenMin != null && greenMin >= 0 && greenMin <= 100) {
+            final newBlueMax = greenMin - 1;
+            if (newBlueMax >= 0) {
+              blueMaxController.text = newBlueMax.toString();
+            }
+          }
+          break;
+      }
+    } catch (e) {
+      // 忽略解析错误
+    }
+    
+    _isUpdating = false;
+  }
+
+  bool _validateRanges() {
+    try {
+      final redMin = int.parse(redMinController.text);
+      final redMax = int.parse(redMaxController.text);
+      final yellowMin = int.parse(yellowMinController.text);
+      final yellowMax = int.parse(yellowMaxController.text);
+      final blueMin = int.parse(blueMinController.text);
+      final blueMax = int.parse(blueMaxController.text);
+      final greenMin = int.parse(greenMinController.text);
+      final greenMax = int.parse(greenMaxController.text);
+      
+      // 检查每个区间内部是否合理
+      if (redMin < 0 || redMax > 100 || redMin > redMax ||
+          yellowMin < 0 || yellowMax > 100 || yellowMin > yellowMax ||
+          blueMin < 0 || blueMax > 100 || blueMin > blueMax ||
+          greenMin < 0 || greenMax > 100 || greenMin > greenMax) {
+        return false;
+      }
+      
+      // 检查区间是否连续且不重叠
+      final ranges = [redMin, redMax, yellowMin, yellowMax, blueMin, blueMax, greenMin, greenMax];
+      ranges.sort();
+      
+      // 检查是否覆盖0-100且不重叠
+      if (redMin != 0 || greenMax != 100) {
+        return false;
+      }
+      
+      if (redMax + 1 != yellowMin || yellowMax + 1 != blueMin || blueMax + 1 != greenMin) {
+        return false;
+      }
+      
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   @override
   void dispose() {
+    redMinController.dispose();
     redMaxController.dispose();
+    yellowMinController.dispose();
     yellowMaxController.dispose();
+    blueMinController.dispose();
     blueMaxController.dispose();
+    greenMinController.dispose();
+    greenMaxController.dispose();
     super.dispose();
-  }
-
-  void _updateUI() {
-    setState(() {});
-  }
-
-  int _getYellowStart() {
-    try {
-      return int.parse(redMaxController.text) + 1;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  int _getBlueStart() {
-    try {
-      return int.parse(yellowMaxController.text) + 1;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  int _getGreenStart() {
-    try {
-      return int.parse(blueMaxController.text) + 1;
-    } catch (e) {
-      return 0;
-    }
   }
 
   @override
@@ -600,6 +714,7 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
           children: [
             const Text('设置不同准确率区间对应的颜色：'),
             const SizedBox(height: 16),
+            // 红色区间
             Row(
               children: [
                 Container(
@@ -608,7 +723,21 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                   color: Colors.red,
                 ),
                 const SizedBox(width: 8),
-                const Text('红色: 0 - '),
+                const Text('红色: '),
+                Expanded(
+                  child: TextField(
+                    controller: redMinController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: '最小值',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(' - '),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: redMaxController,
@@ -616,12 +745,14 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                       isDense: true,
+                      hintText: '最大值',
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            // 黄色区间
             Row(
               children: [
                 Container(
@@ -630,7 +761,21 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                   color: Colors.yellow[700],
                 ),
                 const SizedBox(width: 8),
-                Text('黄色: ${_getYellowStart()} - '),
+                const Text('黄色: '),
+                Expanded(
+                  child: TextField(
+                    controller: yellowMinController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: '最小值',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(' - '),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: yellowMaxController,
@@ -638,12 +783,14 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                       isDense: true,
+                      hintText: '最大值',
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            // 蓝色区间
             Row(
               children: [
                 Container(
@@ -652,7 +799,21 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                   color: Colors.blue,
                 ),
                 const SizedBox(width: 8),
-                Text('蓝色: ${_getBlueStart()} - '),
+                const Text('蓝色: '),
+                Expanded(
+                  child: TextField(
+                    controller: blueMinController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: '最小值',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(' - '),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: blueMaxController,
@@ -660,12 +821,14 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                     decoration: const InputDecoration(
                       border: OutlineInputBorder(),
                       isDense: true,
+                      hintText: '最大值',
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            // 绿色区间
             Row(
               children: [
                 Container(
@@ -674,7 +837,32 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
                   color: Colors.green,
                 ),
                 const SizedBox(width: 8),
-                Text('绿色: ${_getGreenStart()} - 100'),
+                const Text('绿色: '),
+                Expanded(
+                  child: TextField(
+                    controller: greenMinController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: '最小值',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(' - '),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: greenMaxController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      hintText: '最大值',
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -692,28 +880,31 @@ class _AccuracyColorDialogState extends State<_AccuracyColorDialog> {
         ),
         TextButton(
           onPressed: () async {
+            if (!_validateRanges()) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('区间设置不合理：请确保区间连续覆盖0-100且不重叠'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+              return;
+            }
+            
             try {
+              final redMin = int.parse(redMinController.text);
               final redMax = int.parse(redMaxController.text);
+              final yellowMin = int.parse(yellowMinController.text);
               final yellowMax = int.parse(yellowMaxController.text);
+              final blueMin = int.parse(blueMinController.text);
               final blueMax = int.parse(blueMaxController.text);
-              final greenMin = _getGreenStart(); // 自动计算绿色区间开始值
-              
-              // 验证区间是否合理
-              if (redMax < 0 || redMax >= 100 ||
-                  yellowMax <= redMax || yellowMax >= 100 ||
-                  blueMax <= yellowMax || blueMax >= 100 ||
-                  greenMin <= blueMax || greenMin > 100) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('区间设置不合理，请检查数值')),
-                );
-                return;
-              }
+              final greenMin = int.parse(greenMinController.text);
+              final greenMax = int.parse(greenMaxController.text);
               
               final newRanges = {
-                'red_max': redMax,
-                'yellow_max': yellowMax,
-                'blue_max': blueMax,
-                'green_min': greenMin,
+                'red': {'min': redMin, 'max': redMax},
+                'yellow': {'min': yellowMin, 'max': yellowMax},
+                'blue': {'min': blueMin, 'max': blueMax},
+                'green': {'min': greenMin, 'max': greenMax},
               };
               
               await widget.configService.setAccuracyColorRanges(newRanges);
