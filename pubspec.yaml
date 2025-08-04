@@ -42,6 +42,7 @@ dependencies:
   # Platform Integration
   url_launcher: ^6.2.2
   package_info_plus: ^4.2.0
+  share_plus: ^7.2.2
   
   # Network and Security
   http: ^1.1.0

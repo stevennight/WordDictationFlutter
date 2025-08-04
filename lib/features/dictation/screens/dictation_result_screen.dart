@@ -7,6 +7,8 @@ import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/dictation_service.dart';
 import '../../../core/services/local_config_service.dart';
+import '../../../core/services/share_service.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../shared/utils/accuracy_header_utils.dart';
 import '../../history/screens/history_detail_screen.dart';
 import '../../../main.dart';
@@ -366,7 +368,36 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
               ),
             ],
           ),
-          // 第二行：如果有错题，显示返回首页按钮
+          // 第二行：分享按钮
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _shareToApps,
+                  icon: const Icon(Icons.share),
+                  label: const Text('分享'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saveToLocal,
+                  icon: const Icon(Icons.save),
+                  label: const Text('保存'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _copyToClipboard,
+                  icon: const Icon(Icons.copy),
+                  label: const Text('复制'),
+                ),
+              ),
+            ],
+          ),
+          // 第三行：如果有错题，显示返回首页按钮
           if (hasIncorrectWords) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -413,6 +444,121 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
       MaterialPageRoute(builder: (context) => const MainScreen()),
       (route) => false,
     );
+  }
+
+  Future<void> _shareToApps() async {
+    try {
+      await ShareService.shareToApps(widget.session);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('分享失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveToLocal() async {
+    try {
+      // 让用户选择保存路径
+      String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+      
+      // 如果用户取消选择，直接返回
+      if (selectedDirectory == null) {
+        return;
+      }
+      
+      // 让用户输入自定义文件名
+      String? customFileName = await _showFileNameDialog();
+      
+      final filePath = await ShareService.saveToLocal(
+        widget.session, 
+        customPath: selectedDirectory,
+        customFileName: customFileName,
+      );
+      
+      if (filePath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('图片已保存到: $filePath'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('保存失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<String?> _showFileNameDialog() async {
+    final TextEditingController controller = TextEditingController(
+      text: 'dictation_result_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('自定义文件名'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: '文件名（不需要输入.png后缀）',
+              hintText: '例如：我的默写结果',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                final fileName = controller.text.trim();
+                Navigator.of(context).pop(fileName.isEmpty ? null : fileName);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _copyToClipboard() async {
+    try {
+      await ShareService.copyToClipboard(widget.session);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('图片已复制到剪贴板，可以直接粘贴到Word等应用中'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('复制失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   String _formatTime(DateTime dateTime) {
