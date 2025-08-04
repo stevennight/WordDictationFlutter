@@ -68,44 +68,6 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('默写详情'),
-        actions: [
-          if (_session != null)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                switch (value) {
-                  case 'export':
-                    _exportResults();
-                    break;
-                  case 'retry':
-                    _retryIncorrectWords();
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'export',
-                  child: Row(
-                    children: [
-                      Icon(Icons.download),
-                      SizedBox(width: 8),
-                      Text('导出结果'),
-                    ],
-                  ),
-                ),
-                if (_results.any((r) => !r.isCorrect))
-                  const PopupMenuItem(
-                    value: 'retry',
-                    child: Row(
-                      children: [
-                        Icon(Icons.refresh),
-                        SizedBox(width: 8),
-                        Text('重做错题'),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-        ],
       ),
       body: _buildBody(),
     );
@@ -196,6 +158,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
             if (session.endTime != null)
               _buildSummaryRow('结束时间', DateFormat('yyyy-MM-dd HH:mm:ss').format(session.endTime!)),
             _buildSummaryRow('模式', _getModeText(session.mode)),
+            _buildSummaryRow('默写方向', _getDirectionText(session.dictationDirection)),
             _buildSummaryRow('状态', _getStatusText(session)),
             if (duration != null)
               _buildSummaryRow('用时', '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}'),
@@ -476,6 +439,17 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
         return '已暂停';
       default:
         return '未知状态';
+    }
+  }
+
+  String _getDirectionText(int direction) {
+    switch (direction) {
+      case 0:
+        return '原文 → 译文';
+      case 1:
+        return '译文 → 原文';
+      default:
+        return '未知方向';
     }
   }
 }

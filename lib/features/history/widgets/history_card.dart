@@ -95,6 +95,9 @@ class HistoryCard extends StatelessWidget {
                   // Mode indicator
                   _buildModeChip(context, session.mode),
                   const SizedBox(width: 8),
+                  // Direction indicator
+                  _buildDirectionChip(context, session.dictationDirection),
+                  const SizedBox(width: 8),
                   _buildStatChip(
                     context,
                     icon: Icons.quiz,
@@ -249,6 +252,39 @@ class HistoryCard extends StatelessWidget {
     );
   }
 
+  Widget _buildDirectionChip(BuildContext context, int direction) {
+    final directionText = _getDirectionText(direction);
+    final color = Theme.of(context).colorScheme.primary;
+    final icon = _getDirectionIcon(direction);
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            directionText,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatChip(
     BuildContext context, {
     required IconData icon,
@@ -302,6 +338,28 @@ class HistoryCard extends StatelessWidget {
         return Icons.shuffle;
       case DictationMode.retry:
         return Icons.refresh;
+    }
+  }
+
+  String _getDirectionText(int direction) {
+    switch (direction) {
+      case 0:
+        return '原文→译文';
+      case 1:
+        return '译文→原文';
+      default:
+        return '未知';
+    }
+  }
+
+  IconData _getDirectionIcon(int direction) {
+    switch (direction) {
+      case 0:
+        return Icons.g_translate;
+      case 1:
+        return Icons.translate;
+      default:
+        return Icons.help;
     }
   }
 

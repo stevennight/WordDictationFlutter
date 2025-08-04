@@ -99,10 +99,18 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '提示: ${widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer}',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      GestureDetector(
+                        onTap: () => _showFullScreenText(
+                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                          '提示内容',
+                        ),
+                        child: Text(
+                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                            decorationStyle: TextDecorationStyle.dotted,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -211,10 +219,18 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    widget.dictationDirection == 0 ? widget.result.answer : widget.result.prompt,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+                  GestureDetector(
+                    onTap: () => _showFullScreenText(
+                      widget.dictationDirection == 0 ? widget.result.answer : widget.result.prompt,
+                      '正确答案',
+                    ),
+                    child: Text(
+                      widget.dictationDirection == 0 ? widget.result.answer : widget.result.prompt,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.underline,
+                        decorationStyle: TextDecorationStyle.dotted,
+                      ),
                     ),
                   ),
                   
@@ -468,6 +484,85 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
             ),
             const SizedBox(height: 16),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullScreenText(String text, String title) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.8),
+      builder: (context) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            margin: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      color: Colors.grey.shade600,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    text,
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '点击任意位置关闭',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
