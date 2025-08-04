@@ -64,7 +64,7 @@ class CustomAboutDialog extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Word Dictation 是一款专为英语学习者设计的单词默写应用。支持从Word文档导入单词，提供手写练习功能，并能记录学习历史和统计数据。',
+              'Word Dictation 是一款专为英语学习者设计的单词默写应用。支持从Excel、CSV和JSON文件导入单词，提供手写练习功能，并能记录学习历史和统计数据。',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             
@@ -81,7 +81,7 @@ class CustomAboutDialog extends StatelessWidget {
             _buildFeatureItem(
               context,
               Icons.file_upload,
-              '导入Word文档中的单词列表',
+              '导入Excel、CSV或JSON格式的单词列表',
             ),
             _buildFeatureItem(
               context,

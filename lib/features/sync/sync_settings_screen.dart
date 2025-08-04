@@ -14,6 +14,22 @@ class SyncSettingsScreen extends StatefulWidget {
 class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
   final SyncService _syncService = SyncService();
   bool _isLoading = false;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeService();
+  }
+
+  Future<void> _initializeService() async {
+    await _syncService.ensureInitialized();
+    if (mounted) {
+      setState(() {
+        _initialized = true;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +44,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _initialized ? _buildBody() : const Center(child: CircularProgressIndicator()),
     );
   }
 
@@ -56,6 +72,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -63,14 +80,14 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
           Icon(
             Icons.cloud_off,
             size: 64,
-            color: Colors.grey[400],
+            color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[400],
           ),
           const SizedBox(height: 16),
           Text(
             '还没有配置同步服务',
             style: TextStyle(
               fontSize: 18,
-              color: Colors.grey[600],
+              color: isDark ? Theme.of(context).colorScheme.onSurface : Colors.grey[600],
             ),
           ),
           const SizedBox(height: 8),
@@ -78,7 +95,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             '点击右上角的 + 按钮添加同步配置',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey[500],
+              color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[500],
             ),
           ),
           const SizedBox(height: 24),
@@ -144,17 +161,18 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
       context: context,
       builder: (context) => ObjectStorageConfigDialog(
         existingConfig: existingConfig,
-        onSave: (config) {
-          setState(() {
-            _syncService.addConfig(config);
-            // 注册提供商
-            final provider = ObjectStorageSyncProvider(config);
-            _syncService.registerProvider(config.id, provider);
-          });
+        onSave: (config) async {
+          await _syncService.addConfig(config);
+          // 注册提供商
+          final provider = ObjectStorageSyncProvider(config);
+          _syncService.registerProvider(config.id, provider);
           
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('同步配置已保存')),
-          );
+          if (mounted) {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('同步配置已保存')),
+            );
+          }
         },
       ),
     );
@@ -178,14 +196,15 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(context).pop();
-              setState(() {
-                _syncService.removeConfig(config.id);
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('同步配置已删除')),
-              );
+              await _syncService.removeConfig(config.id);
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('同步配置已删除')),
+                );
+              }
             },
             child: const Text('删除'),
           ),

@@ -103,7 +103,7 @@ class _WordDictationMainAppState extends State<WordDictationMainApp> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('1. 点击"导入单词文件"选择.docx格式的单词表'),
+              Text('1. 点击"导入单词文件"选择.xlsx或.csv格式的单词表'),
               SizedBox(height: 8),
               Text('2. 选择默写顺序（顺序或乱序）'),
               SizedBox(height: 8),

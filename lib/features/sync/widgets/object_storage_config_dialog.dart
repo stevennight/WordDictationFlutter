@@ -59,7 +59,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
       _autoSync = config.autoSync;
       _syncInterval = config.syncInterval;
     } else {
-      _pathPrefixController.text = 'wordbook-sync';
+      _pathPrefixController.text = 'wordDictationSync';
     }
   }
 
@@ -326,7 +326,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
               controller: _pathPrefixController,
               decoration: const InputDecoration(
                 labelText: '存储路径前缀',
-                hintText: 'wordbook-sync',
+                hintText: 'wordDictationSync',
                 border: OutlineInputBorder(),
                 helperText: '在存储桶中的文件夹路径',
               ),

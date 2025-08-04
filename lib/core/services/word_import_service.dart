@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as Math;
-import 'package:archive/archive.dart';
-import 'package:xml/xml.dart';
 import 'package:uuid/uuid.dart';
 import 'package:excel/excel.dart';
 
@@ -12,122 +10,11 @@ import '../../shared/models/word.dart';
 class WordImportService {
   static const Uuid _uuid = Uuid();
 
-  /// Import words from a .docx file
-  Future<List<Word>> importFromDocx(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('文件不存在');
-      }
 
-      final bytes = await file.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
 
-      // Find document.xml
-      ArchiveFile? documentXml;
-      for (final file in archive) {
-        if (file.name == 'word/document.xml') {
-          documentXml = file;
-          break;
-        }
-      }
 
-      if (documentXml == null) {
-        throw Exception('无效的Word文档格式');
-      }
 
-      final xmlContent = String.fromCharCodes(documentXml.content as List<int>);
-      final document = XmlDocument.parse(xmlContent);
 
-      return _extractWordsFromXml(document);
-    } catch (e) {
-      throw Exception('导入失败: $e');
-    }
-  }
-
-  /// Extract words from XML document
-  List<Word> _extractWordsFromXml(XmlDocument document) {
-    final words = <Word>[];
-    final now = DateTime.now();
-
-    // Find all tables in the document
-    final tables = document.findAllElements('w:tbl');
-    
-    if (tables.isEmpty) {
-      throw Exception('文档中未找到表格');
-    }
-
-    for (final table in tables) {
-      final rows = table.findAllElements('w:tr');
-      
-      for (int i = 0; i < rows.length; i++) {
-        final row = rows.elementAt(i);
-        final cells = row.findAllElements('w:tc').toList();
-        
-        // Skip header row (first row) or rows with insufficient cells
-        if (i == 0 || cells.length < 2) continue;
-        
-        try {
-          final prompt = _extractTextFromCell(cells[0]).trim();
-          final answer = _extractTextFromCell(cells[1]).trim();
-          
-          if (prompt.isNotEmpty && answer.isNotEmpty) {
-            // Determine category from additional columns if available
-            String? category;
-            if (cells.length >= 3) {
-              final categoryText = _extractTextFromCell(cells[2]).trim();
-              if (categoryText.isNotEmpty) {
-                category = categoryText;
-              }
-            }
-            
-            words.add(Word(
-              id: null,
-              prompt: prompt,
-              answer: answer,
-              category: category,
-              partOfSpeech: null,
-              level: null,
-              createdAt: now,
-              updatedAt: now,
-            ));
-          }
-        } catch (e) {
-          // Skip invalid rows
-          continue;
-        }
-      }
-    }
-
-    if (words.isEmpty) {
-      throw Exception('未找到有效的单词数据\n请确保表格格式正确：第一列为提示词，第二列为答案');
-    }
-
-    return words;
-  }
-
-  /// Extract text content from a table cell
-  String _extractTextFromCell(XmlElement cell) {
-    final textElements = cell.findAllElements('w:t');
-    final buffer = StringBuffer();
-    
-    for (final textElement in textElements) {
-      final text = textElement.innerText.trim();
-      if (text.isNotEmpty) {
-        if (buffer.isNotEmpty) {
-          buffer.write(' ');
-        }
-        buffer.write(text);
-      }
-    }
-    
-    return buffer.toString();
-  }
-
-  /// Validate if a file is a valid .docx file
-  static bool isValidDocxFile(String filePath) {
-    return filePath.toLowerCase().endsWith('.docx');
-  }
 
   /// Import words from a JSON file
   Future<List<Word>> importFromJson(String filePath) async {
@@ -221,7 +108,22 @@ class WordImportService {
       }
 
       final stat = await file.stat();
-      final words = await importFromDocx(filePath);
+      List<Word> words;
+      
+      final extension = filePath.toLowerCase().split('.').last;
+      switch (extension) {
+        case 'xlsx':
+          words = await importFromExcel(filePath);
+          break;
+        case 'csv':
+          words = await importFromCsv(filePath);
+          break;
+        case 'json':
+          words = await importFromJson(filePath);
+          break;
+        default:
+          throw Exception('不支持的文件格式: $extension');
+      }
       
       return {
         'fileName': filePath.split('/').last.split('\\').last,

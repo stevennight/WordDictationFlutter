@@ -102,7 +102,7 @@ class _FileDropZoneState extends State<FileDropZone>
         ),
         const SizedBox(height: 4),
         Text(
-          '支持 .xlsx、.docx、.csv 格式',
+          '支持 .xlsx、.csv 格式',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -199,12 +199,12 @@ class _FileDropZoneState extends State<FileDropZone>
     _animationController.reverse();
     
     final extension = filePath.split('.').last.toLowerCase();
-    if (extension == 'xlsx' || extension == 'docx' || extension == 'csv') {
+    if (extension == 'xlsx' || extension == 'csv') {
       widget.onFileSelected(filePath);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('请选择 .xlsx、.docx 或 .csv 格式的文件'),
+          content: Text('请选择 .xlsx 或 .csv 格式的文件'),
           backgroundColor: Colors.red,
         ),
       );

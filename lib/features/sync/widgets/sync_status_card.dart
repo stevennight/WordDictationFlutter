@@ -52,13 +52,13 @@ class SyncStatusCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                _buildStatusChip(),
+                _buildStatusChip(context),
               ],
             ),
             const SizedBox(height: 16),
             _buildConfigInfo(),
             const SizedBox(height: 16),
-            _buildLastSyncInfo(),
+            _buildLastSyncInfo(context),
             const SizedBox(height: 16),
             _buildActionButtons(context),
           ],
@@ -100,21 +100,28 @@ class SyncStatusCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusChip() {
+  Widget _buildStatusChip(BuildContext context) {
     final isEnabled = config.enabled;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Chip(
       label: Text(
         isEnabled ? '已启用' : '已禁用',
         style: TextStyle(
-          color: isEnabled ? Colors.green[700] : Colors.grey[600],
+          color: isEnabled 
+              ? (isDark ? Colors.green[300] : Colors.green[700])
+              : (isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600]),
           fontSize: 12,
         ),
       ),
-      backgroundColor: isEnabled ? Colors.green[50] : Colors.grey[100],
+      backgroundColor: isEnabled 
+          ? (isDark ? Colors.green[900]!.withOpacity(0.3) : Colors.green[50])
+          : (isDark ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.grey[100]),
       side: BorderSide(
-        color: isEnabled ? Colors.green[200]! : Colors.grey[300]!,
+        color: isEnabled 
+            ? (isDark ? Colors.green[700]!.withOpacity(0.5) : Colors.green[200]!)
+            : (isDark ? Theme.of(context).colorScheme.outline.withOpacity(0.3) : Colors.grey[300]!),
       ),
-    );
+     );
   }
 
   Widget _buildConfigInfo() {
@@ -164,16 +171,17 @@ class SyncStatusCard extends StatelessWidget {
     );
   }
 
-  Widget _buildLastSyncInfo() {
+  Widget _buildLastSyncInfo(BuildContext context) {
     final lastSyncTime = config.lastSyncTime;
     final autoSync = config.autoSync;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: isDark ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.grey[50],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: isDark ? Theme.of(context).colorScheme.outline.withOpacity(0.3) : Colors.grey[200]!),
       ),
       child: Column(
         children: [
@@ -182,14 +190,14 @@ class SyncStatusCard extends StatelessWidget {
               Icon(
                 Icons.schedule,
                 size: 16,
-                color: Colors.grey[600],
+                color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600],
               ),
               const SizedBox(width: 8),
               Text(
                 '上次同步: ${lastSyncTime != null ? _formatDateTime(lastSyncTime) : '从未同步'}',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600],
                 ),
               ),
             ],
@@ -200,14 +208,14 @@ class SyncStatusCard extends StatelessWidget {
               Icon(
                 autoSync ? Icons.sync : Icons.sync_disabled,
                 size: 16,
-                color: Colors.grey[600],
+                color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600],
               ),
               const SizedBox(width: 8),
               Text(
                 autoSync ? '自动同步: 每${_formatDuration(config.syncInterval)}' : '手动同步',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color: isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600],
                 ),
               ),
             ],

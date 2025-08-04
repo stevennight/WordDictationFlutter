@@ -46,7 +46,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
 
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'docx', 'csv', 'json'],
+        allowedExtensions: ['xlsx', 'csv', 'json'],
       );
 
       if (result != null) {
@@ -69,8 +69,6 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
         List<Word> words;
         if (file.extension?.toLowerCase() == 'xlsx') {
           words = await _wordImportService.importFromExcel(file.path!);
-        } else if (file.extension?.toLowerCase() == 'docx') {
-          words = await _wordImportService.importFromDocx(file.path!);
         } else if (file.extension?.toLowerCase() == 'csv') {
           words = await _wordImportService.importFromCsv(file.path!);
         } else if (file.extension?.toLowerCase() == 'json') {
@@ -282,7 +280,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '支持 .xlsx、.docx、.csv 和 .json 格式的文件\nExcel格式：单词 | 词性 | 中文 | 等级\nJSON格式：支持智能导入，自动识别同名词书并更新',
+                      '支持 .xlsx、.csv 和 .json 格式的文件\nExcel格式：单词 | 词性 | 中文 | 等级\nJSON格式：支持智能导入，自动识别同名词书并更新',
                       style: TextStyle(color: Colors.grey),
                     ),
                     const SizedBox(height: 16),

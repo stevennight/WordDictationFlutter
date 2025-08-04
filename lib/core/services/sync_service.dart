@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import 'wordbook_service.dart';
+import 'local_config_service.dart';
 
 /// 同步数据类型枚举
 enum SyncDataType {
@@ -125,10 +126,13 @@ abstract class SyncProvider {
 class SyncService {
   static final SyncService _instance = SyncService._internal();
   factory SyncService() => _instance;
-  SyncService._internal();
+  SyncService._internal() {
+    _loadConfigs();
+  }
 
   final Map<String, SyncProvider> _providers = {};
   final List<SyncConfig> _configs = [];
+  bool _initialized = false;
 
   /// 注册同步提供商
   void registerProvider(String configId, SyncProvider provider) {
@@ -136,9 +140,10 @@ class SyncService {
   }
 
   /// 添加同步配置
-  void addConfig(SyncConfig config) {
+  Future<void> addConfig(SyncConfig config) async {
     _configs.removeWhere((c) => c.id == config.id);
     _configs.add(config);
+    await _saveConfigs();
   }
 
   /// 获取所有配置
@@ -154,9 +159,10 @@ class SyncService {
   }
 
   /// 删除配置
-  void removeConfig(String configId) {
+  Future<void> removeConfig(String configId) async {
     _configs.removeWhere((c) => c.id == configId);
     _providers.remove(configId);
+    await _saveConfigs();
   }
 
   /// 同步词书数据
@@ -186,7 +192,7 @@ class SyncService {
               lastSyncTime: DateTime.now(),
               enabled: config.enabled,
             );
-            addConfig(updatedConfig);
+            await addConfig(updatedConfig);
           }
         }
         
@@ -211,7 +217,7 @@ class SyncService {
               lastSyncTime: DateTime.now(),
               enabled: config.enabled,
             );
-            addConfig(updatedConfig);
+            await addConfig(updatedConfig);
           }
           
           return SyncResult.success(message: '词书数据同步成功');
@@ -232,6 +238,53 @@ class SyncService {
     }
 
     return await provider.testConnection();
+  }
+
+  /// 加载同步配置
+  Future<void> _loadConfigs() async {
+    if (_initialized) return;
+    
+    try {
+       final localConfig = await LocalConfigService.getInstance();
+       final configsData = await localConfig.getSetting<List<dynamic>>('sync_configs') ?? [];
+      
+      _configs.clear();
+      for (final configData in configsData) {
+        if (configData is Map<String, dynamic>) {
+          try {
+            final config = SyncConfig.fromMap(configData);
+            _configs.add(config);
+          } catch (e) {
+            print('Failed to load sync config: $e');
+          }
+        }
+      }
+      
+      _initialized = true;
+      print('Loaded ${_configs.length} sync configs');
+    } catch (e) {
+      print('Failed to load sync configs: $e');
+      _initialized = true;
+    }
+  }
+
+  /// 保存同步配置
+  Future<void> _saveConfigs() async {
+    try {
+       final localConfig = await LocalConfigService.getInstance();
+       final configsData = _configs.map((config) => config.toMap()).toList();
+      await localConfig.setSetting('sync_configs', configsData);
+      print('Saved ${_configs.length} sync configs');
+    } catch (e) {
+      print('Failed to save sync configs: $e');
+    }
+  }
+
+  /// 确保配置已加载
+  Future<void> ensureInitialized() async {
+    if (!_initialized) {
+      await _loadConfigs();
+    }
   }
 
   /// 导出所有词书数据（内部方法）

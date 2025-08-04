@@ -227,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              '支持 .xlsx、.docx、.csv 格式\nExcel格式：单词 | 词性 | 中文 | 等级',
+              '支持 .xlsx、.csv 格式\nExcel格式：单词 | 词性 | 中文 | 等级',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -339,7 +339,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'docx', 'csv'],
+        allowedExtensions: ['xlsx', 'csv'],
         allowMultiple: false,
       );
 
@@ -366,8 +366,6 @@ class _HomeScreenState extends State<HomeScreen> {
       
       if (extension == 'xlsx') {
         words = await _importService.importFromExcel(filePath);
-      } else if (extension == 'docx') {
-        words = await _importService.importFromDocx(filePath);
       } else if (extension == 'csv') {
         words = await _importService.importFromCsv(filePath);
       } else {

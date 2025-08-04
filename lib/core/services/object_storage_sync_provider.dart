@@ -42,7 +42,7 @@ class ObjectStorageConfig {
     required this.secretAccessKey,
     this.sessionToken,
     this.useSSL = true,
-    this.pathPrefix = 'wordbook-sync',
+    this.pathPrefix = 'wordDictationSync',
     this.urlStyle = UrlStyle.pathStyle,
   });
 
@@ -74,7 +74,7 @@ class ObjectStorageConfig {
       secretAccessKey: map['secretAccessKey'],
       sessionToken: map['sessionToken'],
       useSSL: map['useSSL'] ?? true,
-      pathPrefix: map['pathPrefix'] ?? 'wordbook-sync',
+      pathPrefix: map['pathPrefix'] ?? 'wordDictationSync',
       urlStyle: UrlStyle.values.firstWhere(
         (e) => e.toString() == map['urlStyle'],
         orElse: () => UrlStyle.pathStyle,

@@ -47,14 +47,50 @@ void main() async {
 
 
 
-class WordDictationApp extends StatelessWidget {
+class WordDictationApp extends StatefulWidget {
   const WordDictationApp({super.key});
 
   @override
+  State<WordDictationApp> createState() => _WordDictationAppState();
+}
+
+class _WordDictationAppState extends State<WordDictationApp> {
+  late ThemeProvider _themeProvider;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeTheme();
+  }
+
+  Future<void> _initializeTheme() async {
+    _themeProvider = ThemeProvider();
+    await _themeProvider.initialize();
+    if (mounted) {
+      setState(() {
+        _isInitialized = true;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return MaterialApp(
+        title: '默写小助手',
+        debugShowCheckedModeBanner: false,
+        home: const Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: _themeProvider),
         ChangeNotifierProvider(create: (_) => AppStateProvider()),
         ChangeNotifierProvider(create: (_) => DictationProvider()),
         ChangeNotifierProvider(create: (_) => HistoryProvider()),

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 class LocalConfigService {
   static LocalConfigService? _instance;
@@ -21,15 +22,21 @@ class LocalConfigService {
   static Future<void> _loadConfig() async {
     try {
       final configFile = await _getConfigFile();
+      print('Config file path: ${configFile.path}');
+      
       if (await configFile.exists()) {
         final content = await configFile.readAsString();
+        print('Config file content length: ${content.length}');
         _config = jsonDecode(content) as Map<String, dynamic>;
+        print('Config loaded successfully with ${_config!.length} settings');
       } else {
+        print('Config file does not exist, creating new one');
         _config = <String, dynamic>{};
         await _saveConfig();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Failed to load config: $e');
+      print('Stack trace: $stackTrace');
       _config = <String, dynamic>{};
     }
   }
@@ -44,8 +51,9 @@ class LocalConfigService {
         final executablePath = Platform.resolvedExecutable;
         appDir = dirname(executablePath);
       } else {
-        // This shouldn't happen in this context, but fallback
-        appDir = '.';
+        // For mobile platforms (Android/iOS), use application documents directory
+        final documentsDirectory = await getApplicationDocumentsDirectory();
+        appDir = documentsDirectory.path;
       }
       _configPath = join(appDir, 'app_config.json');
     }
@@ -55,10 +63,31 @@ class LocalConfigService {
   static Future<void> _saveConfig() async {
     try {
       final configFile = await _getConfigFile();
+      print('Saving config to: ${configFile.path}');
+      
+      // Ensure parent directory exists
+      final parentDir = configFile.parent;
+      if (!await parentDir.exists()) {
+        print('Creating parent directory: ${parentDir.path}');
+        await parentDir.create(recursive: true);
+      }
+      
       final content = jsonEncode(_config);
+      print('Config content to save: $content');
+      
       await configFile.writeAsString(content);
-    } catch (e) {
+      print('Config saved successfully');
+      
+      // Verify the file was written
+      if (await configFile.exists()) {
+        final savedContent = await configFile.readAsString();
+        print('Verification: saved content length = ${savedContent.length}');
+      } else {
+        print('Warning: Config file does not exist after save attempt');
+      }
+    } catch (e, stackTrace) {
       print('Failed to save config: $e');
+      print('Stack trace: $stackTrace');
     }
   }
 
@@ -220,9 +249,24 @@ class LocalConfigService {
     await _saveConfig();
   }
 
-  // Generic setting method
+  // Generic setting methods
   Future<void> setSetting<T>(String key, T value) async {
     _config![key] = value;
     await _saveConfig();
+  }
+
+  Future<T?> getSetting<T>(String key) async {
+    await _ensureConfigLoaded();
+    final value = _config?[key];
+    if (value is T) {
+      return value;
+    }
+    return null;
+  }
+
+  static Future<void> _ensureConfigLoaded() async {
+    if (_config == null) {
+      await _loadConfig();
+    }
   }
 }
