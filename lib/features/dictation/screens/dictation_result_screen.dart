@@ -3,11 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/dictation_result.dart';
-import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../core/services/dictation_service.dart';
-import '../../../core/services/word_service.dart';
 import '../../../core/services/local_config_service.dart';
 import '../../../shared/utils/accuracy_header_utils.dart';
 import '../../history/screens/history_detail_screen.dart';
@@ -29,43 +27,6 @@ class DictationResultScreen extends StatefulWidget {
 
 class _DictationResultScreenState extends State<DictationResultScreen> {
   final DictationService _dictationService = DictationService();
-  final WordService _wordService = WordService();
-  List<Word> _words = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadWords();
-  }
-
-  Future<void> _loadWords() async {
-    try {
-      final wordIds = widget.results.map((r) => r.wordId).toList();
-      final words = <Word>[];
-      
-      for (final wordId in wordIds) {
-        final word = await _wordService.getWordById(wordId);
-        if (word != null) {
-          words.add(word);
-        }
-      }
-      
-      setState(() {
-        _words = words;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载单词失败: $e')),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,16 +45,13 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
+      body: Column(
               children: [
-                // 统计信息头部
-                _buildStatisticsHeader(accuracy, duration),
-                
-                // 详细结果列表
+                // 统计信息头部 - 可滚动
                 Expanded(
-                  child: _buildResultsList(),
+                  child: SingleChildScrollView(
+                    child: _buildStatisticsHeader(accuracy, duration),
+                  ),
                 ),
                 
                 // 底部操作按钮
@@ -335,332 +293,11 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
     );
   }
 
-  Widget _buildResultsList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 默写内容标题
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Icon(
-                Icons.list_alt,
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '默写内容详情',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '共${widget.results.length}题',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 默写结果列表
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: widget.results.length,
-            itemBuilder: (context, index) {
-              final result = widget.results[index];
-              final word = _words.isNotEmpty && index < _words.length 
-                  ? _words[index] 
-                  : null;
-              
-              return _buildResultItem(result, word, index + 1);
-            },
-          ),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildResultItem(DictationResult result, Word? word, int index) {
-    final session = widget.session;
-    final dictationDirection = session.dictationDirection;
-    
-    // 根据默写方向确定显示内容
-    final promptText = dictationDirection == 0 ? result.prompt : result.answer;
-    final answerText = dictationDirection == 0 ? result.answer : result.prompt;
-    
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 题目信息
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: result.isCorrect ? Colors.green : Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      index.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            result.isCorrect ? Icons.check_circle : Icons.cancel,
-                            color: result.isCorrect ? Colors.green : Colors.red,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            result.isCorrect ? '正确' : '错误',
-                            style: TextStyle(
-                              color: result.isCorrect ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (word?.partOfSpeech != null || word?.level != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Wrap(
-                            spacing: 8,
-                            children: [
-                              if (word?.partOfSpeech != null)
-                                Chip(
-                                  label: Text(
-                                    word!.partOfSpeech!,
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              if (word?.level != null)
-                                Chip(
-                                  label: Text(
-                                    word!.level!,
-                                    style: const TextStyle(fontSize: 10),
-                                  ),
-                                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: 12),
-            
-            // 题目内容
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '题目：',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    promptText,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 8),
-            
-            // 正确答案
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.green.withOpacity(0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '正确答案：',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.green.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    answerText,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-            
-            // 手写图片
-            if (result.originalImagePath != null || result.annotatedImagePath != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _buildHandwritingImages(result),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildHandwritingImages(DictationResult result) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '手写笔迹：',
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            if (result.originalImagePath != null)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '原始笔迹',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          result.originalImagePath!,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Icon(
-                                Icons.image_not_supported,
-                                color: Colors.grey,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (result.originalImagePath != null && result.annotatedImagePath != null)
-              const SizedBox(width: 12),
-            if (result.annotatedImagePath != null)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '批改笔迹',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          result.annotatedImagePath!,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Icon(
-                                Icons.image_not_supported,
-                                color: Colors.grey,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
+
+
+
 
   Widget _buildActionButtons() {
     final hasIncorrectWords = widget.results.any((r) => !r.isCorrect);
@@ -680,37 +317,44 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 第一行：查看详情按钮
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _viewDetails,
-              icon: const Icon(Icons.visibility),
-              label: const Text('查看详情'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // 第二行：重做错题和返回首页
+          // 第一行：查看详情和重做错题（如果有错题）
           Row(
             children: [
-              if (hasIncorrectWords)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _retryIncorrectWords,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('重做错题'),
-                  ),
-                ),
-              if (hasIncorrectWords) const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _returnToHome,
-                  icon: const Icon(Icons.home),
-                  label: const Text('返回首页'),
+                child: OutlinedButton.icon(
+                  onPressed: _viewDetails,
+                  icon: const Icon(Icons.visibility),
+                  label: const Text('查看详情'),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: hasIncorrectWords
+                    ? OutlinedButton.icon(
+                        onPressed: _retryIncorrectWords,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重做错题'),
+                      )
+                    : ElevatedButton.icon(
+                        onPressed: _returnToHome,
+                        icon: const Icon(Icons.home),
+                        label: const Text('返回首页'),
+                      ),
               ),
             ],
           ),
+          // 第二行：如果有错题，显示返回首页按钮
+          if (hasIncorrectWords) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _returnToHome,
+                icon: const Icon(Icons.home),
+                label: const Text('返回首页'),
+              ),
+            ),
+          ],
         ],
       ),
     );
