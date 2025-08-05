@@ -446,8 +446,14 @@ class DictationProvider extends ChangeNotifier {
         currentWordIndex: nextIndex,
       );
       _currentWord = _sessionWords[nextIndex];
+      // 重置状态到默写模式
+      _originalImagePath = null;
+      _annotatedImagePath = null;
+      _isAnnotationMode = false;
+      _setState(DictationState.inProgress);
       clearCanvas();
-      notifyListeners();
+    } else {
+      _completeDictation();
     }
   }
 
@@ -470,5 +476,54 @@ class DictationProvider extends ChangeNotifier {
     // This method will be called to clear the handwriting canvas
     // The actual canvas clearing will be handled by the canvas widget
     notifyListeners();
+  }
+
+  // State management methods
+  void setState(DictationState newState) {
+    _state = newState;
+    notifyListeners();
+  }
+
+  // Result modification methods
+  void updateResult(int wordIndex, bool isCorrect, {String? annotatedImagePath}) {
+    // 查找现有结果
+    final existingResultIndex = _results.indexWhere(
+      (result) => result.wordIndex == wordIndex
+    );
+    
+    if (existingResultIndex != -1) {
+      // 更新现有结果
+      final existingResult = _results[existingResultIndex];
+      final updatedResult = existingResult.copyWith(
+        isCorrect: isCorrect,
+        annotatedImagePath: annotatedImagePath ?? existingResult.annotatedImagePath,
+        timestamp: DateTime.now(),
+      );
+      _results[existingResultIndex] = updatedResult;
+      
+      // 更新会话统计
+      _updateSessionCounts();
+      notifyListeners();
+    }
+  }
+
+  void _updateSessionCounts() {
+    if (_currentSession == null) return;
+    
+    int correctCount = 0;
+    int incorrectCount = 0;
+    
+    for (final result in _results) {
+      if (result.isCorrect) {
+        correctCount++;
+      } else {
+        incorrectCount++;
+      }
+    }
+    
+    _currentSession = _currentSession!.copyWith(
+      correctCount: correctCount,
+      incorrectCount: incorrectCount,
+    );
   }
 }

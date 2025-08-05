@@ -341,68 +341,101 @@ class _DictationScreenState extends State<DictationScreen> {
 
   Widget _buildControlButtons(DictationProvider provider) {
     if (provider.state == DictationState.inProgress) {
-      return Row(
+      // 检查当前单词是否已经提交过（有结果记录）
+      final hasSubmitted = provider.results.any(
+        (result) => result.wordIndex == provider.currentIndex
+      );
+      
+      return Column(
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => _showExitConfirmation(provider),
-              icon: const Icon(Icons.exit_to_app),
-              label: const Text('退出默写'),
+          // 导航按钮行 - 只有在未提交时才显示
+          if (provider.currentIndex > 0 && !hasSubmitted)
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isSubmitting ? null : () => _goToPreviousWord(provider),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('上一个'),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 2,
-            child: ElevatedButton.icon(
-              onPressed: _isSubmitting ? null : () => _submitAnswer(provider),
-              icon: _isSubmitting 
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(_isSubmitting ? '提交中...' : '提交答案'),
-            ),
+          
+          if (provider.currentIndex > 0 && !hasSubmitted) const SizedBox(height: 12),
+          
+          // 主要操作按钮行
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showExitConfirmation(provider),
+                  icon: const Icon(Icons.exit_to_app),
+                  label: const Text('退出默写'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _isSubmitting ? null : () => _submitAnswer(provider),
+                  icon: _isSubmitting 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(_isSubmitting ? '提交中...' : '提交答案'),
+                ),
+              ),
+            ],
           ),
         ],
       );
     } else if (provider.state == DictationState.showingAnswer || provider.state == DictationState.judging) {
-      return Row(
+      return Column(
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _isMarking ? null : () => _markIncorrect(provider),
-              icon: _isMarking 
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.close),
-              label: Text(_isMarking ? '处理中...' : '错误'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
+          // 在批改状态下不显示返回按钮
+          
+          // 批改按钮行
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isMarking ? null : () => _markIncorrect(provider),
+                  icon: _isMarking 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.close),
+                  label: Text(_isMarking ? '处理中...' : '错误'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _isMarking ? null : () => _markCorrect(provider),
-              icon: _isMarking 
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(_isMarking ? '处理中...' : '正确'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isMarking ? null : () => _markCorrect(provider),
+                  icon: _isMarking 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(_isMarking ? '处理中...' : '正确'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       );
@@ -469,8 +502,29 @@ class _DictationScreenState extends State<DictationScreen> {
     try {
       // 保存批改后的画板
       await _saveAnnotatedImage(provider);
-      await provider.recordResult(true);
-      // recordResult already calls _showNextWord, no need to call nextWord again
+      
+      // 检查是否是修改现有结果
+      final existingResult = provider.results.where(
+        (result) => result.wordIndex == provider.currentIndex
+      ).firstOrNull;
+      
+      if (existingResult != null) {
+        // 修改现有结果
+        provider.updateResult(
+          provider.currentIndex, 
+          true, 
+          annotatedImagePath: provider.annotatedImagePath
+        );
+        // 重新批改完成后，自动进入下一个单词
+        await Future.delayed(const Duration(milliseconds: 200)); // 延迟确保状态更新
+        if (mounted) {
+          _nextWord(provider);
+        }
+      } else {
+        // 记录新结果
+        await provider.recordResult(true);
+      }
+      
       (_canvasKey.currentState as dynamic)?.clear();
     } catch (e) {
       if (mounted) {
@@ -500,8 +554,29 @@ class _DictationScreenState extends State<DictationScreen> {
     try {
       // 保存批改后的画板
       await _saveAnnotatedImage(provider);
-      await provider.recordResult(false);
-      // recordResult already calls _showNextWord, no need to call nextWord again
+      
+      // 检查是否是修改现有结果
+      final existingResult = provider.results.where(
+        (result) => result.wordIndex == provider.currentIndex
+      ).firstOrNull;
+      
+      if (existingResult != null) {
+        // 修改现有结果
+        provider.updateResult(
+          provider.currentIndex, 
+          false, 
+          annotatedImagePath: provider.annotatedImagePath
+        );
+        // 重新批改完成后，自动进入下一个单词
+        await Future.delayed(const Duration(milliseconds: 200)); // 延迟确保状态更新
+        if (mounted) {
+          _nextWord(provider);
+        }
+      } else {
+        // 记录新结果
+        await provider.recordResult(false);
+      }
+      
       (_canvasKey.currentState as dynamic)?.clear();
     } catch (e) {
       if (mounted) {
@@ -554,7 +629,22 @@ class _DictationScreenState extends State<DictationScreen> {
       canvas.setStrokeColor(Colors.black);
     }
     
-    provider.nextWord();
+    // 检查是否是重新批改场景（当前单词已有结果）
+    final hasExistingResult = provider.results.any(
+      (result) => result.wordIndex == provider.currentIndex
+    );
+    
+    if (hasExistingResult) {
+      // 重新批改后，直接跳转到下一个单词
+      provider.goToNextWord();
+      // 如果已经是最后一个单词，完成默写
+      if (provider.currentIndex >= provider.totalWords - 1) {
+        // 这里应该触发完成逻辑，但goToNextWord已经处理了边界
+      }
+    } else {
+      // 正常流程，通过recordResult递增索引
+      provider.nextWord();
+    }
   }
 
   void _showExitConfirmation(DictationProvider provider) {
@@ -610,6 +700,56 @@ class _DictationScreenState extends State<DictationScreen> {
     
     // Clean up the dictation state after navigation
     provider.finishSession();
+  }
+
+  void _goToPreviousWord(DictationProvider provider) async {
+    if (provider.currentIndex > 0) {
+      // 清除画布
+      (_canvasKey.currentState as dynamic)?.clear();
+      
+      // 返回上一个单词
+      provider.goToPreviousWord();
+      
+      // 检查是否已有该单词的批改结果
+      final existingResult = provider.results.where(
+        (result) => result.wordIndex == provider.currentIndex
+      ).firstOrNull;
+      
+      if (existingResult != null) {
+        // 如果已有结果，进入批改状态并恢复图片，只允许修改批改内容
+        provider.setAnnotatedImagePath(existingResult.annotatedImagePath);
+        provider.setOriginalImagePath(existingResult.originalImagePath);
+        provider.enterAnnotationMode();
+        
+        // 恢复画布上的批改图片
+        if (existingResult.annotatedImagePath != null) {
+          await _loadImageToCanvas(existingResult.annotatedImagePath!);
+        } else if (existingResult.originalImagePath != null) {
+          // 如果没有批改图片，加载原始图片作为背景
+          await _loadImageToCanvas(existingResult.originalImagePath!);
+        }
+      } else {
+        // 如果没有结果，允许返回到答题状态（只要下一个单词未提交）
+        provider.setState(DictationState.inProgress);
+        provider.setAnnotatedImagePath(null);
+        provider.setOriginalImagePath(null);
+      }
+    }
+  }
+
+
+
+  Future<void> _loadImageToCanvas(String imagePath) async {
+    try {
+      // 这里需要实现将图片加载到画布的逻辑
+      // 具体实现取决于使用的画布组件
+      final canvasState = _canvasKey.currentState as dynamic;
+      if (canvasState != null && canvasState.loadImage != null) {
+        await canvasState.loadImage(imagePath);
+      }
+    } catch (e) {
+      debugPrint('加载图片到画布失败: $e');
+    }
   }
 
   void _showCompletionDialog(DictationProvider provider) {
