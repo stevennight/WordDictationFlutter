@@ -23,6 +23,7 @@ class DictationScreen extends StatefulWidget {
 class _DictationScreenState extends State<DictationScreen> {
   final GlobalKey<State<HandwritingCanvas>> _canvasKey = GlobalKey();
   bool _isSubmitting = false;
+  bool _isMarking = false; // 防抖标志，防止重复点击批改按钮
 
   @override
   Widget build(BuildContext context) {
@@ -371,9 +372,15 @@ class _DictationScreenState extends State<DictationScreen> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () => _markIncorrect(provider),
-              icon: const Icon(Icons.close),
-              label: const Text('错误'),
+              onPressed: _isMarking ? null : () => _markIncorrect(provider),
+              icon: _isMarking 
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.close),
+              label: Text(_isMarking ? '处理中...' : '错误'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.error,
               ),
@@ -382,9 +389,15 @@ class _DictationScreenState extends State<DictationScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () => _markCorrect(provider),
-              icon: const Icon(Icons.check),
-              label: const Text('正确'),
+              onPressed: _isMarking ? null : () => _markCorrect(provider),
+              icon: _isMarking 
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check),
+              label: Text(_isMarking ? '处理中...' : '正确'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
@@ -447,19 +460,65 @@ class _DictationScreenState extends State<DictationScreen> {
   }
 
   Future<void> _markCorrect(DictationProvider provider) async {
-    // 保存批改后的画板
-    await _saveAnnotatedImage(provider);
-    await provider.recordResult(true);
-    // recordResult already calls _showNextWord, no need to call nextWord again
-    (_canvasKey.currentState as dynamic)?.clear();
+    if (_isMarking) return; // 防抖：如果正在处理，直接返回
+    
+    setState(() {
+      _isMarking = true;
+    });
+
+    try {
+      // 保存批改后的画板
+      await _saveAnnotatedImage(provider);
+      await provider.recordResult(true);
+      // recordResult already calls _showNextWord, no need to call nextWord again
+      (_canvasKey.currentState as dynamic)?.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('标记正确失败: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarking = false;
+        });
+      }
+    }
   }
 
   Future<void> _markIncorrect(DictationProvider provider) async {
-    // 保存批改后的画板
-    await _saveAnnotatedImage(provider);
-    await provider.recordResult(false);
-    // recordResult already calls _showNextWord, no need to call nextWord again
-    (_canvasKey.currentState as dynamic)?.clear();
+    if (_isMarking) return; // 防抖：如果正在处理，直接返回
+    
+    setState(() {
+      _isMarking = true;
+    });
+
+    try {
+      // 保存批改后的画板
+      await _saveAnnotatedImage(provider);
+      await provider.recordResult(false);
+      // recordResult already calls _showNextWord, no need to call nextWord again
+      (_canvasKey.currentState as dynamic)?.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('标记错误失败: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarking = false;
+        });
+      }
+    }
   }
 
   Future<void> _saveAnnotatedImage(DictationProvider provider) async {

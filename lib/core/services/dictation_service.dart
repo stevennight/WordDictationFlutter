@@ -1,3 +1,5 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../../shared/models/dictation_session.dart';
 import '../../shared/models/dictation_result.dart';
 import '../database/database_helper.dart';
@@ -61,7 +63,38 @@ class DictationService {
   /// Save dictation result
   Future<int> saveResult(DictationResult result) async {
     final db = await _dbHelper.database;
-    return await db.insert('dictation_results', result.toMap());
+    
+    try {
+      // 先检查是否已存在相同的记录（基于session_id和word_index）
+      final existing = await db.query(
+        'dictation_results',
+        where: 'session_id = ? AND word_index = ?',
+        whereArgs: [result.sessionId, result.wordIndex],
+      );
+      
+      if (existing.isNotEmpty) {
+        // 如果已存在，更新记录而不是插入新记录
+        final existingId = existing.first['id'] as int;
+        final updatedResult = result.copyWith(id: existingId);
+        await db.update(
+          'dictation_results',
+          updatedResult.toMap(),
+          where: 'id = ?',
+          whereArgs: [existingId],
+        );
+        return existingId;
+      } else {
+        // 如果不存在，插入新记录
+        return await db.insert('dictation_results', result.toMap());
+      }
+    } catch (e) {
+      // 如果仍然出现唯一性冲突，使用INSERT OR REPLACE
+      return await db.insert(
+        'dictation_results', 
+        result.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   /// Get results for a session
