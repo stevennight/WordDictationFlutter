@@ -3,11 +3,11 @@ echo Building Windows executable...
 echo.
 
 echo Getting project dependencies...
-flutter pub get
+call flutter pub get
 echo.
 
 echo Starting Windows build...
-flutter build windows --release
+call flutter build windows --release
 echo.
 
 if %ERRORLEVEL% EQU 0 (
