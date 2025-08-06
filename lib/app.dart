@@ -6,8 +6,6 @@ import 'features/dictation/screens/dictation_screen.dart';
 import 'features/history/screens/history_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 import 'shared/providers/app_state_provider.dart';
-import 'shared/widgets/custom_app_bar.dart';
-import 'shared/widgets/custom_bottom_navigation.dart';
 
 class WordDictationMainApp extends StatefulWidget {
   const WordDictationMainApp({super.key});
@@ -41,18 +39,32 @@ class _WordDictationMainAppState extends State<WordDictationMainApp> {
         }
         
         return Scaffold(
-          appBar: CustomAppBar(
-            title: _titles[_currentIndex],
-            showBackButton: false,
+          appBar: AppBar(
+            title: Text(_titles[_currentIndex]),
             actions: _buildAppBarActions(),
           ),
           body: IndexedStack(
             index: _currentIndex,
             children: _screens,
           ),
-          bottomNavigationBar: CustomBottomNavigation(
+          bottomNavigationBar: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: _onTabTapped,
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                label: '首页',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.history),
+                label: '历史',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: '设置',
+              ),
+            ],
           ),
         );
       },
