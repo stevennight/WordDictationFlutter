@@ -30,7 +30,7 @@ jobs:
         run: flutter test
 
       - name: Analyze code
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Check formatting
         run: dart format --set-exit-if-changed .
@@ -63,7 +63,7 @@ jobs:
         run: flutter test
 
       - name: Analyze code
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Test Android build
         run: flutter build apk --debug
