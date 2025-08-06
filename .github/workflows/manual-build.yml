@@ -23,6 +23,10 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build-windows:
     if: ${{ github.event.inputs.build_windows == 'true' }}
