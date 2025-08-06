@@ -4,12 +4,14 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../../shared/models/word.dart';
 import '../../../shared/models/wordbook.dart';
+import '../../../shared/models/unit.dart';
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../../core/services/word_import_service.dart';
 import '../../../core/services/wordbook_service.dart';
+import '../../../core/services/unit_service.dart';
 import '../widgets/mode_selection_card.dart';
 import '../widgets/quantity_selection_dialog.dart';
 import '../widgets/file_drop_zone.dart';
@@ -28,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final WordImportService _importService = WordImportService();
   final WordbookService _wordbookService = WordbookService();
+  final UnitService _unitService = UnitService();
   bool _isLoading = false;
   String? _statusMessage;
   List<Word> _loadedWords = [];
@@ -473,24 +476,43 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // Organize words by unit
-      final Map<String, List<Word>> unitWords = {};
-      for (final word in words) {
-        final unit = word.category ?? '未分类';
-        if (!unitWords.containsKey(unit)) {
-          unitWords[unit] = [];
-        }
-        unitWords[unit]!.add(word);
+      // Get units from UnitService
+      final units = await _unitService.getUnitsByWordbookId(wordbook.id!);
+      
+      // Organize words by unit using unit ID
+      final Map<Unit, List<Word>> unitWordsMap = {};
+      final List<Word> unassignedWords = [];
+      
+      // Initialize unit maps
+      for (final unit in units) {
+        unitWordsMap[unit] = [];
       }
+      
+      // Assign words to units
+      for (final word in words) {
+        if (word.unitId != null) {
+          final unit = units.where((u) => u.id == word.unitId).firstOrNull;
+          if (unit != null) {
+            unitWordsMap[unit]!.add(word);
+          } else {
+            unassignedWords.add(word);
+          }
+        } else {
+          unassignedWords.add(word);
+        }
+      }
+      
+      // Sort units by name
+      final sortedUnits = units.toList()..sort((a, b) => a.name.compareTo(b.name));
 
       // Show selection dialog
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         builder: (context) => DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          maxChildSize: 0.8,
-          minChildSize: 0.4,
+          initialChildSize: 1,
+          maxChildSize: 1,
+          minChildSize: 1,
           builder: (context, scrollController) => Container(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -529,6 +551,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                 ),
+                // 仅已学习单元选项
+                if (sortedUnits.any((unit) => unit.isLearned))
+                  Card(
+                    child: ListTile(
+                      leading: Icon(Icons.check_circle, color: Colors.green[700]),
+                      title: const Text('仅已学习单元'),
+                      subtitle: Text('${sortedUnits.where((unit) => unit.isLearned).fold(0, (sum, unit) => sum + (unitWordsMap[unit]?.length ?? 0))} 个单词'),
+                      trailing: const Icon(Icons.play_arrow),
+                      onTap: () {
+                        Navigator.pop(context);
+                        final learnedWords = sortedUnits
+                            .where((unit) => unit.isLearned)
+                            .expand((unit) => unitWordsMap[unit] ?? <Word>[])
+                            .toList();
+                        _loadWordsForDictation(learnedWords, '${wordbook.name} (仅已学习单元)');
+                      },
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -540,26 +580,72 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: ListView.builder(
                     controller: scrollController,
-                    itemCount: unitWords.keys.length,
+                    itemCount: sortedUnits.length + (unassignedWords.isNotEmpty ? 1 : 0),
                     itemBuilder: (context, index) {
-                      final unitName = unitWords.keys.elementAt(index);
-                      final unitWordsList = unitWords[unitName]!;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: Icon(
-                            Icons.folder,
-                            color: Colors.green[700],
+                      if (index < sortedUnits.length) {
+                        final unit = sortedUnits[index];
+                        final unitWordsList = unitWordsMap[unit]!;
+                        
+                        // Skip empty units
+                        if (unitWordsList.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.folder,
+                              color: unit.isLearned ? Colors.green[700] : Colors.blue[700],
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(unit.name)),
+                                if (unit.isLearned)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[100],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '已学完',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.green[700],
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text('${unitWordsList.length} 个单词'),
+                            trailing: const Icon(Icons.play_arrow),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _loadWordsForDictation(unitWordsList, '${unit.name} (${wordbook.name})');
+                            },
                           ),
-                          title: Text(unitName),
-                          subtitle: Text('${unitWordsList.length} 个单词'),
-                          trailing: const Icon(Icons.play_arrow),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _loadWordsForDictation(unitWordsList, '$unitName (${wordbook.name})');
-                          },
-                        ),
-                      );
+                        );
+                      } else {
+                        // Show unassigned words
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              Icons.folder_open,
+                              color: Colors.grey[600],
+                            ),
+                            title: const Text('未分类单词'),
+                            subtitle: Text('${unassignedWords.length} 个单词'),
+                            trailing: const Icon(Icons.play_arrow),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _loadWordsForDictation(unassignedWords, '未分类单词 (${wordbook.name})');
+                            },
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),

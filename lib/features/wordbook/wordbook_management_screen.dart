@@ -38,6 +38,20 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         wordbooks = await _wordbookService.searchWordbooks(_searchQuery);
       }
       
+      // 更新每个词书的单词数量以确保数据准确
+      for (final wordbook in wordbooks) {
+        if (wordbook.id != null) {
+          await _wordbookService.updateWordbookWordCount(wordbook.id!);
+        }
+      }
+      
+      // 重新获取更新后的词书列表
+      if (_searchQuery.isEmpty) {
+        wordbooks = await _wordbookService.getAllWordbooks();
+      } else {
+        wordbooks = await _wordbookService.searchWordbooks(_searchQuery);
+      }
+      
       setState(() {
         _wordbooks = wordbooks;
         _isLoading = false;

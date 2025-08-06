@@ -1,7 +1,9 @@
 import 'dart:convert';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
+import '../../shared/models/unit.dart';
 import 'wordbook_service.dart';
+import 'unit_service.dart';
 import 'local_config_service.dart';
 import 'object_storage_sync_provider.dart';
 
@@ -325,18 +327,21 @@ class SyncService {
   /// 导出所有词书数据（内部方法）
   Future<Map<String, dynamic>> _exportAllWordbooks() async {
     final WordbookService wordbookService = WordbookService();
+    final UnitService unitService = UnitService();
     final allWordbooks = await wordbookService.getAllWordbooks();
     final List<Map<String, dynamic>> exportData = [];
 
     for (final wordbook in allWordbooks) {
       final words = await wordbookService.getWordbookWords(wordbook.id!);
+      final units = await unitService.getUnitsByWordbookId(wordbook.id!);
       final wordbookMap = wordbook.toMap();
       wordbookMap['words'] = words.map((w) => w.toMap()).toList();
+      wordbookMap['units'] = units.map((u) => u.toMap()).toList();
       exportData.add(wordbookMap);
     }
 
     return {
-      'version': '1.0.0',
+      'version': '2.0.0', // 升级版本号以支持单元结构
       'dataType': 'wordbooks',
       'createdAt': DateTime.now().toIso8601String(),
       'wordbooks': exportData,
@@ -399,6 +404,7 @@ class SyncService {
   /// 导入词书数据（内部方法）
   Future<void> _importWordbooks(Map<String, dynamic> data) async {
     final WordbookService wordbookService = WordbookService();
+    final UnitService unitService = UnitService();
     
     if (data['wordbooks'] == null || data['wordbooks'] is! List) {
       throw Exception('无效的同步数据格式');
@@ -416,12 +422,33 @@ class SyncService {
       }
 
       // 使用智能导入功能，如果词书已存在则更新，否则创建新的
-      await wordbookService.importAndUpdateWordbook(
+      final importedWordbook = await wordbookService.importAndUpdateWordbook(
         name: wordbookData['name'] ?? '同步的词书',
         words: words,
         description: wordbookData['description'],
         originalFileName: 'sync-${DateTime.now().millisecondsSinceEpoch}.json',
       );
+      
+      // 如果有单元数据，也要导入单元
+      if (wordbookData['units'] != null && wordbookData['units'] is List) {
+        final List<dynamic> unitsData = wordbookData['units'];
+        
+        // 先删除现有单元（如果是更新操作）
+        final existingUnits = await unitService.getUnitsByWordbookId(importedWordbook.id!);
+        for (final existingUnit in existingUnits) {
+          await unitService.deleteUnit(existingUnit.id!);
+        }
+        
+        // 导入新单元
+        for (final unitData in unitsData) {
+          final unit = Unit.fromMap(unitData);
+          final newUnit = unit.copyWith(
+            id: null, // 让数据库自动生成新ID
+            wordbookId: importedWordbook.id!,
+          );
+          await unitService.createUnit(newUnit);
+        }
+      }
     }
   }
 }

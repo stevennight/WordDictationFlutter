@@ -41,7 +41,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -61,6 +61,21 @@ class DatabaseHelper {
       )
     ''');
 
+    // Create units table
+    await db.execute('''
+      CREATE TABLE units (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        wordbook_id INTEGER NOT NULL,
+        word_count INTEGER NOT NULL DEFAULT 0,
+        is_learned INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (wordbook_id) REFERENCES wordbooks (id)
+      )
+    ''');
+
     // Create words table
     await db.execute('''
       CREATE TABLE words (
@@ -71,9 +86,11 @@ class DatabaseHelper {
         part_of_speech TEXT,
         level TEXT,
         wordbook_id INTEGER,
+        unit_id INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        FOREIGN KEY (wordbook_id) REFERENCES wordbooks (id)
+        FOREIGN KEY (wordbook_id) REFERENCES wordbooks (id),
+        FOREIGN KEY (unit_id) REFERENCES units (id)
       )
     ''');
 
@@ -143,6 +160,9 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_words_prompt ON words (prompt)');
     await db.execute('CREATE INDEX idx_words_answer ON words (answer)');
     await db.execute('CREATE INDEX idx_words_wordbook_id ON words (wordbook_id)');
+    await db.execute('CREATE INDEX idx_words_unit_id ON words (unit_id)');
+    await db.execute('CREATE INDEX idx_units_wordbook_id ON units (wordbook_id)');
+    await db.execute('CREATE INDEX idx_units_name ON units (name)');
     await db.execute('CREATE INDEX idx_wordbooks_name ON wordbooks (name)');
     await db.execute('CREATE INDEX idx_sessions_start_time ON dictation_sessions (start_time)');
     await db.execute('CREATE INDEX idx_results_session_id ON dictation_results (session_id)');
@@ -189,6 +209,101 @@ class DatabaseHelper {
     if (oldVersion < 5 && newVersion >= 5) {
       // Add expected_total_words column to dictation_sessions table
       await db.execute('ALTER TABLE dictation_sessions ADD COLUMN expected_total_words INTEGER DEFAULT 0');
+    }
+    
+    if (oldVersion < 6 && newVersion >= 6) {
+      // Create units table
+      await db.execute('''
+        CREATE TABLE units (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          description TEXT,
+          wordbook_id INTEGER NOT NULL,
+          word_count INTEGER NOT NULL DEFAULT 0,
+          is_learned INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (wordbook_id) REFERENCES wordbooks (id)
+        )
+      ''');
+      
+      // Add unit_id column to words table
+      await db.execute('ALTER TABLE words ADD COLUMN unit_id INTEGER');
+      
+      // Create indexes for new columns
+      await db.execute('CREATE INDEX idx_words_unit_id ON words (unit_id)');
+      await db.execute('CREATE INDEX idx_units_wordbook_id ON units (wordbook_id)');
+      await db.execute('CREATE INDEX idx_units_name ON units (name)');
+      
+      // Migrate existing data: create units from existing categories
+      final wordbooksResult = await db.query('wordbooks');
+      for (final wordbookMap in wordbooksResult) {
+        final wordbookId = wordbookMap['id'] as int;
+        
+        // Get distinct categories for this wordbook
+        final categoriesResult = await db.rawQuery('''
+          SELECT DISTINCT category FROM words 
+          WHERE wordbook_id = ? AND category IS NOT NULL AND category != ''
+        ''', [wordbookId]);
+        
+        // Create units for each category
+        for (final categoryMap in categoriesResult) {
+          final category = categoryMap['category'] as String;
+          final now = DateTime.now().millisecondsSinceEpoch;
+          
+          // Count words in this category
+          final countResult = await db.rawQuery('''
+            SELECT COUNT(*) as count FROM words 
+            WHERE wordbook_id = ? AND category = ?
+          ''', [wordbookId, category]);
+          final wordCount = countResult.first['count'] as int;
+          
+          // Insert unit
+          final unitId = await db.insert('units', {
+            'name': category,
+            'wordbook_id': wordbookId,
+            'word_count': wordCount,
+            'is_learned': 0,
+            'created_at': now,
+            'updated_at': now,
+          });
+          
+          // Update words to reference this unit
+          await db.update(
+            'words',
+            {'unit_id': unitId},
+            where: 'wordbook_id = ? AND category = ?',
+            whereArgs: [wordbookId, category],
+          );
+        }
+        
+        // Handle words without category (create "未分类" unit)
+        final uncategorizedResult = await db.rawQuery('''
+          SELECT COUNT(*) as count FROM words 
+          WHERE wordbook_id = ? AND (category IS NULL OR category = '')
+        ''', [wordbookId]);
+        final uncategorizedCount = uncategorizedResult.first['count'] as int;
+        
+        if (uncategorizedCount > 0) {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final unitId = await db.insert('units', {
+            'name': '未分类',
+            'wordbook_id': wordbookId,
+            'word_count': uncategorizedCount,
+            'is_learned': 0,
+            'created_at': now,
+            'updated_at': now,
+          });
+          
+          // Update uncategorized words
+          await db.update(
+            'words',
+            {'unit_id': unitId},
+            where: 'wordbook_id = ? AND (category IS NULL OR category = ?)',
+            whereArgs: [wordbookId, ''],
+          );
+        }
+      }
     }
   }
 

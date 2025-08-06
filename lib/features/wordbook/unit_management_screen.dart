@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
+import '../../shared/models/unit.dart';
 import '../../core/services/wordbook_service.dart';
+import '../../core/services/unit_service.dart';
 import 'wordbook_import_screen.dart';
 
 class UnitManagementScreen extends StatefulWidget {
@@ -15,63 +17,67 @@ class UnitManagementScreen extends StatefulWidget {
 
 class _UnitManagementScreenState extends State<UnitManagementScreen> {
   final WordbookService _wordbookService = WordbookService();
-  List<Word> _words = [];
-  Map<String, List<Word>> _unitWords = {};
+  final UnitService _unitService = UnitService();
+  List<Unit> _units = [];
+  Map<int, List<Word>> _unitWords = {};
   bool _isLoading = true;
   String _searchQuery = '';
-  List<String> _filteredUnits = [];
+  List<Unit> _filteredUnits = [];
+  bool _hasDataChanged = false; // 标记数据是否已更改
 
   @override
   void initState() {
     super.initState();
-    _loadWords();
+    _loadUnits();
   }
 
-  Future<void> _loadWords() async {
+  Future<void> _loadUnits() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final words = await _wordbookService.getWordbookWords(widget.wordbook.id!);
+      final units = await _unitService.getUnitsByWordbookId(widget.wordbook.id!);
+      final Map<int, List<Word>> unitWords = {};
+      
+      for (final unit in units) {
+        final words = await _wordbookService.getWordbookWords(widget.wordbook.id!);
+        final unitWordsList = words.where((word) => word.unitId == unit.id).toList();
+        unitWords[unit.id!] = unitWordsList;
+      }
+
       setState(() {
-        _words = words;
-        _organizeWordsByUnit();
-        _filterUnits();
+        _units = units;
+        _unitWords = unitWords;
         _isLoading = false;
       });
+      
+      _filterUnits();
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载单词失败: $e')),
+          SnackBar(content: Text('加载单元失败: $e')),
         );
       }
     }
   }
 
-  void _organizeWordsByUnit() {
-    _unitWords.clear();
-    for (final word in _words) {
-      final unit = word.category ?? '未分类';
-      if (!_unitWords.containsKey(unit)) {
-        _unitWords[unit] = [];
-      }
-      _unitWords[unit]!.add(word);
-    }
-  }
+
 
   void _filterUnits() {
     if (_searchQuery.isEmpty) {
-      _filteredUnits = _unitWords.keys.toList();
+      _filteredUnits = List.from(_units);
     } else {
-      _filteredUnits = _unitWords.keys
-          .where((unit) => unit.toLowerCase().contains(_searchQuery.toLowerCase()))
+      _filteredUnits = _units
+          .where((unit) => unit.name.toLowerCase().contains(_searchQuery.toLowerCase()))
           .toList();
     }
-    _filteredUnits.sort();
+    
+    // Sort units alphabetically
+    _filteredUnits.sort((a, b) => a.name.compareTo(b.name));
   }
 
   void _showAddUnitDialog() {
@@ -171,43 +177,48 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
     );
     
     if (result == true) {
-      _loadWords();
+      _hasDataChanged = true;
+      _loadUnits();
     }
   }
 
   Future<void> _addEmptyUnit(String unitName) async {
-    // Create an empty unit by adding a placeholder word that can be edited later
-    // This ensures the unit appears in the list
     try {
+      // Check if unit already exists
+      final existingUnits = await _unitService.getUnitsByWordbookId(widget.wordbook.id!);
+      if (existingUnits.any((unit) => unit.name == unitName)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('单元名称已存在')),
+        );
+        return;
+      }
+
       final now = DateTime.now();
-      final placeholderWord = Word(
-        prompt: '点击编辑添加单词',
-        answer: '点击编辑添加释义',
+      final unit = Unit(
+        name: unitName,
         wordbookId: widget.wordbook.id!,
-        category: unitName,
+        wordCount: 0,
+        isLearned: false,
         createdAt: now,
         updatedAt: now,
       );
-      
-      await _wordbookService.addWord(placeholderWord);
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('单元"$unitName"创建成功')),
-        );
-        _loadWords();
-      }
+
+      await _unitService.createUnit(unit);
+      _hasDataChanged = true;
+      await _loadUnits();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已创建空单元：$unitName')),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('创建单元失败: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('创建单元失败: $e')),
+      );
     }
   }
 
-  Future<void> _editUnitName(String oldUnitName) async {
-    final controller = TextEditingController(text: oldUnitName);
+  Future<void> _editUnitName(Unit unit) async {
+    final controller = TextEditingController(text: unit.name);
     
     final result = await showDialog<String>(
       context: context,
@@ -229,7 +240,7 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
           TextButton(
             onPressed: () {
               final newName = controller.text.trim();
-              if (newName.isNotEmpty && newName != oldUnitName) {
+              if (newName.isNotEmpty && newName != unit.name) {
                 Navigator.of(context).pop(newName);
               } else {
                 Navigator.of(context).pop();
@@ -242,39 +253,36 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
     );
 
     if (result != null) {
-      await _updateUnitName(oldUnitName, result);
+      await _updateUnitName(unit, result);
     }
   }
 
-  Future<void> _updateUnitName(String oldName, String newName) async {
+  Future<void> _updateUnitName(Unit unit, String newName) async {
     try {
-      final wordsToUpdate = _unitWords[oldName] ?? [];
-      for (final word in wordsToUpdate) {
-        final updatedWord = word.copyWith(category: newName);
-        await _wordbookService.updateWord(updatedWord);
-      }
+      final updatedUnit = unit.copyWith(
+        name: newName,
+        updatedAt: DateTime.now(),
+      );
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('单元名称更新成功')),
-        );
-        _loadWords();
-      }
+      await _unitService.updateUnit(updatedUnit);
+      await _loadUnits();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('单元名称已更新为：$newName')),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('更新失败: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新单元名称失败: $e')),
+      );
     }
   }
 
-  Future<void> _deleteUnit(String unitName) async {
+  Future<void> _deleteUnit(Unit unit) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除单元'),
-        content: Text('确定要删除单元"$unitName"及其所有单词吗？此操作不可撤销。'),
+        content: Text('确定要删除单元"${unit.name}"及其所有单词吗？此操作不可撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -291,29 +299,40 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
 
     if (confirmed == true) {
       try {
-        final wordsToDelete = _unitWords[unitName] ?? [];
-        for (final word in wordsToDelete) {
-          await _wordbookService.deleteWord(word.id!);
-        }
+        await _unitService.deleteUnit(unit.id!);
+        await _wordbookService.updateWordbookWordCount(widget.wordbook.id!);
+        _hasDataChanged = true;
+        await _loadUnits();
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('单元删除成功')),
-          );
-          _loadWords();
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已删除单元：${unit.name}')),
+        );
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('删除失败: $e')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
       }
     }
   }
 
-  void _showUnitWords(String unitName) {
-    final words = _unitWords[unitName] ?? [];
+  Future<void> _toggleUnitLearned(Unit unit) async {
+    try {
+      await _unitService.toggleUnitLearnedStatus(unit.id!);
+      await _loadUnits();
+      
+      final status = unit.isLearned ? '未学完' : '已学完';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('单元"${unit.name}"已标记为$status')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新学习状态失败: $e')),
+      );
+    }
+  }
+
+  void _showUnitWords(Unit unit) {
+    final words = _unitWords[unit.id!] ?? [];
     
     showModalBottomSheet(
       context: context,
@@ -346,7 +365,7 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      '$unitName (${words.length} 个单词)',
+                      '${unit.name} (${words.length} 个单词)',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -492,7 +511,7 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '${_words.length} 个单词',
+                      '${_unitWords.values.fold(0, (sum, words) => sum + words.length)} 个单词',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 14,
@@ -558,42 +577,59 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         itemCount: _filteredUnits.length,
                         itemBuilder: (context, index) {
-                          final unitName = _filteredUnits[index];
-                          final words = _unitWords[unitName] ?? [];
+                          final unit = _filteredUnits[index];
+                          final words = _unitWords[unit.id!] ?? [];
                           
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: Theme.of(context).primaryColor,
+                                backgroundColor: unit.isLearned ? Colors.green : Theme.of(context).primaryColor,
                                 child: Icon(
-                                  Icons.folder,
+                                  unit.isLearned ? Icons.check : Icons.folder,
                                   color: Colors.white,
                                   size: 20,
                                 ),
                               ),
                               title: Text(
-                                unitName,
+                                unit.name,
                                 style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
-                              subtitle: Text(
-                                '${words.length} 个单词',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${words.length} 个单词',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  if (unit.isLearned)
+                                    Text(
+                                      '已学完',
+                                      style: TextStyle(
+                                        color: Colors.green[600],
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                ],
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (value) {
                                   switch (value) {
                                     case 'view':
-                                      _showUnitWords(unitName);
+                                      _showUnitWords(unit);
                                       break;
                                     case 'edit':
-                                      _editUnitName(unitName);
+                                      _editUnitName(unit);
+                                      break;
+                                    case 'toggle_learned':
+                                      _toggleUnitLearned(unit);
                                       break;
                                     case 'delete':
-                                      _deleteUnit(unitName);
+                                      _deleteUnit(unit);
                                       break;
                                   }
                                 },
@@ -614,6 +650,14 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                                       contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
+                                  PopupMenuItem(
+                                    value: 'toggle_learned',
+                                    child: ListTile(
+                                      leading: Icon(unit.isLearned ? Icons.refresh : Icons.check),
+                                      title: Text(unit.isLearned ? '标记为未学完' : '标记为已学完'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
                                   const PopupMenuItem(
                                     value: 'delete',
                                     child: ListTile(
@@ -624,7 +668,7 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                                   ),
                                 ],
                               ),
-                              onTap: () => _showUnitWords(unitName),
+                              onTap: () => _showUnitWords(unit),
                             ),
                           );
                         },
@@ -638,5 +682,14 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
         label: const Text('添加单元'),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // 在页面关闭时返回数据变更状态
+    if (_hasDataChanged) {
+      Navigator.of(context).pop(true);
+    }
+    super.dispose();
   }
 }

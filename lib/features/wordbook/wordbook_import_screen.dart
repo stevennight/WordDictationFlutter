@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
+import '../../shared/models/unit.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/word_import_service.dart';
+import '../../core/services/unit_service.dart';
 
 class WordbookImportScreen extends StatefulWidget {
   final Wordbook? wordbook;
@@ -141,6 +143,15 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
 
       // Check if this is a JSON import (smart import)
       if (_selectedFileName?.toLowerCase().endsWith('.json') == true) {
+        // Extract units info from the imported data if available
+        List<Map<String, dynamic>>? units;
+        try {
+          final wordbookInfo = await _wordImportService.extractWordbookInfoFromJson(_selectedFileName!);
+          units = wordbookInfo['units'] as List<Map<String, dynamic>>?;
+        } catch (e) {
+          // If extraction fails, continue without units
+        }
+        
         // Use smart import for JSON files
         final wordbook = await _wordbookService.importAndUpdateWordbook(
           name: name,
@@ -149,6 +160,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
               ? null 
               : _descriptionController.text.trim(),
           originalFileName: _selectedFileName,
+          units: units,
         );
         
         if (mounted) {
@@ -211,8 +223,28 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
     try {
       final now = DateTime.now();
       
-      // 为单词设置单元名称和词书ID
+      // 首先创建或获取单元
+      final unitService = UnitService();
+      final existingUnits = await unitService.getUnitsByWordbookId(widget.wordbook!.id!);
+      Unit? targetUnit = existingUnits.where((u) => u.name == unitName).firstOrNull;
+      
+      if (targetUnit == null) {
+        // 创建新单元
+        final newUnit = Unit(
+          name: unitName,
+          wordbookId: widget.wordbook!.id!,
+          wordCount: _importedWords.length,
+          isLearned: false,
+          createdAt: now,
+          updatedAt: now,
+        );
+        final unitId = await unitService.createUnit(newUnit);
+        targetUnit = newUnit.copyWith(id: unitId);
+      }
+      
+      // 为单词设置单元ID、单元名称和词书ID
       final wordsWithUnit = _importedWords.map((word) => word.copyWith(
+        unitId: targetUnit!.id,
         category: unitName,
         wordbookId: widget.wordbook!.id!,
         createdAt: now,
@@ -224,6 +256,9 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
         await _wordbookService.addWordToWordbook(word);
       }
 
+      // 更新单元的单词数量
+      await unitService.updateUnitWordCount(targetUnit.id!);
+      
       // 更新词书的单词数量
       await _wordbookService.updateWordbookWordCount(widget.wordbook!.id!);
 

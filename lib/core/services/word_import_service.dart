@@ -249,10 +249,20 @@ class WordImportService {
         }
       }
 
+      // 检查是否有单元信息
+      final List<Map<String, dynamic>> units = [];
+      if (firstWordbook['units'] != null && firstWordbook['units'] is List) {
+        final List<dynamic> unitsData = firstWordbook['units'];
+        for (final unitData in unitsData) {
+          units.add(Map<String, dynamic>.from(unitData));
+        }
+      }
+
       return {
         'name': firstWordbook['name'] ?? '导入的词书',
         'description': firstWordbook['description'],
         'words': words,
+        'units': units,
         'originalFileName': filePath.split('/').last.split('\\').last,
       };
     } catch (e) {

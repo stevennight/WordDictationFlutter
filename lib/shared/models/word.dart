@@ -6,6 +6,7 @@ class Word {
   final String? partOfSpeech;  // 词性
   final String? level;  // 等级
   final int? wordbookId;
+  final int? unitId;  // 单元ID
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -17,6 +18,7 @@ class Word {
     this.partOfSpeech,
     this.level,
     this.wordbookId,
+    this.unitId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -29,6 +31,7 @@ class Word {
     String? partOfSpeech,
     String? level,
     int? wordbookId,
+    int? unitId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -40,6 +43,7 @@ class Word {
       partOfSpeech: partOfSpeech ?? this.partOfSpeech,
       level: level ?? this.level,
       wordbookId: wordbookId ?? this.wordbookId,
+      unitId: unitId ?? this.unitId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -54,6 +58,7 @@ class Word {
       'part_of_speech': partOfSpeech,
       'level': level,
       'wordbook_id': wordbookId,
+      'unit_id': unitId,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
     };
@@ -68,6 +73,7 @@ class Word {
       partOfSpeech: map['part_of_speech'],
       level: map['level'],
       wordbookId: map['wordbook_id']?.toInt(),
+      unitId: map['unit_id']?.toInt(),
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at']),
     );

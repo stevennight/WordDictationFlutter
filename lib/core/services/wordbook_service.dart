@@ -4,10 +4,12 @@ import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import '../database/database_helper.dart';
 import 'word_service.dart';
+import 'unit_service.dart';
 
 class WordbookService {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final WordService _wordService = WordService();
+  final UnitService _unitService = UnitService();
 
   /// Create a new wordbook
   Future<int> createWordbook(Wordbook wordbook) async {
@@ -84,6 +86,42 @@ class WordbookService {
       where: 'wordbook_id = ?',
       whereArgs: [wordbookId],
       orderBy: 'created_at ASC',
+    );
+    
+    return List.generate(maps.length, (i) {
+      return Word.fromMap(maps[i]);
+    });
+  }
+
+  /// Get words from unlearned units in a wordbook
+  Future<List<Word>> getWordbookUnlearnedWords(int wordbookId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT w.* FROM words w
+      INNER JOIN units u ON w.unit_id = u.id
+      WHERE w.wordbook_id = ? AND u.is_learned = 0
+      ORDER BY w.created_at ASC
+      ''',
+      [wordbookId],
+    );
+    
+    return List.generate(maps.length, (i) {
+      return Word.fromMap(maps[i]);
+    });
+  }
+
+  /// Get words from learned units in a wordbook
+  Future<List<Word>> getWordbookLearnedWords(int wordbookId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT w.* FROM words w
+      INNER JOIN units u ON w.unit_id = u.id
+      WHERE w.wordbook_id = ? AND u.is_learned = 1
+      ORDER BY w.created_at ASC
+      ''',
+      [wordbookId],
     );
     
     return List.generate(maps.length, (i) {
@@ -207,12 +245,15 @@ class WordbookService {
     }
 
     final words = await getWordbookWords(wordbookId);
+    final units = await _unitService.getUnitsByWordbookId(wordbookId);
+    
     final wordbookMap = wordbook.toMap();
     wordbookMap['words'] = words.map((w) => w.toMap()).toList();
+    wordbookMap['units'] = units.map((u) => u.toMap()).toList();
 
     // Use a structured format for the final JSON
     final singleExport = {
-      'version': '1.0.0',
+      'version': '2.0.0', // 升级版本号以支持单元结构
       'createdAt': DateTime.now().toIso8601String(),
       'wordbooks': [wordbookMap],
     };
@@ -226,6 +267,7 @@ class WordbookService {
     required List<Word> words,
     String? description,
     String? originalFileName,
+    List<Map<String, dynamic>>? units,
   }) async {
     final db = await _dbHelper.database;
     final now = DateTime.now();
@@ -245,9 +287,14 @@ class WordbookService {
         // Update existing wordbook
         wordbookId = existingWordbooks.first['id'] as int;
         
-        // Delete all existing words in this wordbook
+        // Delete all existing words and units in this wordbook
         await txn.delete(
           'words',
+          where: 'wordbook_id = ?',
+          whereArgs: [wordbookId],
+        );
+        await txn.delete(
+          'units',
           where: 'wordbook_id = ?',
           whereArgs: [wordbookId],
         );
@@ -284,6 +331,21 @@ class WordbookService {
         wordbook = wordbook.copyWith(id: wordbookId);
       }
       
+      // Import units if provided
+      final Map<String, int> unitNameToIdMap = {};
+      if (units != null && units.isNotEmpty) {
+        for (final unitData in units) {
+          final unitMap = Map<String, dynamic>.from(unitData);
+          unitMap['wordbook_id'] = wordbookId;
+          unitMap['created_at'] = now.millisecondsSinceEpoch;
+          unitMap['updated_at'] = now.millisecondsSinceEpoch;
+          unitMap.remove('id'); // 让数据库自动生成ID
+          
+          final unitId = await txn.insert('units', unitMap);
+          unitNameToIdMap[unitData['name']] = unitId;
+        }
+      }
+      
       // Insert new words
       for (final word in words) {
         final wordWithBookId = word.copyWith(
@@ -291,7 +353,15 @@ class WordbookService {
           createdAt: now,
           updatedAt: now,
         );
-        await txn.insert('words', wordWithBookId.toMap());
+        
+        // 如果单词有category且对应的单元存在，设置unit_id
+        if (word.category != null && unitNameToIdMap.containsKey(word.category)) {
+          final wordMap = wordWithBookId.toMap();
+          wordMap['unit_id'] = unitNameToIdMap[word.category];
+          await txn.insert('words', wordMap);
+        } else {
+          await txn.insert('words', wordWithBookId.toMap());
+        }
       }
       
       return wordbook;
