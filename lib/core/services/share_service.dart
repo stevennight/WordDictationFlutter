@@ -405,7 +405,7 @@ class ShareService {
 
     await _drawText(
       canvas,
-      '单词默写助手',
+      '默写小助手',
       _cardWidth / 2,
       _cardHeight - 80,
       36.0,
@@ -416,6 +416,6 @@ class ShareService {
   }
   
   static String _formatTime(DateTime dateTime) {
-    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    return '${dateTime.year.toString().padLeft(4, '0')}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 }
