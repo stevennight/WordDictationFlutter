@@ -7,24 +7,31 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:flutter_word_dictation/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  setUpAll(() {
+    // Initialize sqflite for testing
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+  
+  testWidgets('Word Dictation App smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const WordDictationApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    
+    // Wait for initial frame
     await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    
+    // Verify that the app shows loading initially
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    
+    // Wait for app to initialize with a timeout
+    await tester.pump(const Duration(seconds: 2));
+    
+    // The test passes if the app can be built without crashing
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
