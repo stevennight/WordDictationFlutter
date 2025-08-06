@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 
 import '../../shared/models/word.dart';
 import 'json_data_service.dart';
+import 'import_data_service.dart';
 
 class WordImportService {
   static const Uuid _uuid = Uuid();
@@ -221,23 +222,8 @@ class WordImportService {
 
   /// Extract wordbook info from JSON for smart import
   Future<Map<String, dynamic>> extractWordbookInfoFromJson(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('文件不存在');
-      }
-
-      final jsonString = await file.readAsString();
-      final jsonDataService = JsonDataService();
-      final jsonData = jsonDataService.fromJsonString(jsonString);
-      
-      final wordbookInfo = jsonDataService.extractWordbookInfo(jsonData);
-      wordbookInfo['originalFileName'] = filePath.split('/').last.split('\\').last;
-      
-      return wordbookInfo;
-    } catch (e) {
-      throw Exception('解析JSON文件失败: $e');
-    }
+    final importDataService = ImportDataService();
+    return await importDataService.extractWordbookInfoFromFile(filePath);
   }
 
   List<Word> _extractWordsFromJson(Map<String, dynamic> jsonData) {

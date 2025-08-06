@@ -6,6 +6,7 @@ import '../../shared/models/unit.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/word_import_service.dart';
 import '../../core/services/unit_service.dart';
+import '../../core/services/import_data_service.dart';
 
 class WordbookImportScreen extends StatefulWidget {
   final Wordbook? wordbook;
@@ -24,6 +25,7 @@ class WordbookImportScreen extends StatefulWidget {
 class _WordbookImportScreenState extends State<WordbookImportScreen> {
   final WordbookService _wordbookService = WordbookService();
   final WordImportService _wordImportService = WordImportService();
+  final ImportDataService _importDataService = ImportDataService();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _unitNameController = TextEditingController();
@@ -32,6 +34,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
   bool _isImporting = false;
   bool _isSaving = false;
   String? _selectedFileName;
+  String? _selectedFilePath;
 
   @override
   void dispose() {
@@ -54,6 +57,7 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
       if (result != null) {
         PlatformFile file = result.files.first;
         _selectedFileName = file.name;
+        _selectedFilePath = file.path;
         
         // Auto-fill name from filename if empty
         if (widget.isUnitMode) {
@@ -143,31 +147,26 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
 
       // Check if this is a JSON import (smart import)
       if (_selectedFileName?.toLowerCase().endsWith('.json') == true) {
-        // Extract units info from the imported data if available
-        List<Map<String, dynamic>>? units;
-        try {
-          final wordbookInfo = await _wordImportService.extractWordbookInfoFromJson(_selectedFileName!);
-          units = wordbookInfo['units'] as List<Map<String, dynamic>>?;
-        } catch (e) {
-          // If extraction fails, continue without units
-        }
-        
         // Use smart import for JSON files
-        final wordbook = await _wordbookService.importAndUpdateWordbook(
+        final result = await _importDataService.smartImportWordbook(
+          filePath: _selectedFilePath!,
           name: name,
-          words: _importedWords,
           description: _descriptionController.text.trim().isEmpty 
               ? null 
               : _descriptionController.text.trim(),
-          originalFileName: _selectedFileName,
-          units: units,
         );
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('词书「${wordbook.name}」已成功导入/更新，包含 ${wordbook.wordCount} 个单词')),
-          );
-          Navigator.of(context).pop(true);
+          if (result.success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+            Navigator.of(context).pop(true);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+          }
         }
       } else {
         // Use regular import for other file types
@@ -221,52 +220,76 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
     });
 
     try {
-      final now = DateTime.now();
-      
-      // 首先创建或获取单元
-      final unitService = UnitService();
-      final existingUnits = await unitService.getUnitsByWordbookId(widget.wordbook!.id!);
-      Unit? targetUnit = existingUnits.where((u) => u.name == unitName).firstOrNull;
-      
-      if (targetUnit == null) {
-        // 创建新单元
-        final newUnit = Unit(
-          name: unitName,
+      // Check if this is a JSON import with smart import capability
+       if (_selectedFileName?.toLowerCase().endsWith('.json') == true) {
+         final result = await _importDataService.smartImportWordbook(
+           filePath: _selectedFilePath!,
+          name: '', // Not used for existing wordbook import
+          existingWordbookId: widget.wordbook!.id!,
+          unitName: unitName,
+        );
+        
+        if (mounted) {
+          if (result.success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+            Navigator.of(context).pop(true);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+          }
+        }
+      } else {
+        // Use legacy method for non-JSON imports
+        final now = DateTime.now();
+        
+        // 首先创建或获取单元
+        final unitService = UnitService();
+        final existingUnits = await unitService.getUnitsByWordbookId(widget.wordbook!.id!);
+        Unit? targetUnit = existingUnits.where((u) => u.name == unitName).firstOrNull;
+        
+        if (targetUnit == null) {
+          // 创建新单元
+          final newUnit = Unit(
+            name: unitName,
+            wordbookId: widget.wordbook!.id!,
+            wordCount: _importedWords.length,
+            isLearned: false,
+            createdAt: now,
+            updatedAt: now,
+          );
+          final unitId = await unitService.createUnit(newUnit);
+          targetUnit = newUnit.copyWith(id: unitId);
+        }
+        
+        // 为单词设置单元ID、单元名称和词书ID
+        final wordsWithUnit = _importedWords.map((word) => word.copyWith(
+          unitId: targetUnit!.id,
+          category: unitName,
           wordbookId: widget.wordbook!.id!,
-          wordCount: _importedWords.length,
-          isLearned: false,
           createdAt: now,
           updatedAt: now,
-        );
-        final unitId = await unitService.createUnit(newUnit);
-        targetUnit = newUnit.copyWith(id: unitId);
-      }
-      
-      // 为单词设置单元ID、单元名称和词书ID
-      final wordsWithUnit = _importedWords.map((word) => word.copyWith(
-        unitId: targetUnit!.id,
-        category: unitName,
-        wordbookId: widget.wordbook!.id!,
-        createdAt: now,
-        updatedAt: now,
-      )).toList();
+        )).toList();
 
-      // 保存单词到数据库
-      for (final word in wordsWithUnit) {
-        await _wordbookService.addWordToWordbook(word);
-      }
+        // 保存单词到数据库
+        for (final word in wordsWithUnit) {
+          await _wordbookService.addWordToWordbook(word);
+        }
 
-      // 更新单元的单词数量
-      await unitService.updateUnitWordCount(targetUnit.id!);
-      
-      // 更新词书的单词数量
-      await _wordbookService.updateWordbookWordCount(widget.wordbook!.id!);
+        // 更新单元的单词数量
+        await unitService.updateUnitWordCount(targetUnit.id!);
+        
+        // 更新词书的单词数量
+        await _wordbookService.updateWordbookWordCount(widget.wordbook!.id!);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('成功添加 ${_importedWords.length} 个单词到单元"$unitName"')),
-        );
-        Navigator.of(context).pop(true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('成功添加 ${_importedWords.length} 个单词到单元"$unitName"')),
+          );
+          Navigator.of(context).pop(true);
+        }
       }
     } catch (e) {
       if (mounted) {

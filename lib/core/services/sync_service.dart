@@ -4,6 +4,7 @@ import '../../shared/models/word.dart';
 import '../../shared/models/unit.dart';
 import 'local_config_service.dart';
 import 'json_data_service.dart';
+import 'import_data_service.dart';
 import 'object_storage_sync_provider.dart';
 
 /// 同步数据类型枚举
@@ -384,7 +385,10 @@ class SyncService {
 
   /// 导入词书数据（内部方法）
   Future<void> _importWordbooks(Map<String, dynamic> data) async {
-    final jsonDataService = JsonDataService();
-    await jsonDataService.importWordbooks(data);
+    final importDataService = ImportDataService();
+    final result = await importDataService.importFromJsonData(data);
+    if (!result.success) {
+      throw Exception(result.message);
+    }
   }
 }
