@@ -19,7 +19,10 @@ jobs:
           flutter-version: '3.16.0'
           channel: 'stable'
 
-      - name: Install dependencies
+      - name: Configure Flutter
+        run: flutter config --no-analytics
+        
+      - name: Get dependencies
         run: flutter pub get
 
       - name: Enable Windows desktop
