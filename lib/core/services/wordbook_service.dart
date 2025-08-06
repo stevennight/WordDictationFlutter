@@ -7,6 +7,7 @@ import '../../shared/models/word.dart';
 import '../database/database_helper.dart';
 import 'word_service.dart';
 import 'unit_service.dart';
+import 'json_data_service.dart';
 
 class WordbookService {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -241,26 +242,9 @@ class WordbookService {
 
   /// Export a single wordbook and its words to a JSON string
   Future<String> exportSingleWordbook(int wordbookId) async {
-    final wordbook = await getWordbookById(wordbookId);
-    if (wordbook == null) {
-      throw Exception('词书不存在');
-    }
-
-    final words = await getWordbookWords(wordbookId);
-    final units = await _unitService.getUnitsByWordbookId(wordbookId);
-    
-    final wordbookMap = wordbook.toMap();
-    wordbookMap['words'] = words.map((w) => w.toMap()).toList();
-    wordbookMap['units'] = units.map((u) => u.toMap()).toList();
-
-    // Use a structured format for the final JSON
-    final singleExport = {
-      'version': '2.0.0', // 升级版本号以支持单元结构
-      'createdAt': DateTime.now().toIso8601String(),
-      'wordbooks': [wordbookMap],
-    };
-
-    return jsonEncode(singleExport);
+    final jsonDataService = JsonDataService();
+    final jsonData = await jsonDataService.exportSingleWordbook(wordbookId);
+    return jsonDataService.toJsonString(jsonData);
   }
 
   /// Import and update existing wordbook or create new one

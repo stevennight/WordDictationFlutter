@@ -7,6 +7,7 @@ import 'package:excel/excel.dart';
 import 'package:archive/archive.dart';
 
 import '../../shared/models/word.dart';
+import 'json_data_service.dart';
 
 class WordImportService {
   static const Uuid _uuid = Uuid();
@@ -227,64 +228,25 @@ class WordImportService {
       }
 
       final jsonString = await file.readAsString();
-      final jsonData = jsonDecode(jsonString);
-
-      if (jsonData['wordbooks'] == null || jsonData['wordbooks'] is! List) {
-        throw Exception('无效的JSON格式: 缺少 `wordbooks` 列表');
-      }
-
-      final List<dynamic> wordbooksData = jsonData['wordbooks'];
-      if (wordbooksData.isEmpty) {
-        throw Exception('JSON文件中没有词书数据');
-      }
-
-      // For now, we'll import the first wordbook found
-      final firstWordbook = wordbooksData.first;
-      final List<Word> words = [];
+      final jsonDataService = JsonDataService();
+      final jsonData = jsonDataService.fromJsonString(jsonString);
       
-      if (firstWordbook['words'] != null && firstWordbook['words'] is List) {
-        final List<dynamic> wordsData = firstWordbook['words'];
-        for (final wordData in wordsData) {
-          words.add(Word.fromMap(wordData));
-        }
-      }
-
-      // 检查是否有单元信息
-      final List<Map<String, dynamic>> units = [];
-      if (firstWordbook['units'] != null && firstWordbook['units'] is List) {
-        final List<dynamic> unitsData = firstWordbook['units'];
-        for (final unitData in unitsData) {
-          units.add(Map<String, dynamic>.from(unitData));
-        }
-      }
-
-      return {
-        'name': firstWordbook['name'] ?? '导入的词书',
-        'description': firstWordbook['description'],
-        'words': words,
-        'units': units,
-        'originalFileName': filePath.split('/').last.split('\\').last,
-      };
+      final wordbookInfo = jsonDataService.extractWordbookInfo(jsonData);
+      wordbookInfo['originalFileName'] = filePath.split('/').last.split('\\').last;
+      
+      return wordbookInfo;
     } catch (e) {
       throw Exception('解析JSON文件失败: $e');
     }
   }
 
   List<Word> _extractWordsFromJson(Map<String, dynamic> jsonData) {
-    if (jsonData['wordbooks'] == null || jsonData['wordbooks'] is! List) {
-      throw Exception('无效的JSON格式: 缺少 `wordbooks` 列表');
-    }
-
+    final jsonDataService = JsonDataService();
+    final wordbooksInfo = jsonDataService.extractAllWordbooksInfo(jsonData);
+    
     final List<Word> allWords = [];
-    final List<dynamic> wordbooksData = jsonData['wordbooks'];
-
-    for (final wordbookData in wordbooksData) {
-      if (wordbookData['words'] != null && wordbookData['words'] is List) {
-        final List<dynamic> wordsData = wordbookData['words'];
-        for (final wordData in wordsData) {
-          allWords.add(Word.fromMap(wordData));
-        }
-      }
+    for (final wordbookInfo in wordbooksInfo) {
+      allWords.addAll(wordbookInfo['words'] as List<Word>);
     }
 
     if (allWords.isEmpty) {
