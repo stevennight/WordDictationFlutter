@@ -326,7 +326,7 @@ class _DictationScreenState extends State<DictationScreen> {
               ),
               child: HandwritingCanvas(
                 key: _canvasKey,
-                backgroundColor: Theme.of(context).colorScheme.surface,
+                backgroundColor: Colors.white,
                 isAnnotationMode: provider.isAnnotationMode,
                 backgroundImagePath: provider.isAnnotationMode ? provider.originalImagePath : null,
               ),
