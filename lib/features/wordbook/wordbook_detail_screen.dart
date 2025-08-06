@@ -1014,6 +1014,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                                   ),
                                 ),
                                 const PopupMenuDivider(),
+                                const PopupMenuItem(
+                                  value: 'edit_name',
+                                  child: ListTile(
+                                    leading: Icon(Icons.edit),
+                                    title: Text('编辑名称'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'edit_description',
+                                  child: ListTile(
+                                    leading: Icon(Icons.description),
+                                    title: Text('编辑描述'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
 
                                  PopupMenuItem(
                                    value: 'toggle_learned',
@@ -1094,7 +1111,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       case 'copy':
         _startUnitCopying(unit.name, unitWords);
         break;
-
+      case 'edit_name':
+        _editUnitName(unit);
+        break;
+      case 'edit_description':
+        _editUnitDescription(unit);
+        break;
       case 'toggle_learned':
         _toggleUnitLearnedStatus(unit);
         break;
@@ -1469,5 +1491,131 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _editUnitName(Unit unit) async {
+    final controller = TextEditingController(text: unit.name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑单元名称'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '单元名称',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && result != unit.name) {
+      await _updateUnitName(unit, result);
+    }
+  }
+
+  Future<void> _updateUnitName(Unit unit, String newName) async {
+    try {
+      final updatedUnit = Unit(
+        id: unit.id,
+        wordbookId: unit.wordbookId,
+        name: newName,
+        description: unit.description,
+        wordCount: unit.wordCount,
+        isLearned: unit.isLearned,
+        createdAt: unit.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      await _unitService.updateUnit(updatedUnit);
+      await _loadUnits();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('单元名称已更新')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新单元名称失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editUnitDescription(Unit unit) async {
+    final controller = TextEditingController(text: unit.description ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑单元描述'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '单元描述',
+            border: OutlineInputBorder(),
+            hintText: '请输入单元描述（可选）',
+          ),
+          maxLines: 3,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result != (unit.description ?? '')) {
+      await _updateUnitDescription(unit, result.isEmpty ? null : result);
+    }
+  }
+
+  Future<void> _updateUnitDescription(Unit unit, String? newDescription) async {
+    try {
+      final updatedUnit = Unit(
+        id: unit.id,
+        wordbookId: unit.wordbookId,
+        name: unit.name,
+        description: newDescription,
+        wordCount: unit.wordCount,
+        isLearned: unit.isLearned,
+        createdAt: unit.createdAt,
+        updatedAt: DateTime.now(),
+      );
+      
+      await _unitService.updateUnit(updatedUnit);
+      await _loadUnits();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('单元描述已更新')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新单元描述失败: $e')),
+        );
+      }
+    }
   }
 }

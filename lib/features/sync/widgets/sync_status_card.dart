@@ -5,7 +5,7 @@ class SyncStatusCard extends StatelessWidget {
   final SyncConfig config;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onSync;
+  final Future<bool> Function() onSync;
   final VoidCallback onTest;
 
   const SyncStatusCard({
@@ -241,7 +241,9 @@ class SyncStatusCard extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: ElevatedButton.icon(
-            onPressed: config.enabled ? onSync : null,
+            onPressed: config.enabled ? () async {
+              await onSync();
+            } : null,
             icon: const Icon(Icons.sync, size: 16),
             label: const Text('同步'),
             style: ElevatedButton.styleFrom(

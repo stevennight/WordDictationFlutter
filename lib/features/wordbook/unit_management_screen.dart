@@ -257,6 +257,44 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
     }
   }
 
+  Future<void> _editUnitDescription(Unit unit) async {
+    final controller = TextEditingController(text: unit.description ?? '');
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑单元描述'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '单元描述（可选）',
+            border: OutlineInputBorder(),
+            hintText: '请输入单元描述',
+          ),
+          maxLines: 3,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newDescription = controller.text.trim();
+              Navigator.of(context).pop(newDescription.isEmpty ? null : newDescription);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null || result == null) {
+      await _updateUnitDescription(unit, result);
+    }
+  }
+
   Future<void> _updateUnitName(Unit unit, String newName) async {
     try {
       final updatedUnit = unit.copyWith(
@@ -273,6 +311,26 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('更新单元名称失败: $e')),
+      );
+    }
+  }
+
+  Future<void> _updateUnitDescription(Unit unit, String? newDescription) async {
+    try {
+      final updatedUnit = unit.copyWith(
+        description: newDescription,
+        updatedAt: DateTime.now(),
+      );
+      
+      await _unitService.updateUnit(updatedUnit);
+      await _loadUnits();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(newDescription?.isEmpty == false ? '单元描述已更新' : '单元描述已清空')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新单元描述失败: $e')),
       );
     }
   }
@@ -605,6 +663,17 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                                       fontSize: 12,
                                     ),
                                   ),
+                                  if (unit.description != null && unit.description!.isNotEmpty)
+                                    Text(
+                                      unit.description!,
+                                      style: TextStyle(
+                                        color: Colors.grey[500],
+                                        fontSize: 11,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   if (unit.isLearned)
                                     Text(
                                       '已学完',
@@ -622,8 +691,11 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                                     case 'view':
                                       _showUnitWords(unit);
                                       break;
-                                    case 'edit':
+                                    case 'edit_name':
                                       _editUnitName(unit);
+                                      break;
+                                    case 'edit_description':
+                                      _editUnitDescription(unit);
                                       break;
                                     case 'toggle_learned':
                                       _toggleUnitLearned(unit);
@@ -643,13 +715,22 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
                                     ),
                                   ),
                                   const PopupMenuItem(
-                                    value: 'edit',
+                                    value: 'edit_name',
                                     child: ListTile(
                                       leading: Icon(Icons.edit),
                                       title: Text('编辑名称'),
                                       contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
+                                  const PopupMenuItem(
+                                    value: 'edit_description',
+                                    child: ListTile(
+                                      leading: Icon(Icons.description),
+                                      title: Text('编辑描述'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                  const PopupMenuDivider(),
                                   PopupMenuItem(
                                     value: 'toggle_learned',
                                     child: ListTile(

@@ -214,11 +214,14 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                   _loadWordbooks();
                 }
               } else if (value == 'sync') {
-                Navigator.of(context).push(
+                final result = await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const SyncSettingsScreen(),
                   ),
                 );
+                if (result == true) {
+                  _loadWordbooks();
+                }
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[

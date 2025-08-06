@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:sqflite/sqflite.dart';
+
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import '../database/database_helper.dart';
@@ -364,8 +366,82 @@ class WordbookService {
         }
       }
       
+      // 如果没有提供单元数据，自动为旧格式数据创建单元
+      if (units == null || units.isEmpty) {
+        await _createUnitsFromCategories(wordbookId, txn);
+      }
+      
       return wordbook;
     });
+  }
+
+  /// 为词书自动创建单元（基于单词的category字段）
+  Future<void> _createUnitsFromCategories(int wordbookId, [Transaction? txn]) async {
+    final db = txn ?? await _dbHelper.database;
+    
+    // Get distinct categories for this wordbook
+    final categoriesResult = await db.rawQuery('''
+      SELECT DISTINCT category FROM words 
+      WHERE wordbook_id = ? AND category IS NOT NULL AND category != ''
+    ''', [wordbookId]);
+    
+    // Create units for each category
+    for (final categoryMap in categoriesResult) {
+      final category = categoryMap['category'] as String;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      
+      // Count words in this category
+      final countResult = await db.rawQuery('''
+        SELECT COUNT(*) as count FROM words 
+        WHERE wordbook_id = ? AND category = ?
+      ''', [wordbookId, category]);
+      final wordCount = countResult.first['count'] as int;
+      
+      // Insert unit
+      final unitId = await db.insert('units', {
+        'name': category,
+        'wordbook_id': wordbookId,
+        'word_count': wordCount,
+        'is_learned': 0,
+        'created_at': now,
+        'updated_at': now,
+      });
+      
+      // Update words to reference this unit
+      await db.update(
+        'words',
+        {'unit_id': unitId},
+        where: 'wordbook_id = ? AND category = ?',
+        whereArgs: [wordbookId, category],
+      );
+    }
+    
+    // Handle words without category (create "未分类" unit)
+    final uncategorizedResult = await db.rawQuery('''
+      SELECT COUNT(*) as count FROM words 
+      WHERE wordbook_id = ? AND (category IS NULL OR category = '')
+    ''', [wordbookId]);
+    final uncategorizedCount = uncategorizedResult.first['count'] as int;
+    
+    if (uncategorizedCount > 0) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final unitId = await db.insert('units', {
+        'name': '未分类',
+        'wordbook_id': wordbookId,
+        'word_count': uncategorizedCount,
+        'is_learned': 0,
+        'created_at': now,
+        'updated_at': now,
+      });
+      
+      // Update uncategorized words
+      await db.update(
+        'words',
+        {'unit_id': unitId},
+        where: 'wordbook_id = ? AND (category IS NULL OR category = ?)',
+        whereArgs: [wordbookId, ''],
+      );
+    }
   }
 
   /// Add a word (alias for addWordToWordbook)

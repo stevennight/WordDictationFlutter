@@ -63,7 +63,14 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
           config: config,
           onEdit: () => _editSyncConfig(config),
           onDelete: () => _deleteSyncConfig(config),
-          onSync: () => _performSync(config),
+          onSync: () async {
+            final success = await _performSync(config);
+            if (success && mounted) {
+              // 通知调用页面同步成功，需要刷新
+              Navigator.of(context).pop(true);
+            }
+            return success;
+          },
           onTest: () => _testSyncConfig(config),
         );
       },
@@ -210,7 +217,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     );
   }
 
-  Future<void> _performSync(SyncConfig config) async {
+  Future<bool> _performSync(SyncConfig config) async {
     setState(() {
       _isLoading = true;
     });
@@ -261,7 +268,9 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             ),
           );
         }
+        return result.success;
       }
+      return false;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -271,6 +280,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
           ),
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
