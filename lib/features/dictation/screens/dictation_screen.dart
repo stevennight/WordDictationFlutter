@@ -741,14 +741,14 @@ class _DictationScreenState extends State<DictationScreen> {
 
   Future<void> _loadImageToCanvas(String imagePath) async {
     try {
-      // 这里需要实现将图片加载到画布的逻辑
-      // 具体实现取决于使用的画布组件
+      // 由于画布组件不支持加载图片到画布，这里只是清空画布
+      // 用户可以在空白画布上重新进行批改
       final canvasState = _canvasKey.currentState as dynamic;
-      if (canvasState != null && canvasState.loadImage != null) {
-        await canvasState.loadImage(imagePath);
+      if (canvasState != null) {
+        canvasState.clearCanvas();
       }
     } catch (e) {
-      debugPrint('加载图片到画布失败: $e');
+      debugPrint('清空画布失败: $e');
     }
   }
 
