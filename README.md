@@ -1,5 +1,7 @@
 # Flutter Word Dictation App
 
+Version 1.0.0
+
 基于原Python版本wordDictation默写工具的Flutter跨平台实现
 
 ## 功能特性
