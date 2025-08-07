@@ -224,26 +224,72 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
 
     try {
       // 显示同步选项对话框
-      final action = await showDialog<String>(
+      final action = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('选择同步操作'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.cloud_upload),
-                title: const Text('上传到云端'),
-                subtitle: const Text('将本地词书上传到云端\n⚠️ 需要本地有词书数据'),
-                onTap: () => Navigator.of(context).pop('upload'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_download),
-                title: const Text('从云端下载'),
-                subtitle: const Text('从云端下载词书到本地\n⚠️ 会覆盖同名本地词书'),
-                onTap: () => Navigator.of(context).pop('download'),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '词书同步',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.cloud_upload),
+                  title: const Text('上传词书到云端'),
+                  subtitle: const Text('将本地词书上传到云端\n⚠️ 需要本地有词书数据'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'wordbooks',
+                    'action': 'upload',
+                  }),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cloud_download),
+                  title: const Text('从云端下载词书'),
+                  subtitle: const Text('从云端下载词书到本地\n⚠️ 会覆盖同名本地词书'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'wordbooks',
+                    'action': 'download',
+                  }),
+                ),
+                const Divider(),
+                const Text(
+                  '历史记录同步',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.history),
+                  title: const Text('上传历史记录'),
+                  subtitle: const Text('将本地历史记录和笔迹上传到云端\n⚠️ 包含做题记录和手写图片'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'history',
+                    'action': 'upload',
+                  }),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('下载历史记录'),
+                  subtitle: const Text('从云端下载历史记录到本地\n⚠️ 会合并到现有记录中'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'history',
+                    'action': 'download',
+                  }),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.sync),
+                  title: const Text('增量同步历史'),
+                  subtitle: const Text('只同步最近修改的历史记录\n⚠️ 更快速的同步方式'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'history',
+                    'action': 'incremental',
+                  }),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -255,10 +301,31 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
       );
 
       if (action != null) {
-        final result = await _syncService.syncWordbooks(
-          config.id,
-          upload: action == 'upload',
-        );
+        SyncResult result;
+        
+        if (action['type'] == 'wordbooks') {
+          result = await _syncService.syncWordbooks(
+            config.id,
+            upload: action['action'] == 'upload',
+          );
+        } else if (action['type'] == 'history') {
+          if (action['action'] == 'incremental') {
+            // 增量同步：只同步最近7天的数据
+            final since = DateTime.now().subtract(const Duration(days: 7));
+            result = await _syncService.syncHistory(
+              config.id,
+              upload: true,
+              since: since,
+            );
+          } else {
+            result = await _syncService.syncHistory(
+              config.id,
+              upload: action['action'] == 'upload',
+            );
+          }
+        } else {
+          result = SyncResult.failure('未知的同步类型');
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

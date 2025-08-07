@@ -127,7 +127,14 @@ class ObjectStorageSyncProvider extends SyncProvider {
 
   String _getLatestObjectKey(SyncDataType dataType) {
     final dataTypeName = dataType.toString().split('.').last;
+    if (dataType == SyncDataType.historyImages) {
+      return '${_storageConfig.pathPrefix}/images/index.json';
+    }
     return '${_storageConfig.pathPrefix}/$dataTypeName-latest.json';
+  }
+
+  String _getImageObjectKey(String hash, String extension) {
+    return '${_storageConfig.pathPrefix}/images/$hash$extension';
   }
 
   @override
@@ -158,6 +165,11 @@ class ObjectStorageSyncProvider extends SyncProvider {
   @override
   Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data) async {
     try {
+      // 特殊处理历史记录图片上传
+      if (dataType == SyncDataType.historyImages) {
+        return await _uploadImageData(data);
+      }
+
       final objectKey = _getObjectKey(dataType);
       final latestKey = _getLatestObjectKey(dataType);
       final jsonData = jsonEncode(data);
@@ -187,6 +199,11 @@ class ObjectStorageSyncProvider extends SyncProvider {
   @override
   Future<SyncResult> downloadData(SyncDataType dataType) async {
     try {
+      // 特殊处理历史记录图片下载
+      if (dataType == SyncDataType.historyImages) {
+        return await _downloadImageData();
+      }
+
       final latestKey = _getLatestObjectKey(dataType);
       final result = await _getObject(latestKey);
       
@@ -622,5 +639,113 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final messageBytes = utf8.encode(message);
     final hmac = Hmac(sha256, key);
     return hmac.convert(messageBytes).toString();
+  }
+
+  // 图片上传的特殊处理方法
+  Future<SyncResult> _uploadImageData(Map<String, dynamic> data) async {
+    try {
+      final images = data['images'] as List<dynamic>? ?? [];
+      final uploadedImages = <Map<String, dynamic>>[];
+      
+      // 上传每个图片文件
+      for (final imageData in images) {
+        final imageMap = imageData as Map<String, dynamic>;
+        final hash = imageMap['hash'] as String;
+        final extension = imageMap['extension'] as String;
+        final bytes = imageMap['bytes'] as List<int>;
+        
+        final objectKey = _getImageObjectKey(hash, extension);
+        final uploadResult = await _putObject(objectKey, bytes);
+        
+        if (uploadResult.success) {
+          uploadedImages.add({
+            'hash': hash,
+            'extension': extension,
+            'objectKey': objectKey,
+            'url': _buildObjectUrl(objectKey),
+            'size': bytes.length,
+          });
+        } else {
+          return SyncResult.failure('上传图片失败: ${uploadResult.message}');
+        }
+      }
+      
+      // 创建并上传索引文件
+      final indexData = {
+        'images': uploadedImages,
+        'uploadTime': DateTime.now().toIso8601String(),
+        'totalCount': uploadedImages.length,
+      };
+      
+      final indexKey = _getLatestObjectKey(SyncDataType.historyImages);
+      final indexBytes = utf8.encode(jsonEncode(indexData));
+      final indexResult = await _putObject(indexKey, indexBytes);
+      
+      if (indexResult.success) {
+        return SyncResult.success(
+          message: '图片数据上传成功',
+          data: {
+            'uploadedImages': uploadedImages,
+            'indexKey': indexKey,
+          },
+        );
+      } else {
+        return SyncResult.failure('上传索引文件失败: ${indexResult.message}');
+      }
+    } catch (e) {
+      return SyncResult.failure('上传图片数据失败: $e');
+    }
+  }
+
+  // 图片下载的特殊处理方法
+  Future<SyncResult> _downloadImageData() async {
+    try {
+      // 首先下载索引文件
+      final indexKey = _getLatestObjectKey(SyncDataType.historyImages);
+      final indexResult = await _getObject(indexKey);
+      
+      if (!indexResult.success) {
+        return SyncResult.failure('下载图片索引失败: ${indexResult.message}');
+      }
+      
+      final indexBytes = indexResult.data!['content'] as List<int>;
+      final indexJson = jsonDecode(utf8.decode(indexBytes)) as Map<String, dynamic>;
+      final imageList = indexJson['images'] as List<dynamic>? ?? [];
+      
+      final downloadedImages = <Map<String, dynamic>>[];
+      
+      // 下载每个图片文件
+      for (final imageInfo in imageList) {
+        final imageMap = imageInfo as Map<String, dynamic>;
+        final objectKey = imageMap['objectKey'] as String;
+        final hash = imageMap['hash'] as String;
+        final extension = imageMap['extension'] as String;
+        
+        final imageResult = await _getObject(objectKey);
+        if (imageResult.success) {
+          final imageBytes = imageResult.data!['content'] as List<int>;
+          downloadedImages.add({
+            'hash': hash,
+            'extension': extension,
+            'bytes': imageBytes,
+            'size': imageBytes.length,
+          });
+        } else {
+          _logDebug('下载图片失败: $objectKey, ${imageResult.message}');
+          // 继续下载其他图片，不因单个图片失败而中断
+        }
+      }
+      
+      return SyncResult.success(
+        message: '图片数据下载成功',
+        data: {
+          'images': downloadedImages,
+          'totalCount': downloadedImages.length,
+          'indexInfo': indexJson,
+        },
+      );
+    } catch (e) {
+      return SyncResult.failure('下载图片数据失败: $e');
+    }
   }
 }

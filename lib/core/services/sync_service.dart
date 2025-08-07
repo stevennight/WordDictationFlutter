@@ -6,12 +6,14 @@ import 'local_config_service.dart';
 import 'json_data_service.dart';
 import 'import_data_service.dart';
 import 'object_storage_sync_provider.dart';
+import 'history_sync_service.dart';
 
 /// 同步数据类型枚举
 enum SyncDataType {
   wordbooks,
   settings,
   history,
+  historyImages, // 历史记录图片文件
   // 预留其他数据类型
 }
 
@@ -170,6 +172,96 @@ class SyncService {
     _configs.removeWhere((c) => c.id == configId);
     _providers.remove(configId);
     await _saveConfigs();
+  }
+
+  /// 同步历史记录数据
+  Future<SyncResult> syncHistory(String configId, {
+    bool upload = true,
+    DateTime? since,
+    bool includeImages = true,
+  }) async {
+    final provider = _providers[configId];
+    if (provider == null) {
+      return SyncResult.failure('同步配置不存在');
+    }
+
+    try {
+      final historySyncService = HistorySyncService();
+      await historySyncService.initialize();
+
+      if (upload) {
+        // 上传历史记录数据
+        final lastSyncTime = since ?? await historySyncService.getLastSyncTime(configId);
+        final historyData = await historySyncService.exportHistoryData(since: lastSyncTime);
+        
+        // 检查是否为空数据
+        final sessions = historyData['sessions'] as List<dynamic>;
+        if (sessions.isEmpty) {
+          return SyncResult.failure('没有需要同步的历史记录数据');
+        }
+        
+        final result = await provider.uploadData(SyncDataType.history, historyData);
+        
+        if (result.success) {
+          // 更新最后同步时间
+          await historySyncService.saveLastSyncTime(configId, DateTime.now());
+          
+          // 更新配置中的同步时间
+          final config = getConfig(configId);
+          if (config != null) {
+            final updatedConfig = SyncConfig(
+              id: config.id,
+              name: config.name,
+              providerType: config.providerType,
+              settings: config.settings,
+              autoSync: config.autoSync,
+              syncInterval: config.syncInterval,
+              lastSyncTime: DateTime.now(),
+              enabled: config.enabled,
+            );
+            await addConfig(updatedConfig);
+          }
+        }
+        
+        return result;
+      } else {
+        // 下载历史记录数据
+        final result = await provider.downloadData(SyncDataType.history);
+        
+        if (result.success && result.data != null) {
+          final importResult = await historySyncService.importHistoryData(result.data!);
+          
+          if (importResult.success) {
+            // 更新最后同步时间
+            await historySyncService.saveLastSyncTime(configId, DateTime.now());
+            
+            // 更新配置中的同步时间
+            final config = getConfig(configId);
+            if (config != null) {
+              final updatedConfig = SyncConfig(
+                id: config.id,
+                name: config.name,
+                providerType: config.providerType,
+                settings: config.settings,
+                autoSync: config.autoSync,
+                syncInterval: config.syncInterval,
+                lastSyncTime: DateTime.now(),
+                enabled: config.enabled,
+              );
+              await addConfig(updatedConfig);
+            }
+            
+            return SyncResult.success(message: '历史记录同步成功: ${importResult.message}');
+          } else {
+            return importResult;
+          }
+        }
+        
+        return result;
+      }
+    } catch (e) {
+      return SyncResult.failure('历史记录同步失败: $e');
+    }
   }
 
   /// 同步词书数据
