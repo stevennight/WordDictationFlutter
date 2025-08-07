@@ -331,18 +331,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       
-      // Get the app directory (same logic as database and config)
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
-      }
-      final Directory imageDir = Directory(path.join(appDir, 'handwriting_cache'));
+      // Get the app documents directory (consistent with ImageSyncManager)
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      final Directory imageDir = Directory(path.join(documentsDirectory.path, 'handwriting_cache'));
       
       // Create directory if it doesn't exist
       if (!await imageDir.exists()) {
