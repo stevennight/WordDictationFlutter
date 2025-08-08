@@ -98,24 +98,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.sync),
                   onTap: () => _navigateToSyncSettings(),
                 ),
-                SettingsTile(
-                  title: '清空历史记录',
-                  subtitle: '删除所有默写历史记录',
-                  leading: const Icon(Icons.delete_sweep),
-                  onTap: () => _showClearHistoryDialog(),
-                ),
-                SettingsTile(
-                  title: '导出数据',
-                  subtitle: '导出历史记录和设置',
-                  leading: const Icon(Icons.download),
-                  onTap: () => _exportData(),
-                ),
-                SettingsTile(
-                  title: '导入数据',
-                  subtitle: '从备份文件导入数据',
-                  leading: const Icon(Icons.upload),
-                  onTap: () => _importData(),
-                ),
               ],
             ),
             
@@ -206,66 +188,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showClearHistoryDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('清空历史记录'),
-        content: const Text('确定要删除所有历史记录吗？此操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              try {
-                await context.read<HistoryProvider>().clearAllHistory();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('历史记录已清空'),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('清空失败: $e'),
-                      backgroundColor: Theme.of(context).colorScheme.error,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
 
-  void _exportData() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('导出功能待实现'),
-      ),
-    );
-  }
 
-  void _importData() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('导入功能待实现'),
-      ),
-    );
-  }
+
 
   void _showBrushSizeDialog() async {
     // Get current brush size from settings

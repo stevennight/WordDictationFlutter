@@ -18,7 +18,7 @@ class DictationService {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'dictation_sessions',
-      where: 'session_id = ?',
+      where: 'session_id = ? AND deleted = 0',
       whereArgs: [sessionId],
     );
     
@@ -123,8 +123,22 @@ class DictationService {
     );
   }
 
-  /// Delete session and all related data
+  /// Soft delete session (mark as deleted)
   Future<void> deleteSession(String sessionId) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'dictation_sessions',
+      {
+        'deleted': 1,
+        'deleted_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+    );
+  }
+
+  /// Hard delete session and all related data (for cleanup)
+  Future<void> hardDeleteSession(String sessionId) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       await txn.delete(
@@ -145,8 +159,22 @@ class DictationService {
     });
   }
 
-  /// Get all sessions
+  /// Get all sessions (excluding deleted)
   Future<List<DictationSession>> getAllSessions() async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'dictation_sessions',
+      where: 'deleted = 0',
+      orderBy: 'start_time DESC',
+    );
+    
+    return List.generate(maps.length, (i) {
+      return DictationSession.fromMap(maps[i]);
+    });
+  }
+
+  /// Get all sessions including deleted (for sync purposes)
+  Future<List<DictationSession>> getAllSessionsIncludingDeleted() async {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'dictation_sessions',
@@ -158,7 +186,7 @@ class DictationService {
     });
   }
 
-  /// Get sessions with pagination
+  /// Get sessions with pagination (excluding deleted)
   Future<List<DictationSession>> getSessionsPaginated({
     int limit = 20,
     int offset = 0,
@@ -166,6 +194,7 @@ class DictationService {
     final db = await _dbHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'dictation_sessions',
+      where: 'deleted = 0',
       orderBy: 'start_time DESC',
       limit: limit,
       offset: offset,
@@ -176,10 +205,10 @@ class DictationService {
     });
   }
 
-  /// Get session count
+  /// Get session count (excluding deleted)
   Future<int> getSessionCount() async {
     final db = await _dbHelper.database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM dictation_sessions');
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM dictation_sessions WHERE deleted = 0');
     return result.first['count'] as int;
   }
 

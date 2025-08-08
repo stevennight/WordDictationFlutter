@@ -16,6 +16,7 @@ class ImageSyncManager {
   ImageSyncManager._internal();
 
   late Directory _appDocDir;
+  late Directory _syncCacheDir;
   late Directory _imagesCacheDir;
 
   /// 初始化管理器
@@ -31,7 +32,14 @@ class ImageSyncManager {
       _appDocDir = await getApplicationDocumentsDirectory();
     }
     
-    _imagesCacheDir = Directory(path.join(_appDocDir.path, 'handwriting_cache'));
+    // 初始化sync_cache目录
+    _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
+    if (!await _syncCacheDir.exists()) {
+      await _syncCacheDir.create(recursive: true);
+    }
+    
+    // 将图片缓存目录放到sync_cache下
+    _imagesCacheDir = Directory(path.join(_syncCacheDir.path, 'handwriting_cache'));
     
     // 确保缓存目录存在
     if (!await _imagesCacheDir.exists()) {

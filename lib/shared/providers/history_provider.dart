@@ -131,7 +131,7 @@ class HistoryProvider with ChangeNotifier {
     }
   }
 
-  /// Delete a session and its results
+  /// Delete a session and its results (soft delete)
   Future<void> deleteSession(String sessionId) async {
     try {
       final db = await _dbHelper.database;
@@ -157,28 +157,16 @@ class HistoryProvider with ChangeNotifier {
         }
       }
       
-      await db.transaction((txn) async {
-        // Delete results first
-        await txn.delete(
-          'dictation_results',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-        
-        // Delete session words
-        await txn.delete(
-          'session_words',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-        
-        // Delete session
-        await txn.delete(
-          'dictation_sessions',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-      });
+      // 软删除会话（标记为已删除）
+      await db.update(
+        'dictation_sessions',
+        {
+          'deleted': 1,
+          'deleted_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'session_id = ?',
+        whereArgs: [sessionId],
+      );
       
       // 删除关联的图片文件
       await _deleteImageFiles(imagesToDelete);

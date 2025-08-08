@@ -41,7 +41,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -111,7 +111,9 @@ class DatabaseHelper {
         end_time INTEGER,
         is_retry_session INTEGER DEFAULT 0,
         original_session_id TEXT,
-        dictation_direction INTEGER DEFAULT 0
+        dictation_direction INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
+        deleted_at INTEGER
       )
     ''');
 
@@ -304,6 +306,15 @@ class DatabaseHelper {
           );
         }
       }
+    }
+    
+    if (oldVersion < 7 && newVersion >= 7) {
+      // Add deleted and deleted_at columns to dictation_sessions table
+      await db.execute('ALTER TABLE dictation_sessions ADD COLUMN deleted INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE dictation_sessions ADD COLUMN deleted_at INTEGER');
+      
+      // Create index for deleted column for better performance
+      await db.execute('CREATE INDEX idx_dictation_sessions_deleted ON dictation_sessions (deleted)');
     }
   }
 

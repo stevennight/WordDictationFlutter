@@ -139,6 +139,7 @@ class HistorySyncService {
   late ImageSyncManager _imageSyncManager;
   late String _deviceId;
   late Directory _appDocDir;
+  late Directory _syncCacheDir;
 
   /// 初始化服务
   Future<void> initialize() async {
@@ -153,14 +154,23 @@ class HistorySyncService {
       _appDocDir = await getApplicationDocumentsDirectory();
     }
     
+    // 初始化sync_cache目录
+    _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
+    if (!await _syncCacheDir.exists()) {
+      await _syncCacheDir.create(recursive: true);
+    }
+    
     _deviceId = await _getOrCreateDeviceId();
     _imageSyncManager = ImageSyncManager();
     await _imageSyncManager.initialize();
   }
 
+  /// 获取sync_cache目录路径
+  String get _syncCachePath => _syncCacheDir.path;
+
   /// 获取或创建设备ID
   Future<String> _getOrCreateDeviceId() async {
-    final file = File(path.join(_appDocDir.path, 'device_id.txt'));
+    final file = File(path.join(_syncCachePath, 'device_id.txt'));
     if (await file.exists()) {
       return await file.readAsString();
     } else {
@@ -183,12 +193,24 @@ class HistorySyncService {
       whereArgs.add(since.millisecondsSinceEpoch);
     }
     
-    final sessionMaps = await db.query(
-      'dictation_sessions',
-      where: whereClause,
-      whereArgs: whereArgs,
-      orderBy: 'start_time DESC',
-    );
+    // 使用getAllSessionsIncludingDeleted获取包括已删除的会话
+    final allSessions = await _dictationService.getAllSessionsIncludingDeleted();
+    
+    // 根据条件过滤会话
+    final filteredSessions = allSessions.where((session) {
+      // 排除进行中的会话
+      if (session.status.index == 0) return false; // inProgress
+      
+      // 如果指定了since时间，只包含该时间之后的会话
+      if (since != null && !session.startTime.isAfter(since)) {
+        return false;
+      }
+      
+      return true;
+    }).toList();
+    
+    // 转换为Map格式以保持兼容性
+    final sessionMaps = filteredSessions.map((session) => session.toMap()).toList();
 
     final List<SessionSyncData> sessions = [];
     
@@ -303,45 +325,76 @@ class HistorySyncService {
       final db = await _dbHelper.database;
       
       for (final sessionSync in syncData.sessions) {
-        // 检查会话是否已存在
-        final existingSession = await _dictationService.getSession(sessionSync.sessionId);
+        // 检查会话是否已存在（包括已删除的会话）
+        final existingSessions = await _dictationService.getAllSessionsIncludingDeleted();
+        DictationSession? existingSession;
+        try {
+          existingSession = existingSessions.firstWhere(
+            (s) => s.sessionId == sessionSync.sessionId,
+          );
+        } catch (e) {
+          existingSession = null;
+        }
+        
+        final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
+        
+        // 调试日志：检查远端数据格式
+        print('[HistorySync] 处理会话 ${remoteSession.sessionId}:');
+        print('[HistorySync] - 远端数据包含deleted字段: ${sessionSync.sessionData.containsKey('deleted')}');
+        print('[HistorySync] - 远端deleted值: ${sessionSync.sessionData['deleted']}');
+        print('[HistorySync] - 解析后deleted状态: ${remoteSession.deleted}');
         
         if (existingSession == null) {
-          // 创建新会话
-          final session = DictationSession.fromMap(sessionSync.sessionData);
-          await _dictationService.createSession(session);
-          importedSessions++;
-          
-          // 导入结果
-          for (final resultData in sessionSync.results) {
-            final result = DictationResult.fromMap(resultData);
-            await _dictationService.saveResult(result);
-            importedResults++;
+          // 创建新会话（包括可能的删除状态）
+          await _dictationService.createSession(remoteSession);
+          if (!remoteSession.deleted) {
+            importedSessions++;
           }
+          print('[HistorySync] - 创建新会话，deleted=${remoteSession.deleted}');
           
-          // 导入会话单词关联
-          for (final wordData in sessionSync.sessionWords) {
-            await db.insert('session_words', wordData);
-          }
-        } else {
-          // 检查是否需要更新
-          final existingModified = existingSession.startTime;
-          if (sessionSync.lastModified.isAfter(existingModified)) {
-            // 更新会话
-            final session = DictationSession.fromMap(sessionSync.sessionData);
-            await _dictationService.updateSession(session);
-            
-            // 更新结果（简单起见，删除旧结果后重新插入）
-            await _deleteSessionResults(sessionSync.sessionId);
+          // 如果远程会话未删除，导入结果和单词关联
+          if (!remoteSession.deleted) {
+            // 导入结果
             for (final resultData in sessionSync.results) {
               final result = DictationResult.fromMap(resultData);
               await _dictationService.saveResult(result);
               importedResults++;
             }
             
-            // 重新导入会话单词关联
+            // 导入会话单词关联
             for (final wordData in sessionSync.sessionWords) {
               await db.insert('session_words', wordData);
+            }
+          }
+        } else {
+          // 检查是否需要更新
+          final existingModified = existingSession.startTime;
+          final remoteModified = remoteSession.deletedAt ?? remoteSession.startTime;
+          
+          print('[HistorySync] - 本地已存在会话，本地deleted=${existingSession.deleted}');
+          print('[HistorySync] - 删除状态是否不同: ${remoteSession.deleted != existingSession.deleted}');
+          
+          if (sessionSync.lastModified.isAfter(existingModified) || 
+              (remoteSession.deleted != existingSession.deleted)) {
+            // 更新会话（包括删除状态）
+            await _dictationService.updateSession(remoteSession);
+            print('[HistorySync] - 更新会话，新deleted状态=${remoteSession.deleted}');
+            
+            // 如果远程会话未删除，更新结果和单词关联
+            if (!remoteSession.deleted) {
+              // 更新结果（简单起见，删除旧结果后重新插入）
+              await _deleteSessionResults(sessionSync.sessionId);
+              for (final resultData in sessionSync.results) {
+                final result = DictationResult.fromMap(resultData);
+                await _dictationService.saveResult(result);
+                importedResults++;
+              }
+              
+              // 重新导入会话单词关联
+              await db.delete('session_words', where: 'session_id = ?', whereArgs: [sessionSync.sessionId]);
+              for (final wordData in sessionSync.sessionWords) {
+                await db.insert('session_words', wordData);
+              }
             }
           }
         }
@@ -354,6 +407,132 @@ class HistorySyncService {
       
       return SyncResult.success(
         message: '成功导入 $importedSessions 个会话，$importedResults 个结果，${allImageFiles.length} 个图片文件',
+        data: {
+          'importedSessions': importedSessions,
+          'importedResults': importedResults,
+          'downloadedImages': allImageFiles.length,
+        },
+      );
+    } catch (e) {
+      return SyncResult.failure('导入历史记录失败: $e');
+    }
+  }
+
+  /// 导入历史记录数据（用于下载，不删除本地记录）
+  Future<SyncResult> importHistoryDataWithoutDelete(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete]) async {
+    try {
+      final syncData = HistorySyncData.fromMap(data);
+      
+      // 检测冲突
+      final conflicts = await _detectConflicts(syncData);
+      if (conflicts.isNotEmpty) {
+        return SyncResult.failure('检测到冲突: ${conflicts.join(", ")}');
+      }
+      
+      // 收集所有需要下载的图片文件信息
+      final Set<ImageFileInfo> allImageFiles = {};
+      for (final sessionSync in syncData.sessions) {
+        allImageFiles.addAll(sessionSync.imageFiles);
+      }
+      
+      print('[HistorySync] 导入历史记录（不删除本地记录）：找到 ${syncData.sessions.length} 个会话');
+      print('[HistorySync] 导入历史记录（不删除本地记录）：需要下载 ${allImageFiles.length} 个图片文件');
+      
+      // 如果提供了同步提供者，下载图片文件
+      if (provider != null && allImageFiles.isNotEmpty) {
+        try {
+          print('[HistorySync] 开始下载图片文件...');
+          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data);
+          print('[HistorySync] 图片文件下载完成');
+        } catch (e) {
+          print('[HistorySync] 下载图片文件时出错: $e');
+          // 继续导入历史记录数据，不因图片下载失败而中断
+        }
+      } else if (provider == null) {
+        print('[HistorySync] 未提供同步提供者，跳过图片下载');
+      } else {
+        print('[HistorySync] 没有需要下载的图片文件');
+      }
+      
+      // 注意：这里不调用 _deleteLocalOnlyRecords 方法
+      
+      // 导入会话数据
+      int importedSessions = 0;
+      int importedResults = 0;
+      final db = await _dbHelper.database;
+      
+      for (final sessionSync in syncData.sessions) {
+        // 检查会话是否已存在（包括已删除的会话）
+        final existingSessions = await _dictationService.getAllSessionsIncludingDeleted();
+        DictationSession? existingSession;
+        try {
+          existingSession = existingSessions.firstWhere(
+            (s) => s.sessionId == sessionSync.sessionId,
+          );
+        } catch (e) {
+          existingSession = null;
+        }
+        
+        final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
+        
+        if (existingSession == null) {
+          // 创建新会话（包括可能的删除状态）
+          await _dictationService.createSession(remoteSession);
+          if (!remoteSession.deleted) {
+            importedSessions++;
+          }
+          
+          // 如果远程会话未删除，导入结果和单词关联
+          if (!remoteSession.deleted) {
+            // 导入结果
+            for (final resultData in sessionSync.results) {
+              final result = DictationResult.fromMap(resultData);
+              await _dictationService.saveResult(result);
+              importedResults++;
+            }
+            
+            // 导入会话单词关联
+            for (final wordData in sessionSync.sessionWords) {
+              await db.insert('session_words', wordData);
+            }
+          }
+        } else {
+          // 检查是否需要更新
+          final existingModified = existingSession.startTime;
+          final remoteModified = remoteSession.deletedAt ?? remoteSession.startTime;
+          
+          if (sessionSync.lastModified.isAfter(existingModified) || 
+              (remoteSession.deleted != existingSession.deleted)) {
+            // 更新会话（包括删除状态）
+            await _dictationService.updateSession(remoteSession);
+            
+            // 如果远程会话未删除，更新结果和单词关联
+            if (!remoteSession.deleted) {
+              // 更新结果（简单起见，删除旧结果后重新插入）
+              await _deleteSessionResults(sessionSync.sessionId);
+              for (final resultData in sessionSync.results) {
+                final result = DictationResult.fromMap(resultData);
+                await _dictationService.saveResult(result);
+                importedResults++;
+              }
+              
+              // 重新导入会话单词关联
+              await db.delete('session_words', where: 'session_id = ?', whereArgs: [sessionSync.sessionId]);
+              for (final wordData in sessionSync.sessionWords) {
+                await db.insert('session_words', wordData);
+              }
+            }
+          }
+        }
+      }
+      
+      // 导入完成后调用回调
+      if (onImportComplete != null) {
+        onImportComplete();
+      }
+      
+      return SyncResult.success(
+        message: '成功导入 $importedSessions 个会话，$importedResults 个结果，${allImageFiles.length} 个图片文件（不删除本地记录）',
         data: {
           'importedSessions': importedSessions,
           'importedResults': importedResults,
@@ -428,7 +607,7 @@ class HistorySyncService {
 
   /// 获取最后同步时间
   Future<DateTime?> getLastSyncTime(String configId) async {
-    final file = File(path.join(_appDocDir.path, 'last_history_sync_$configId.txt'));
+    final file = File(path.join(_syncCachePath, 'last_history_sync_$configId.txt'));
     if (await file.exists()) {
       final timestamp = await file.readAsString();
       return DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
@@ -438,43 +617,43 @@ class HistorySyncService {
 
   /// 保存最后同步时间
   Future<void> saveLastSyncTime(String configId, DateTime time) async {
-    final file = File(path.join(_appDocDir.path, 'last_history_sync_$configId.txt'));
+    final file = File(path.join(_syncCachePath, 'last_history_sync_$configId.txt'));
     await file.writeAsString(time.millisecondsSinceEpoch.toString());
   }
 
-  /// 删除本地存在但远端不存在的记录
+  /// 软删除本地存在但远端不存在的记录
   Future<void> _deleteLocalOnlyRecords(HistorySyncData syncData) async {
     try {
-      print('[HistorySync] 开始检查并删除本地多余的记录');
+      print('[HistorySync] 开始检查并软删除本地多余的记录');
       
-      // 获取远端会话ID集合
+      // 获取远端会话ID集合（包括已删除的）
       final remoteSessionIds = syncData.sessions.map((s) => s.sessionId).toSet();
       print('[HistorySync] 远端会话数量: ${remoteSessionIds.length}');
       
-      // 获取本地所有会话
+      // 获取本地所有未删除的会话
       final db = await _dbHelper.database;
       final localSessionMaps = await db.query(
         'dictation_sessions',
         columns: ['session_id'],
-        where: "status != 'inProgress'", // 排除进行中的会话
+        where: "status != 'inProgress' AND (deleted IS NULL OR deleted = 0)", // 排除进行中的会话和已删除的会话
       );
       
       final localSessionIds = localSessionMaps.map((m) => m['session_id'] as String).toSet();
-      print('[HistorySync] 本地会话数量: ${localSessionIds.length}');
+      print('[HistorySync] 本地未删除会话数量: ${localSessionIds.length}');
       
       // 找出本地存在但远端不存在的会话ID
-      final sessionsToDelete = localSessionIds.difference(remoteSessionIds);
-      print('[HistorySync] 需要删除的本地会话数量: ${sessionsToDelete.length}');
+      final sessionsToSoftDelete = localSessionIds.difference(remoteSessionIds);
+      print('[HistorySync] 需要软删除的本地会话数量: ${sessionsToSoftDelete.length}');
       
-      if (sessionsToDelete.isEmpty) {
-        print('[HistorySync] 没有需要删除的本地记录');
+      if (sessionsToSoftDelete.isEmpty) {
+        print('[HistorySync] 没有需要软删除的本地记录');
         return;
       }
       
       // 收集需要删除的图片文件路径
       final imagesToDelete = <String>{};
       
-      for (final sessionId in sessionsToDelete) {
+      for (final sessionId in sessionsToSoftDelete) {
         // 获取该会话的所有结果记录，以便删除关联的图片文件
         final resultMaps = await db.query(
           'dictation_results',
@@ -494,29 +673,16 @@ class HistorySyncService {
           }
         }
         
-        // 删除会话相关的所有数据
-        await db.transaction((txn) async {
-          // 删除结果记录
-          await txn.delete(
-            'dictation_results',
-            where: 'session_id = ?',
-            whereArgs: [sessionId],
-          );
-          
-          // 删除会话单词关联
-          await txn.delete(
-            'session_words',
-            where: 'session_id = ?',
-            whereArgs: [sessionId],
-          );
-          
-          // 删除会话记录
-          await txn.delete(
-            'dictation_sessions',
-            where: 'session_id = ?',
-            whereArgs: [sessionId],
-          );
-        });
+        // 软删除会话（标记为已删除）
+        await db.update(
+          'dictation_sessions',
+          {
+            'deleted': 1,
+            'deleted_at': DateTime.now().millisecondsSinceEpoch,
+          },
+          where: 'session_id = ?',
+          whereArgs: [sessionId],
+        );
       }
       
       // 删除关联的图片文件
@@ -525,9 +691,9 @@ class HistorySyncService {
         await _deleteImageFiles(imagesToDelete);
       }
       
-      print('[HistorySync] 成功删除 ${sessionsToDelete.length} 个本地多余的会话记录');
+      print('[HistorySync] 成功软删除 ${sessionsToSoftDelete.length} 个本地多余的会话记录');
     } catch (e) {
-      print('[HistorySync] 删除本地多余记录时出错: $e');
+      print('[HistorySync] 软删除本地多余记录时出错: $e');
       // 不抛出异常，避免影响整个同步过程
     }
   }
