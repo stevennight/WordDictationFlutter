@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
@@ -367,63 +369,106 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
   }
 
   Widget _buildImage(String imagePath) {
-    final file = File(imagePath);
-    
-    if (!file.existsSync()) {
-      return Container(
-        color: Colors.grey[200],
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.image_not_supported,
-                size: 32,
-                color: Colors.grey,
-              ),
-              SizedBox(height: 4),
-              Text(
-                '图片不存在',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Image.file(
-      file,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Colors.grey[200],
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.broken_image,
-                  size: 32,
-                  color: Colors.grey,
-                ),
-                SizedBox(height: 4),
-                Text(
-                  '加载失败',
-                  style: TextStyle(
-                    fontSize: 12,
+    return FutureBuilder<File?>(
+      future: _getImageFile(imagePath),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        
+        final file = snapshot.data;
+        if (file == null || !file.existsSync()) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.image_not_supported,
+                    size: 32,
                     color: Colors.grey,
                   ),
-                ),
-              ],
+                  SizedBox(height: 4),
+                  Text(
+                    '图片不存在',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          );
+        }
+
+        return Image.file(
+          file,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.broken_image,
+                      size: 32,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '加载失败',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+  /// 根据路径获取图片文件，支持相对路径和绝对路径
+  Future<File?> _getImageFile(String imagePath) async {
+    try {
+      // 如果是绝对路径，直接使用
+      if (path.isAbsolute(imagePath)) {
+        return File(imagePath);
+      }
+      
+      // 如果是相对路径，转换为绝对路径
+      // For desktop platforms, use executable directory
+      // For mobile platforms, fallback to documents directory
+      String appDir;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Get executable directory for desktop platforms
+        final executablePath = Platform.resolvedExecutable;
+        appDir = path.dirname(executablePath);
+      } else {
+        // Fallback to documents directory for mobile platforms
+        final appDocDir = await getApplicationDocumentsDirectory();
+        appDir = appDocDir.path;
+      }
+      
+      final absolutePath = path.join(appDir, imagePath);
+      return File(absolutePath);
+    } catch (e) {
+      debugPrint('获取图片文件失败: $e');
+      return null;
+    }
   }
 
   Widget _buildNotesSection(BuildContext context) {

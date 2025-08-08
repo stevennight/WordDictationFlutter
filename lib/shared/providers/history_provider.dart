@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
@@ -133,6 +136,27 @@ class HistoryProvider with ChangeNotifier {
     try {
       final db = await _dbHelper.database;
       
+      // 先获取该会话的所有结果记录，以便删除关联的图片文件
+      final resultMaps = await db.query(
+        'dictation_results',
+        where: 'session_id = ?',
+        whereArgs: [sessionId],
+      );
+      
+      // 收集需要删除的图片文件路径
+      final imagesToDelete = <String>{};
+      for (final resultMap in resultMaps) {
+        final originalPath = resultMap['original_image_path'] as String?;
+        final annotatedPath = resultMap['annotated_image_path'] as String?;
+        
+        if (originalPath != null && originalPath.isNotEmpty) {
+          imagesToDelete.add(originalPath);
+        }
+        if (annotatedPath != null && annotatedPath.isNotEmpty) {
+          imagesToDelete.add(annotatedPath);
+        }
+      }
+      
       await db.transaction((txn) async {
         // Delete results first
         await txn.delete(
@@ -151,10 +175,13 @@ class HistoryProvider with ChangeNotifier {
         // Delete session
         await txn.delete(
           'dictation_sessions',
-          where: 'id = ?',
+          where: 'session_id = ?',
           whereArgs: [sessionId],
         );
       });
+      
+      // 删除关联的图片文件
+      await _deleteImageFiles(imagesToDelete);
       
       // Remove from local list
       _sessions.removeWhere((session) => session.sessionId == sessionId);
@@ -171,11 +198,31 @@ class HistoryProvider with ChangeNotifier {
     try {
       final db = await _dbHelper.database;
       
+      // 先获取所有结果记录，以便删除关联的图片文件
+      final resultMaps = await db.query('dictation_results');
+      
+      // 收集需要删除的图片文件路径
+      final imagesToDelete = <String>{};
+      for (final resultMap in resultMaps) {
+        final originalPath = resultMap['original_image_path'] as String?;
+        final annotatedPath = resultMap['annotated_image_path'] as String?;
+        
+        if (originalPath != null && originalPath.isNotEmpty) {
+          imagesToDelete.add(originalPath);
+        }
+        if (annotatedPath != null && annotatedPath.isNotEmpty) {
+          imagesToDelete.add(annotatedPath);
+        }
+      }
+      
       await db.transaction((txn) async {
         await txn.delete('dictation_results');
         await txn.delete('session_words');
         await txn.delete('dictation_sessions');
       });
+      
+      // 删除关联的图片文件
+      await _deleteImageFiles(imagesToDelete);
       
       _sessions.clear();
       _results.clear();
@@ -335,6 +382,44 @@ class HistoryProvider with ChangeNotifier {
     _error = error;
     if (error != null) {
       notifyListeners();
+    }
+  }
+  
+  /// 删除图片文件
+  Future<void> _deleteImageFiles(Set<String> imagePaths) async {
+    for (final imagePath in imagePaths) {
+      try {
+        File imageFile;
+        
+        // 如果是绝对路径，直接使用
+        if (path.isAbsolute(imagePath)) {
+          imageFile = File(imagePath);
+        } else {
+          // 如果是相对路径，转换为绝对路径
+          String appDir;
+          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+            // Get executable directory for desktop platforms
+            final executablePath = Platform.resolvedExecutable;
+            appDir = path.dirname(executablePath);
+          } else {
+            // Fallback to documents directory for mobile platforms
+            final appDocDir = await getApplicationDocumentsDirectory();
+            appDir = appDocDir.path;
+          }
+          
+          final absolutePath = path.join(appDir, imagePath);
+          imageFile = File(absolutePath);
+        }
+        
+        if (await imageFile.exists()) {
+          await imageFile.delete();
+          debugPrint('已删除图片文件: $imagePath');
+        } else {
+          debugPrint('图片文件不存在，跳过删除: $imagePath');
+        }
+      } catch (e) {
+        debugPrint('删除图片文件失败: $imagePath, $e');
+      }
     }
   }
 

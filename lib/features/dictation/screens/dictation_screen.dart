@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/word.dart';
@@ -458,8 +461,11 @@ class _DictationScreenState extends State<DictationScreen> {
       }
       
       if (imagePath != null) {
-        // 保存原始画板路径
-        provider.setOriginalImagePath(imagePath);
+        // 转换为相对路径
+        final relativePath = await _convertToRelativePath(imagePath);
+        
+        // 保存原始画板路径（使用相对路径）
+        provider.setOriginalImagePath(relativePath);
         
         // 提交答案
         await provider.submitAnswer();
@@ -602,12 +608,39 @@ class _DictationScreenState extends State<DictationScreen> {
       if (canvas != null) {
         final imagePath = await canvas.saveAsImage('annotated_${DateTime.now().millisecondsSinceEpoch}.png');
         if (imagePath != null) {
-          provider.setAnnotatedImagePath(imagePath);
+          // 转换为相对路径
+          final relativePath = await _convertToRelativePath(imagePath);
+          provider.setAnnotatedImagePath(relativePath);
         }
       }
     } catch (e) {
       // 批改图片保存失败不影响主流程
       debugPrint('保存批改图片失败: $e');
+    }
+  }
+
+  /// 将绝对路径转换为相对于应用文档目录的相对路径
+  Future<String> _convertToRelativePath(String absolutePath) async {
+    try {
+      // For desktop platforms, use executable directory
+      // For mobile platforms, fallback to documents directory
+      String appDir;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Get executable directory for desktop platforms
+        final executablePath = Platform.resolvedExecutable;
+        appDir = path.dirname(executablePath);
+      } else {
+        // Fallback to documents directory for mobile platforms
+        final appDocDir = await getApplicationDocumentsDirectory();
+        appDir = appDocDir.path;
+      }
+      
+      final relativePath = path.relative(absolutePath, from: appDir);
+      return relativePath;
+    } catch (e) {
+      debugPrint('转换相对路径失败: $e');
+      // 如果转换失败，返回原路径
+      return absolutePath;
     }
   }
 

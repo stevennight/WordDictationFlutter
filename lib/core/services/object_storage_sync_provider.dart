@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as path;
 import 'sync_service.dart';
 
 /// 对象存储类型
@@ -128,13 +129,17 @@ class ObjectStorageSyncProvider extends SyncProvider {
   String _getLatestObjectKey(SyncDataType dataType) {
     final dataTypeName = dataType.toString().split('.').last;
     if (dataType == SyncDataType.historyImages) {
-      return '${_storageConfig.pathPrefix}/images/index.json';
+      return '${_storageConfig.pathPrefix}/handwriting_cache/index.json';
     }
     return '${_storageConfig.pathPrefix}/$dataTypeName-latest.json';
   }
 
   String _getImageObjectKey(String hash, String extension) {
-    return '${_storageConfig.pathPrefix}/images/$hash$extension';
+    return 'handwriting_cache/$hash$extension';
+  }
+  
+  String _getFullImageObjectKey(String hash, String extension) {
+    return '${_storageConfig.pathPrefix}/handwriting_cache/$hash$extension';
   }
 
   @override
@@ -165,33 +170,46 @@ class ObjectStorageSyncProvider extends SyncProvider {
   @override
   Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data) async {
     try {
+      _logDebug('开始上传数据，类型: $dataType');
+      
       // 特殊处理历史记录图片上传
       if (dataType == SyncDataType.historyImages) {
         return await _uploadImageData(data);
+      }
+      
+      // 特殊处理历史记录数据上传（包含图片文件）
+      if (dataType == SyncDataType.history) {
+        return await _uploadHistoryData(data);
       }
 
       final objectKey = _getObjectKey(dataType);
       final latestKey = _getLatestObjectKey(dataType);
       final jsonData = jsonEncode(data);
       final bytes = utf8.encode(jsonData);
+      
+      _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
 
       // 上传带时间戳的文件
       final uploadResult = await _putObject(objectKey, bytes);
       if (!uploadResult.success) {
+        _logDebug('上传主文件失败: ${uploadResult.message}');
         return uploadResult;
       }
 
       // 同时上传latest文件作为最新版本的快速访问
       final latestResult = await _putObject(latestKey, bytes);
       if (!latestResult.success) {
+        _logDebug('上传latest文件失败: ${latestResult.message}');
         return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
       }
-
+      
+      _logDebug('数据上传成功');
       return SyncResult.success(
         message: '数据上传成功',
         data: {'objectKey': objectKey, 'latestKey': latestKey},
       );
     } catch (e) {
+      _logDebug('上传数据异常: $e');
       return SyncResult.failure('上传数据失败: $e');
     }
   }
@@ -238,6 +256,12 @@ class ObjectStorageSyncProvider extends SyncProvider {
   Future<SyncResult> deleteData(SyncDataType dataType) async {
     try {
       final latestKey = _getLatestObjectKey(dataType);
+      
+      // 如果是历史记录数据，需要先删除关联的图片文件
+      if (dataType == SyncDataType.history) {
+        await _deleteAssociatedImageFiles(latestKey);
+      }
+      
       final result = await _deleteObject(latestKey);
       
       if (result.success) {
@@ -291,9 +315,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
   Future<SyncResult> _putObject(String objectKey, List<int> data) async {
     try {
       final url = _buildObjectUrl(objectKey);
-      _logDebug('PUT请求URL: $url');
       final headers = await _buildHeaders('PUT', objectKey, data);
-      _logDebug('PUT请求头: $headers');
       
       final response = await http.put(
         Uri.parse(url),
@@ -301,11 +323,10 @@ class ObjectStorageSyncProvider extends SyncProvider {
         body: data,
       );
 
-      _logDebug('PUT响应状态码: ${response.statusCode}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         return SyncResult.success();
       } else {
-        _logDebug('PUT响应内容: ${response.body}');
+        _logDebug('PUT请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
@@ -317,37 +338,17 @@ class ObjectStorageSyncProvider extends SyncProvider {
   Future<SyncResult> _getObject(String objectKey) async {
     try {
       final url = _buildObjectUrl(objectKey);
-      _logDebug('GET请求URL: $url');
       final headers = await _buildHeaders('GET', objectKey);
-      _logDebug('GET请求头: $headers');
       
       final response = await http.get(
         Uri.parse(url),
         headers: headers,
       );
-
-      _logDebug('GET响应状态码: ${response.statusCode}');
-      _logDebug('GET响应头: ${response.headers}');
-      _logDebug('GET响应体长度: ${response.bodyBytes.length}');
       
       if (response.statusCode == 200) {
         // 检查响应体是否为空
         if (response.bodyBytes.isEmpty) {
-          _logDebug('警告: 响应体为空');
           return SyncResult.failure('服务器返回空响应');
-        }
-        
-        // 记录响应体的前100字节用于调试
-        final previewBytes = response.bodyBytes.take(100).toList();
-        _logDebug('响应体前100字节: $previewBytes');
-        
-        try {
-          // 尝试解码为字符串以检查内容
-          final responseText = utf8.decode(response.bodyBytes);
-          _logDebug('响应体文本长度: ${responseText.length}');
-          _logDebug('响应体前200字符: ${responseText.length > 200 ? responseText.substring(0, 200) : responseText}');
-        } catch (decodeError) {
-          _logDebug('响应体UTF-8解码失败: $decodeError');
         }
         
         return SyncResult.success(data: {
@@ -358,12 +359,11 @@ class ObjectStorageSyncProvider extends SyncProvider {
       } else if (response.statusCode == 404) {
         return SyncResult.failure('文件不存在');
       } else {
-        _logDebug('GET响应内容: ${response.body}');
+        _logDebug('GET请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       _logDebug('GET请求异常: $e');
-      _logDebug('异常堆栈: $stackTrace');
       return SyncResult.failure('GET请求失败: $e');
     }
   }
@@ -425,6 +425,12 @@ class ObjectStorageSyncProvider extends SyncProvider {
     }
   }
 
+  /// 检查对象是否存在
+  Future<bool> _checkObjectExists(String objectKey) async {
+    final result = await _headObject(objectKey);
+    return result.success;
+  }
+
   Future<SyncResult> _listObjects({String? prefix, int maxKeys = 1000}) async {
     try {
       final queryParams = <String, String>{
@@ -449,25 +455,21 @@ class ObjectStorageSyncProvider extends SyncProvider {
         url = '$_baseUrl/${_storageConfig.bucket}?$query';
       }
       
-      _logDebug('LIST请求URL: $url');
       final headers = await _buildHeaders('GET', '', null, queryParams);
-      _logDebug('LIST请求头: $headers');
       
       final response = await http.get(
         Uri.parse(url),
         headers: headers,
       );
 
-      _logDebug('LIST响应状态码: ${response.statusCode}');
       if (response.statusCode == 200) {
-        _logDebug('LIST响应内容长度: ${response.body.length}');
         // 这里应该解析XML响应，但为了简化，我们返回原始响应
         return SyncResult.success(data: {
           'response': response.body,
           'statusCode': response.statusCode,
         });
       } else {
-        _logDebug('LIST响应内容: ${response.body}');
+        _logDebug('LIST请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
@@ -495,12 +497,9 @@ class ObjectStorageSyncProvider extends SyncProvider {
       'X-Amz-Date': _getAmzDate(),
     };
     
-    _logDebug('设置Host头: $hostHeader');
-
     // 计算并设置content-sha256头
     final payloadHash = _getPayloadHash(body);
     headers['x-amz-content-sha256'] = payloadHash;
-    _logDebug('设置x-amz-content-sha256: $payloadHash');
 
     if (body != null) {
       headers['Content-Length'] = body.length.toString();
@@ -541,7 +540,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final payloadHash = _getPayloadHash(body);
     
     final canonicalRequest = '$method\n$canonicalUri\n$canonicalQueryString\n$canonicalHeaders\n$signedHeaders\n$payloadHash';
-    _logDebug('规范请求: $canonicalRequest');
     
     // 2. 创建待签名字符串
     final algorithm = 'AWS4-HMAC-SHA256';
@@ -549,12 +547,10 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final canonicalRequestHash = _sha256Hash(canonicalRequest);
     
     final stringToSign = '$algorithm\n$amzDate\n$credentialScope\n$canonicalRequestHash';
-    _logDebug('待签名字符串: $stringToSign');
     
     // 3. 计算签名
     final signingKey = _getSigningKey(secretKey, dateStamp, region, service);
     final signature = _hmacSha256Hex(signingKey, stringToSign);
-    _logDebug('计算的签名: $signature');
     
     // 4. 构建授权头
     return '$algorithm Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
@@ -639,6 +635,175 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final messageBytes = utf8.encode(message);
     final hmac = Hmac(sha256, key);
     return hmac.convert(messageBytes).toString();
+  }
+
+  // 上传历史记录数据（包含图片文件）
+  Future<SyncResult> _uploadHistoryData(Map<String, dynamic> data) async {
+    try {
+      _logDebug('开始上传历史记录数据');
+      
+      final sessions = data['sessions'] as List<dynamic>? ?? [];
+      
+      // 如果是空数据（用于清空远端记录），需要先删除远端的关联图片文件
+      if (sessions.isEmpty) {
+        _logDebug('检测到空历史记录数据，将删除远端关联的图片文件');
+        final latestKey = _getLatestObjectKey(SyncDataType.history);
+        await _deleteAssociatedImageFiles(latestKey);
+      }
+      
+      // 首先收集所有需要上传的图片文件
+      final imagesToUpload = <String>{};
+      
+      for (final session in sessions) {
+        final sessionMap = session as Map<String, dynamic>;
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+        
+        for (final result in results) {
+          final resultMap = result as Map<String, dynamic>;
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          
+          if (originalPath != null && originalPath.isNotEmpty) {
+            imagesToUpload.add(originalPath);
+          }
+          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            imagesToUpload.add(annotatedPath);
+          }
+        }
+      }
+      
+      _logDebug('找到 ${imagesToUpload.length} 个图片文件需要上传');
+      
+      // 上传图片文件（基于哈希值去重）
+      final uploadedImages = <String, String>{}; // 原路径 -> 对象键
+      final imageHashCache = <String, String>{}; // 哈希值 -> 对象键
+      
+      for (final imagePath in imagesToUpload) {
+        final imageFile = File(imagePath);
+        
+        if (!await imageFile.exists()) {
+          _logDebug('图片文件不存在，跳过: $imagePath');
+          continue;
+        }
+        
+        try {
+          final imageBytes = await imageFile.readAsBytes();
+          
+          // 计算文件哈希值
+          final hash = sha256.convert(imageBytes).toString();
+          
+          // 检查是否已经上传过相同哈希的文件
+          if (imageHashCache.containsKey(hash)) {
+            final existingObjectKey = imageHashCache[hash]!;
+            uploadedImages[imagePath] = existingObjectKey;
+            _logDebug('图片已存在相同哈希，复用对象键: $imagePath -> $existingObjectKey');
+            continue;
+          }
+          
+          // 使用哈希值作为对象键的一部分
+          final fileName = path.basename(imagePath);
+          final extension = path.extension(fileName);
+          final relativeObjectKey = _getImageObjectKey(hash, extension);
+          final fullObjectKey = _getFullImageObjectKey(hash, extension);
+          
+          // 检查远端是否已存在该对象键
+          final existsResult = await _checkObjectExists(fullObjectKey);
+          if (existsResult) {
+            uploadedImages[imagePath] = relativeObjectKey;
+            imageHashCache[hash] = relativeObjectKey;
+            _logDebug('远端已存在相同文件，跳过上传: $imagePath -> $relativeObjectKey');
+            continue;
+          }
+          
+          _logDebug('上传图片: $imagePath -> $relativeObjectKey (${imageBytes.length} bytes)');
+          
+          final uploadResult = await _putObject(fullObjectKey, imageBytes);
+          if (uploadResult.success) {
+            uploadedImages[imagePath] = relativeObjectKey;
+            imageHashCache[hash] = relativeObjectKey;
+            _logDebug('图片上传成功: $relativeObjectKey');
+          } else {
+            _logDebug('图片上传失败: $imagePath, 错误: ${uploadResult.message}');
+            // 继续上传其他图片，不因单个图片失败而中断
+          }
+        } catch (e) {
+          _logDebug('上传图片异常: $imagePath, 错误: $e');
+          // 继续上传其他图片
+        }
+      }
+      
+      _logDebug('成功上传 ${uploadedImages.length} 个图片文件');
+      
+      // 更新历史记录数据中的图片路径为对象键
+      final updatedData = Map<String, dynamic>.from(data);
+      final updatedSessions = <Map<String, dynamic>>[];
+      
+      for (final session in sessions) {
+        final sessionMap = Map<String, dynamic>.from(session as Map<String, dynamic>);
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+        final updatedResults = <Map<String, dynamic>>[];
+        
+        for (final result in results) {
+          final resultMap = Map<String, dynamic>.from(result as Map<String, dynamic>);
+          
+          // 更新图片路径为对象键
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          
+          if (originalPath != null && uploadedImages.containsKey(originalPath)) {
+            resultMap['original_image_object_key'] = uploadedImages[originalPath];
+          }
+          if (annotatedPath != null && uploadedImages.containsKey(annotatedPath)) {
+            resultMap['annotated_image_object_key'] = uploadedImages[annotatedPath];
+          }
+          
+          updatedResults.add(resultMap);
+        }
+        
+        sessionMap['results'] = updatedResults;
+        updatedSessions.add(sessionMap);
+      }
+      
+      updatedData['sessions'] = updatedSessions;
+      updatedData['uploaded_images'] = uploadedImages;
+      
+      // 上传更新后的JSON数据
+      final objectKey = _getObjectKey(SyncDataType.history);
+      final latestKey = _getLatestObjectKey(SyncDataType.history);
+      final jsonData = jsonEncode(updatedData);
+      final bytes = utf8.encode(jsonData);
+      
+      _logDebug('上传历史记录JSON数据，大小: ${bytes.length} bytes');
+      
+      // 上传带时间戳的文件
+      final uploadResult = await _putObject(objectKey, bytes);
+      if (!uploadResult.success) {
+        _logDebug('上传历史记录主文件失败: ${uploadResult.message}');
+        return uploadResult;
+      }
+      
+      // 同时上传latest文件
+      final latestResult = await _putObject(latestKey, bytes);
+      if (!latestResult.success) {
+        _logDebug('上传历史记录latest文件失败: ${latestResult.message}');
+        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
+      }
+      
+      _logDebug('历史记录数据上传完成');
+      
+      return SyncResult.success(
+        message: '历史记录上传成功',
+        data: {
+          'objectKey': objectKey,
+          'latestKey': latestKey,
+          'uploadedImages': uploadedImages.length,
+          'totalImages': imagesToUpload.length,
+        },
+      );
+    } catch (e) {
+      _logDebug('上传历史记录数据异常: $e');
+      return SyncResult.failure('上传历史记录数据失败: $e');
+    }
   }
 
   // 图片上传的特殊处理方法
@@ -746,6 +911,110 @@ class ObjectStorageSyncProvider extends SyncProvider {
       );
     } catch (e) {
       return SyncResult.failure('下载图片数据失败: $e');
+    }
+  }
+
+  /// 通过对象键直接下载图片文件
+  Future<SyncResult> downloadImageByObjectKey(String objectKey) async {
+    try {
+      // 如果是相对路径，转换为完整路径
+      final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
+          ? objectKey 
+          : '${_storageConfig.pathPrefix}/$objectKey';
+      
+      _logDebug('开始下载图片: $objectKey -> $fullObjectKey');
+      
+      final result = await _getObject(fullObjectKey);
+      if (!result.success) {
+        _logDebug('下载图片失败: $objectKey, ${result.message}');
+        return SyncResult.failure('下载图片失败: ${result.message}');
+      }
+      
+      final imageBytes = result.data!['content'] as List<int>;
+      _logDebug('图片下载成功: $objectKey (${imageBytes.length} bytes)');
+      
+      return SyncResult.success(
+        message: '图片下载成功',
+        data: {
+          'content': imageBytes,
+          'objectKey': objectKey,
+          'size': imageBytes.length,
+        },
+      );
+    } catch (e) {
+      _logDebug('下载图片异常: $objectKey, $e');
+      return SyncResult.failure('下载图片失败: $e');
+    }
+  }
+
+  /// 删除历史记录关联的图片文件
+  Future<void> _deleteAssociatedImageFiles(String historyDataKey) async {
+    try {
+      _logDebug('开始删除历史记录关联的图片文件: $historyDataKey');
+      
+      // 先下载历史记录数据以获取图片文件列表
+      final downloadResult = await _getObject(historyDataKey);
+      if (!downloadResult.success || downloadResult.data == null) {
+        _logDebug('无法下载历史记录数据，跳过图片文件删除');
+        return;
+      }
+      
+      final contentBytes = downloadResult.data!['content'] as List<int>;
+      final jsonString = utf8.decode(contentBytes);
+      final historyData = jsonDecode(jsonString) as Map<String, dynamic>;
+      
+      // 收集所有图片文件的对象键
+      final imageObjectKeys = <String>{};
+      final sessions = historyData['sessions'] as List<dynamic>? ?? [];
+      
+      for (final session in sessions) {
+        final sessionMap = session as Map<String, dynamic>;
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+        
+        for (final result in results) {
+          final resultMap = result as Map<String, dynamic>;
+          
+          // 收集原始图片对象键
+          final originalObjectKey = resultMap['original_image_object_key'] as String?;
+          if (originalObjectKey != null && originalObjectKey.isNotEmpty) {
+            imageObjectKeys.add(originalObjectKey);
+          }
+          
+          // 收集批改图片对象键
+          final annotatedObjectKey = resultMap['annotated_image_object_key'] as String?;
+          if (annotatedObjectKey != null && annotatedObjectKey.isNotEmpty) {
+            imageObjectKeys.add(annotatedObjectKey);
+          }
+        }
+      }
+      
+      _logDebug('找到 ${imageObjectKeys.length} 个图片文件需要删除');
+      
+      // 删除所有图片文件
+      int deletedCount = 0;
+      for (final objectKey in imageObjectKeys) {
+        try {
+          // 如果是相对路径，转换为完整路径
+          final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
+              ? objectKey 
+              : '${_storageConfig.pathPrefix}/$objectKey';
+          
+          final deleteResult = await _deleteObject(fullObjectKey);
+          if (deleteResult.success) {
+            deletedCount++;
+            _logDebug('删除图片文件成功: $objectKey');
+          } else {
+            _logDebug('删除图片文件失败: $objectKey, ${deleteResult.message}');
+          }
+        } catch (e) {
+          _logDebug('删除图片文件异常: $objectKey, $e');
+        }
+      }
+      
+      _logDebug('图片文件删除完成，成功删除 $deletedCount/${imageObjectKeys.length} 个文件');
+    } catch (e) {
+      _logDebug('删除关联图片文件时发生异常: $e');
+      // 不抛出异常，允许继续删除历史记录数据
     }
   }
 }

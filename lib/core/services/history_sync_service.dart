@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
 
 import '../../shared/models/dictation_session.dart';
@@ -56,6 +58,7 @@ class SessionSyncData {
   final DateTime lastModified;
   final Map<String, dynamic> sessionData;
   final List<Map<String, dynamic>> results;
+  final List<Map<String, dynamic>> sessionWords;
   final List<ImageFileInfo> imageFiles;
 
   SessionSyncData({
@@ -63,6 +66,7 @@ class SessionSyncData {
     required this.lastModified,
     required this.sessionData,
     required this.results,
+    required this.sessionWords,
     required this.imageFiles,
   });
 
@@ -72,6 +76,7 @@ class SessionSyncData {
       'lastModified': lastModified.toIso8601String(),
       'sessionData': sessionData,
       'results': results,
+      'sessionWords': sessionWords,
       'imageFiles': imageFiles.map((f) => f.toMap()).toList(),
     };
   }
@@ -82,6 +87,7 @@ class SessionSyncData {
       lastModified: DateTime.parse(map['lastModified']),
       sessionData: Map<String, dynamic>.from(map['sessionData']),
       results: List<Map<String, dynamic>>.from(map['results']),
+      sessionWords: List<Map<String, dynamic>>.from(map['sessionWords'] ?? []),
       imageFiles: (map['imageFiles'] as List<dynamic>)
           .map((f) => ImageFileInfo.fromMap(f))
           .toList(),
@@ -136,7 +142,17 @@ class HistorySyncService {
 
   /// 初始化服务
   Future<void> initialize() async {
-    _appDocDir = await getApplicationDocumentsDirectory();
+    // For desktop platforms, use executable directory
+    // For mobile platforms, fallback to documents directory
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      // Get executable directory for desktop platforms
+      final executablePath = Platform.resolvedExecutable;
+      _appDocDir = Directory(dirname(executablePath));
+    } else {
+      // Fallback to documents directory for mobile platforms
+      _appDocDir = await getApplicationDocumentsDirectory();
+    }
+    
     _deviceId = await _getOrCreateDeviceId();
     _imageSyncManager = ImageSyncManager();
     await _imageSyncManager.initialize();
@@ -187,6 +203,14 @@ class HistorySyncService {
         orderBy: 'word_index ASC',
       );
       
+      // 获取会话单词关联
+      final sessionWordMaps = await db.query(
+        'session_words',
+        where: 'session_id = ?',
+        whereArgs: [sessionId],
+        orderBy: 'word_order ASC',
+      );
+      
       // 收集所有图片文件信息
       final Set<String> allImagePaths = {};
       for (final resultMap in resultMaps) {
@@ -216,6 +240,7 @@ class HistorySyncService {
         ),
         sessionData: Map<String, dynamic>.from(sessionMap),
         results: resultMaps.map((r) => Map<String, dynamic>.from(r)).toList(),
+        sessionWords: sessionWordMaps.map((w) => Map<String, dynamic>.from(w)).toList(),
         imageFiles: imageFiles,
       ));
     }
@@ -234,7 +259,7 @@ class HistorySyncService {
 
 
   /// 导入历史记录数据（用于下载）
-  Future<SyncResult> importHistoryData(Map<String, dynamic> data) async {
+  Future<SyncResult> importHistoryData(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete]) async {
     try {
       final syncData = HistorySyncData.fromMap(data);
       
@@ -244,9 +269,38 @@ class HistorySyncService {
         return SyncResult.failure('检测到冲突: ${conflicts.join(", ")}');
       }
       
+      // 收集所有需要下载的图片文件信息
+      final Set<ImageFileInfo> allImageFiles = {};
+      for (final sessionSync in syncData.sessions) {
+        allImageFiles.addAll(sessionSync.imageFiles);
+      }
+      
+      print('[HistorySync] 导入历史记录：找到 ${syncData.sessions.length} 个会话');
+      print('[HistorySync] 导入历史记录：需要下载 ${allImageFiles.length} 个图片文件');
+      
+      // 如果提供了同步提供者，下载图片文件
+      if (provider != null && allImageFiles.isNotEmpty) {
+        try {
+          print('[HistorySync] 开始下载图片文件...');
+          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data);
+          print('[HistorySync] 图片文件下载完成');
+        } catch (e) {
+          print('[HistorySync] 下载图片文件时出错: $e');
+          // 继续导入历史记录数据，不因图片下载失败而中断
+        }
+      } else if (provider == null) {
+        print('[HistorySync] 未提供同步提供者，跳过图片下载');
+      } else {
+        print('[HistorySync] 没有需要下载的图片文件');
+      }
+      
+      // 删除本地存在但远端不存在的记录（实现真正的同步）
+      await _deleteLocalOnlyRecords(syncData);
+      
       // 导入会话数据
       int importedSessions = 0;
       int importedResults = 0;
+      final db = await _dbHelper.database;
       
       for (final sessionSync in syncData.sessions) {
         // 检查会话是否已存在
@@ -264,6 +318,11 @@ class HistorySyncService {
             await _dictationService.saveResult(result);
             importedResults++;
           }
+          
+          // 导入会话单词关联
+          for (final wordData in sessionSync.sessionWords) {
+            await db.insert('session_words', wordData);
+          }
         } else {
           // 检查是否需要更新
           final existingModified = existingSession.startTime;
@@ -279,15 +338,26 @@ class HistorySyncService {
               await _dictationService.saveResult(result);
               importedResults++;
             }
+            
+            // 重新导入会话单词关联
+            for (final wordData in sessionSync.sessionWords) {
+              await db.insert('session_words', wordData);
+            }
           }
         }
       }
       
+      // 导入完成后调用回调
+      if (onImportComplete != null) {
+        onImportComplete();
+      }
+      
       return SyncResult.success(
-        message: '成功导入 $importedSessions 个会话，$importedResults 个结果',
+        message: '成功导入 $importedSessions 个会话，$importedResults 个结果，${allImageFiles.length} 个图片文件',
         data: {
           'importedSessions': importedSessions,
           'importedResults': importedResults,
+          'downloadedImages': allImageFiles.length,
         },
       );
     } catch (e) {
@@ -323,11 +393,16 @@ class HistorySyncService {
     return conflicts;
   }
 
-  /// 删除会话结果
+  /// 删除会话结果和单词关联
   Future<void> _deleteSessionResults(String sessionId) async {
     final db = await _dbHelper.database;
     await db.delete(
       'dictation_results',
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+    );
+    await db.delete(
+      'session_words',
       where: 'session_id = ?',
       whereArgs: [sessionId],
     );
@@ -365,5 +440,110 @@ class HistorySyncService {
   Future<void> saveLastSyncTime(String configId, DateTime time) async {
     final file = File(path.join(_appDocDir.path, 'last_history_sync_$configId.txt'));
     await file.writeAsString(time.millisecondsSinceEpoch.toString());
+  }
+
+  /// 删除本地存在但远端不存在的记录
+  Future<void> _deleteLocalOnlyRecords(HistorySyncData syncData) async {
+    try {
+      print('[HistorySync] 开始检查并删除本地多余的记录');
+      
+      // 获取远端会话ID集合
+      final remoteSessionIds = syncData.sessions.map((s) => s.sessionId).toSet();
+      print('[HistorySync] 远端会话数量: ${remoteSessionIds.length}');
+      
+      // 获取本地所有会话
+      final db = await _dbHelper.database;
+      final localSessionMaps = await db.query(
+        'dictation_sessions',
+        columns: ['session_id'],
+        where: "status != 'inProgress'", // 排除进行中的会话
+      );
+      
+      final localSessionIds = localSessionMaps.map((m) => m['session_id'] as String).toSet();
+      print('[HistorySync] 本地会话数量: ${localSessionIds.length}');
+      
+      // 找出本地存在但远端不存在的会话ID
+      final sessionsToDelete = localSessionIds.difference(remoteSessionIds);
+      print('[HistorySync] 需要删除的本地会话数量: ${sessionsToDelete.length}');
+      
+      if (sessionsToDelete.isEmpty) {
+        print('[HistorySync] 没有需要删除的本地记录');
+        return;
+      }
+      
+      // 收集需要删除的图片文件路径
+      final imagesToDelete = <String>{};
+      
+      for (final sessionId in sessionsToDelete) {
+        // 获取该会话的所有结果记录，以便删除关联的图片文件
+        final resultMaps = await db.query(
+          'dictation_results',
+          where: 'session_id = ?',
+          whereArgs: [sessionId],
+        );
+        
+        for (final resultMap in resultMaps) {
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          
+          if (originalPath != null && originalPath.isNotEmpty) {
+            imagesToDelete.add(originalPath);
+          }
+          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            imagesToDelete.add(annotatedPath);
+          }
+        }
+        
+        // 删除会话相关的所有数据
+        await db.transaction((txn) async {
+          // 删除结果记录
+          await txn.delete(
+            'dictation_results',
+            where: 'session_id = ?',
+            whereArgs: [sessionId],
+          );
+          
+          // 删除会话单词关联
+          await txn.delete(
+            'session_words',
+            where: 'session_id = ?',
+            whereArgs: [sessionId],
+          );
+          
+          // 删除会话记录
+          await txn.delete(
+            'dictation_sessions',
+            where: 'session_id = ?',
+            whereArgs: [sessionId],
+          );
+        });
+      }
+      
+      // 删除关联的图片文件
+      if (imagesToDelete.isNotEmpty) {
+        print('[HistorySync] 删除 ${imagesToDelete.length} 个关联的图片文件');
+        await _deleteImageFiles(imagesToDelete);
+      }
+      
+      print('[HistorySync] 成功删除 ${sessionsToDelete.length} 个本地多余的会话记录');
+    } catch (e) {
+      print('[HistorySync] 删除本地多余记录时出错: $e');
+      // 不抛出异常，避免影响整个同步过程
+    }
+  }
+
+  /// 删除图片文件
+  Future<void> _deleteImageFiles(Set<String> imagePaths) async {
+    for (final imagePath in imagePaths) {
+      try {
+        final file = File(path.join(_appDocDir.path, imagePath));
+        if (await file.exists()) {
+          await file.delete();
+          print('[HistorySync] 删除图片文件: $imagePath');
+        }
+      } catch (e) {
+        print('[HistorySync] 删除图片文件失败: $imagePath, $e');
+      }
+    }
   }
 }

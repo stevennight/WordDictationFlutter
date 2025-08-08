@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/unit.dart';
+import '../../shared/providers/history_provider.dart';
 import 'local_config_service.dart';
 import 'json_data_service.dart';
 import 'import_data_service.dart';
@@ -125,6 +127,9 @@ abstract class SyncProvider {
 
   /// 列出所有可用的数据文件
   Future<SyncResult> listDataFiles();
+
+  /// 通过对象键直接下载图片文件
+  Future<SyncResult> downloadImageByObjectKey(String objectKey);
 }
 
 /// 同步服务主类
@@ -174,11 +179,43 @@ class SyncService {
     await _saveConfigs();
   }
 
+  /// 智能同步历史记录数据（先下载合并，再上传）
+  Future<SyncResult> smartSyncHistory(String configId, {
+    VoidCallback? onImportComplete,
+  }) async {
+    try {
+      print('[SyncService] 开始智能同步历史记录');
+      
+      // 1. 先下载远端记录并合并到本地
+      print('[SyncService] 第一步：下载远端记录并合并到本地');
+      final downloadResult = await syncHistory(configId, upload: false, onImportComplete: onImportComplete);
+      if (!downloadResult.success) {
+        print('[SyncService] 下载远端记录失败: ${downloadResult.message}');
+        return downloadResult;
+      }
+      
+      // 2. 再上传合并后的本地记录到远端
+      print('[SyncService] 第二步：上传合并后的本地记录到远端');
+      final uploadResult = await syncHistory(configId, upload: true);
+      if (uploadResult.success) {
+        print('[SyncService] 智能同步完成');
+      } else {
+        print('[SyncService] 上传本地记录失败: ${uploadResult.message}');
+      }
+      
+      return uploadResult;
+    } catch (e) {
+      print('[SyncService] 智能同步过程中发生错误: $e');
+      return SyncResult.failure('智能同步失败: $e');
+    }
+  }
+
   /// 同步历史记录数据
   Future<SyncResult> syncHistory(String configId, {
     bool upload = true,
     DateTime? since,
     bool includeImages = true,
+    VoidCallback? onImportComplete,
   }) async {
     final provider = _providers[configId];
     if (provider == null) {
@@ -190,14 +227,13 @@ class SyncService {
       await historySyncService.initialize();
 
       if (upload) {
-        // 上传历史记录数据
-        final lastSyncTime = since ?? await historySyncService.getLastSyncTime(configId);
-        final historyData = await historySyncService.exportHistoryData(since: lastSyncTime);
+        // 上传历史记录数据（不使用增量同步，始终上传所有记录以保持一致性）
+        final historyData = await historySyncService.exportHistoryData();
         
-        // 检查是否为空数据
+        // 允许上传空数据（用于删除远端记录）
         final sessions = historyData['sessions'] as List<dynamic>;
         if (sessions.isEmpty) {
-          return SyncResult.failure('没有需要同步的历史记录数据');
+          print('[SyncService] 上传空历史记录数据，将清空远端记录');
         }
         
         final result = await provider.uploadData(SyncDataType.history, historyData);
@@ -229,7 +265,11 @@ class SyncService {
         final result = await provider.downloadData(SyncDataType.history);
         
         if (result.success && result.data != null) {
-          final importResult = await historySyncService.importHistoryData(result.data!);
+          final importResult = await historySyncService.importHistoryData(
+            result.data!, 
+            provider, 
+            onImportComplete
+          );
           
           if (importResult.success) {
             // 更新最后同步时间

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/services/sync_service.dart';
+import '../../shared/providers/history_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
 
@@ -280,14 +282,15 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
                   }),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.sync),
-                  title: const Text('增量同步历史'),
-                  subtitle: const Text('只同步最近修改的历史记录\n⚠️ 更快速的同步方式'),
+                  leading: const Icon(Icons.sync, color: Colors.green),
+                  title: const Text('智能同步历史记录'),
+                  subtitle: const Text('先下载远端记录合并到本地，再上传到云端\n✅ 保留双端数据，删除本地多余记录'),
                   onTap: () => Navigator.of(context).pop({
                     'type': 'history',
-                    'action': 'incremental',
+                    'action': 'smart_sync',
                   }),
                 ),
+
               ],
             ),
           ),
@@ -309,18 +312,28 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             upload: action['action'] == 'upload',
           );
         } else if (action['type'] == 'history') {
-          if (action['action'] == 'incremental') {
-            // 增量同步：只同步最近7天的数据
-            final since = DateTime.now().subtract(const Duration(days: 7));
-            result = await _syncService.syncHistory(
+          if (action['action'] == 'smart_sync') {
+            // 智能同步
+            result = await _syncService.smartSyncHistory(
               config.id,
-              upload: true,
-              since: since,
+              onImportComplete: () {
+                // 刷新历史记录列表
+                if (mounted) {
+                  context.read<HistoryProvider>().loadHistory();
+                }
+              },
             );
           } else {
+            // 普通同步
             result = await _syncService.syncHistory(
               config.id,
               upload: action['action'] == 'upload',
+              onImportComplete: () {
+                // 刷新历史记录列表
+                if (mounted) {
+                  context.read<HistoryProvider>().loadHistory();
+                }
+              },
             );
           }
         } else {

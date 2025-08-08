@@ -24,7 +24,7 @@ class DatabaseHelper {
       // For web platform, use in-memory database
       path = 'word_dictation.db';
     } else {
-      // For desktop platforms, use application directory
+      // For desktop platforms, use executable directory
       // For mobile platforms, fallback to documents directory
       String appDir;
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -414,6 +414,8 @@ class DatabaseHelper {
     if (kIsWeb) {
       return 'word_dictation.db';
     } else {
+      // For desktop platforms, use executable directory
+      // For mobile platforms, fallback to documents directory
       String appDir;
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         // Get executable directory for desktop platforms
