@@ -264,24 +264,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 ListTile(
-                  leading: const Icon(Icons.history),
-                  title: const Text('上传历史记录'),
-                  subtitle: const Text('将本地历史记录和笔迹上传到云端\n⚠️ 包含做题记录和手写图片'),
-                  onTap: () => Navigator.of(context).pop({
-                    'type': 'history',
-                    'action': 'upload',
-                  }),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('下载历史记录'),
-                  subtitle: const Text('从云端下载历史记录到本地\n⚠️ 会合并到现有记录中'),
-                  onTap: () => Navigator.of(context).pop({
-                    'type': 'history',
-                    'action': 'download',
-                  }),
-                ),
-                ListTile(
                   leading: const Icon(Icons.sync, color: Colors.green),
                   title: const Text('智能同步历史记录'),
                   subtitle: const Text('先下载远端记录合并到本地，再上传到云端\n✅ 保留双端数据，删除本地多余记录'),
@@ -312,30 +294,16 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             upload: action['action'] == 'upload',
           );
         } else if (action['type'] == 'history') {
-          if (action['action'] == 'smart_sync') {
-            // 智能同步
-            result = await _syncService.smartSyncHistory(
-              config.id,
-              onImportComplete: () {
-                // 刷新历史记录列表
-                if (mounted) {
-                  context.read<HistoryProvider>().loadHistory();
-                }
-              },
-            );
-          } else {
-            // 普通同步
-            result = await _syncService.syncHistory(
-              config.id,
-              upload: action['action'] == 'upload',
-              onImportComplete: () {
-                // 刷新历史记录列表
-                if (mounted) {
-                  context.read<HistoryProvider>().loadHistory();
-                }
-              },
-            );
-          }
+          // 只支持智能同步
+          result = await _syncService.smartSyncHistory(
+            config.id,
+            onImportComplete: () {
+              // 刷新历史记录列表
+              if (mounted) {
+                context.read<HistoryProvider>().loadHistory();
+              }
+            },
+          );
         } else {
           result = SyncResult.failure('未知的同步类型');
         }

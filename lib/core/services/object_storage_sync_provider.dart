@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'sync_service.dart';
+import 'history_deletion_service.dart';
 
 /// 对象存储类型
 enum ObjectStorageType {
@@ -88,6 +89,7 @@ class ObjectStorageConfig {
 class ObjectStorageSyncProvider extends SyncProvider {
   late final ObjectStorageConfig _storageConfig;
   late final String _baseUrl;
+  final HistoryDeletionService _deletionService = HistoryDeletionService.instance;
 
   ObjectStorageSyncProvider(SyncConfig config) : super(config) {
     _storageConfig = ObjectStorageConfig.fromMap(config.settings);
@@ -260,6 +262,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
       // 如果是历史记录数据，需要先删除关联的图片文件
       if (dataType == SyncDataType.history) {
         await _deleteAssociatedImageFiles(latestKey);
+        // 同时清空本地历史记录（使用统一的删除服务）
+        await _deletionService.clearAllHistory(deleteImages: true);
       }
       
       final result = await _deleteObject(latestKey);

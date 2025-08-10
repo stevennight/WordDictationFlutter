@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'core/database/database_helper.dart';
 import 'core/services/config_service.dart';
+import 'core/services/history_sync_service.dart';
 import 'shared/providers/app_state_provider.dart';
 import 'shared/providers/dictation_provider.dart';
 import 'shared/providers/history_provider.dart';
@@ -34,6 +35,10 @@ void main() async {
   
   // Initialize config service
   await ConfigService.getInstance();
+  
+  // Initialize history sync service (this will create device_id.txt)
+  final historySyncService = HistorySyncService();
+  await historySyncService.initialize();
   
   // Clear inProgress sessions on app startup
   final historyProvider = HistoryProvider();

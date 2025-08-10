@@ -3,14 +3,28 @@ import 'package:sqflite/sqflite.dart';
 import '../../shared/models/dictation_session.dart';
 import '../../shared/models/dictation_result.dart';
 import '../database/database_helper.dart';
+import 'history_deletion_service.dart';
 
 class DictationService {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final HistoryDeletionService _deletionService = HistoryDeletionService.instance;
 
   /// Create a new dictation session
   Future<int> createSession(DictationSession session) async {
     final db = await _dbHelper.database;
-    return await db.insert('dictation_sessions', session.toMap());
+    try {
+      return await db.insert('dictation_sessions', session.toMap());
+    } catch (e) {
+      // 如果出现UNIQUE约束冲突，使用INSERT OR REPLACE
+      if (e.toString().contains('UNIQUE constraint failed')) {
+        return await db.insert(
+          'dictation_sessions', 
+          session.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Get session by session ID
@@ -139,24 +153,7 @@ class DictationService {
 
   /// Hard delete session and all related data (for cleanup)
   Future<void> hardDeleteSession(String sessionId) async {
-    final db = await _dbHelper.database;
-    await db.transaction((txn) async {
-      await txn.delete(
-        'dictation_results',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-      await txn.delete(
-        'session_words',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-      await txn.delete(
-        'dictation_sessions',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-    });
+    await _deletionService.hardDeleteSession(sessionId);
   }
 
   /// Get all sessions (excluding deleted)

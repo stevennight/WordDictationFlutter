@@ -7,9 +7,11 @@ import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
 import '../../core/database/database_helper.dart';
 import '../../core/services/config_service.dart';
+import '../../core/services/history_deletion_service.dart';
 
 class HistoryProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final HistoryDeletionService _deletionService = HistoryDeletionService();
   ConfigService? _configService;
   
   List<DictationSession> _sessions = [];
@@ -58,16 +60,8 @@ class HistoryProvider with ChangeNotifier {
   /// Clear all inProgress sessions (called on app startup)
   Future<void> clearInProgressSessions() async {
     try {
-      final db = await _dbHelper.database;
-      
-      // Delete all sessions with inProgress status
-      await db.delete(
-        'dictation_sessions',
-        where: 'status = ?',
-        whereArgs: ['inProgress'],
-      );
-      
-      debugPrint('已清除所有inProgress状态的会话记录');
+      // 使用统一的删除服务清除进行中的会话
+      await _deletionService.clearInProgressSessions();
     } catch (e) {
       debugPrint('清除inProgress会话失败: $e');
     }
@@ -134,42 +128,8 @@ class HistoryProvider with ChangeNotifier {
   /// Delete a session and its results (soft delete)
   Future<void> deleteSession(String sessionId) async {
     try {
-      final db = await _dbHelper.database;
-      
-      // 先获取该会话的所有结果记录，以便删除关联的图片文件
-      final resultMaps = await db.query(
-        'dictation_results',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-      
-      // 收集需要删除的图片文件路径
-      final imagesToDelete = <String>{};
-      for (final resultMap in resultMaps) {
-        final originalPath = resultMap['original_image_path'] as String?;
-        final annotatedPath = resultMap['annotated_image_path'] as String?;
-        
-        if (originalPath != null && originalPath.isNotEmpty) {
-          imagesToDelete.add(originalPath);
-        }
-        if (annotatedPath != null && annotatedPath.isNotEmpty) {
-          imagesToDelete.add(annotatedPath);
-        }
-      }
-      
-      // 软删除会话（标记为已删除）
-      await db.update(
-        'dictation_sessions',
-        {
-          'deleted': 1,
-          'deleted_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-      );
-      
-      // 删除关联的图片文件
-      await _deleteImageFiles(imagesToDelete);
+      // 使用统一的删除服务进行软删除
+      await _deletionService.softDeleteSession(sessionId);
       
       // Remove from local list
       _sessions.removeWhere((session) => session.sessionId == sessionId);
@@ -184,33 +144,8 @@ class HistoryProvider with ChangeNotifier {
   /// Clear all history
   Future<void> clearAllHistory() async {
     try {
-      final db = await _dbHelper.database;
-      
-      // 先获取所有结果记录，以便删除关联的图片文件
-      final resultMaps = await db.query('dictation_results');
-      
-      // 收集需要删除的图片文件路径
-      final imagesToDelete = <String>{};
-      for (final resultMap in resultMaps) {
-        final originalPath = resultMap['original_image_path'] as String?;
-        final annotatedPath = resultMap['annotated_image_path'] as String?;
-        
-        if (originalPath != null && originalPath.isNotEmpty) {
-          imagesToDelete.add(originalPath);
-        }
-        if (annotatedPath != null && annotatedPath.isNotEmpty) {
-          imagesToDelete.add(annotatedPath);
-        }
-      }
-      
-      await db.transaction((txn) async {
-        await txn.delete('dictation_results');
-        await txn.delete('session_words');
-        await txn.delete('dictation_sessions');
-      });
-      
-      // 删除关联的图片文件
-      await _deleteImageFiles(imagesToDelete);
+      // 使用统一的删除服务清空所有历史记录
+      await _deletionService.clearAllHistory();
       
       _sessions.clear();
       _results.clear();
@@ -372,44 +307,7 @@ class HistoryProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-  
-  /// 删除图片文件
-  Future<void> _deleteImageFiles(Set<String> imagePaths) async {
-    for (final imagePath in imagePaths) {
-      try {
-        File imageFile;
-        
-        // 如果是绝对路径，直接使用
-        if (path.isAbsolute(imagePath)) {
-          imageFile = File(imagePath);
-        } else {
-          // 如果是相对路径，转换为绝对路径
-          String appDir;
-          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-            // Get executable directory for desktop platforms
-            final executablePath = Platform.resolvedExecutable;
-            appDir = path.dirname(executablePath);
-          } else {
-            // Fallback to documents directory for mobile platforms
-            final appDocDir = await getApplicationDocumentsDirectory();
-            appDir = appDocDir.path;
-          }
-          
-          final absolutePath = path.join(appDir, imagePath);
-          imageFile = File(absolutePath);
-        }
-        
-        if (await imageFile.exists()) {
-          await imageFile.delete();
-          debugPrint('已删除图片文件: $imagePath');
-        } else {
-          debugPrint('图片文件不存在，跳过删除: $imagePath');
-        }
-      } catch (e) {
-        debugPrint('删除图片文件失败: $imagePath, $e');
-      }
-    }
-  }
+
 
   /// Clear error
   void clearError() {
@@ -423,31 +321,11 @@ class HistoryProvider with ChangeNotifier {
     final historyLimit = _configService!.getHistoryLimit();
     
     if (_sessions.length > historyLimit) {
-      final db = await _dbHelper.database;
-      
-      // 获取需要删除的会话（最旧的记录）
-      final sessionsToDelete = _sessions.skip(historyLimit).toList();
-      
-      for (final session in sessionsToDelete) {
-        // 删除会话相关的结果记录
-        await db.delete(
-          'dictation_results',
-          where: 'session_id = ?',
-          whereArgs: [session.id],
-        );
-        
-        // 删除会话记录
-        await db.delete(
-          'dictation_sessions',
-          where: 'id = ?',
-          whereArgs: [session.id],
-        );
-      }
+      // 使用统一的删除服务删除超出限制的记录
+      await _deletionService.enforceHistoryLimit(_sessions, historyLimit);
       
       // 更新内存中的会话列表
       _sessions = _sessions.take(historyLimit).toList();
-      
-      debugPrint('已删除 ${sessionsToDelete.length} 条超出限制的历史记录');
     }
   }
 }

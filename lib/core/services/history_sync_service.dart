@@ -12,6 +12,8 @@ import '../database/database_helper.dart';
 import 'sync_service.dart';
 import 'dictation_service.dart';
 import 'image_sync_manager.dart';
+import 'history_deletion_service.dart';
+import 'device_id_service.dart';
 
 /// 历史记录同步数据结构
 class HistorySyncData {
@@ -136,6 +138,8 @@ class HistorySyncService {
 
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   final DictationService _dictationService = DictationService();
+  final HistoryDeletionService _deletionService = HistoryDeletionService();
+  final DeviceIdService _deviceIdService = DeviceIdService();
   late ImageSyncManager _imageSyncManager;
   late String _deviceId;
   late Directory _appDocDir;
@@ -143,6 +147,10 @@ class HistorySyncService {
 
   /// 初始化服务
   Future<void> initialize() async {
+    // 初始化设备ID服务
+    await _deviceIdService.initialize();
+    _deviceId = await _deviceIdService.getDeviceId();
+    
     // For desktop platforms, use executable directory
     // For mobile platforms, fallback to documents directory
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -160,7 +168,6 @@ class HistorySyncService {
       await _syncCacheDir.create(recursive: true);
     }
     
-    _deviceId = await _getOrCreateDeviceId();
     _imageSyncManager = ImageSyncManager();
     await _imageSyncManager.initialize();
   }
@@ -168,17 +175,8 @@ class HistorySyncService {
   /// 获取sync_cache目录路径
   String get _syncCachePath => _syncCacheDir.path;
 
-  /// 获取或创建设备ID
-  Future<String> _getOrCreateDeviceId() async {
-    final file = File(path.join(_syncCachePath, 'device_id.txt'));
-    if (await file.exists()) {
-      return await file.readAsString();
-    } else {
-      final deviceId = DateTime.now().millisecondsSinceEpoch.toString();
-      await file.writeAsString(deviceId);
-      return deviceId;
-    }
-  }
+  /// 获取设备ID
+  String get deviceId => _deviceId;
 
   /// 导出历史记录数据（用于上传）
   Future<Map<String, dynamic>> exportHistoryData({DateTime? since}) async {
@@ -317,7 +315,7 @@ class HistorySyncService {
       }
       
       // 删除本地存在但远端不存在的记录（实现真正的同步）
-      await _deleteLocalOnlyRecords(syncData);
+      await _deletionService.deleteLocalOnlyRecords(syncData.sessions.map((s) => s.sessionId).toSet());
       
       // 导入会话数据
       int importedSessions = 0;
@@ -574,17 +572,8 @@ class HistorySyncService {
 
   /// 删除会话结果和单词关联
   Future<void> _deleteSessionResults(String sessionId) async {
-    final db = await _dbHelper.database;
-    await db.delete(
-      'dictation_results',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-    );
-    await db.delete(
-      'session_words',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-    );
+    // 使用统一的删除服务删除会话结果和单词关联（不删除图片文件，因为可能还需要用于同步）
+    await _deletionService.deleteSessionResults(sessionId, deleteImages: false);
   }
 
   /// 计算文件哈希值
@@ -621,95 +610,5 @@ class HistorySyncService {
     await file.writeAsString(time.millisecondsSinceEpoch.toString());
   }
 
-  /// 软删除本地存在但远端不存在的记录
-  Future<void> _deleteLocalOnlyRecords(HistorySyncData syncData) async {
-    try {
-      print('[HistorySync] 开始检查并软删除本地多余的记录');
-      
-      // 获取远端会话ID集合（包括已删除的）
-      final remoteSessionIds = syncData.sessions.map((s) => s.sessionId).toSet();
-      print('[HistorySync] 远端会话数量: ${remoteSessionIds.length}');
-      
-      // 获取本地所有未删除的会话
-      final db = await _dbHelper.database;
-      final localSessionMaps = await db.query(
-        'dictation_sessions',
-        columns: ['session_id'],
-        where: "status != 'inProgress' AND (deleted IS NULL OR deleted = 0)", // 排除进行中的会话和已删除的会话
-      );
-      
-      final localSessionIds = localSessionMaps.map((m) => m['session_id'] as String).toSet();
-      print('[HistorySync] 本地未删除会话数量: ${localSessionIds.length}');
-      
-      // 找出本地存在但远端不存在的会话ID
-      final sessionsToSoftDelete = localSessionIds.difference(remoteSessionIds);
-      print('[HistorySync] 需要软删除的本地会话数量: ${sessionsToSoftDelete.length}');
-      
-      if (sessionsToSoftDelete.isEmpty) {
-        print('[HistorySync] 没有需要软删除的本地记录');
-        return;
-      }
-      
-      // 收集需要删除的图片文件路径
-      final imagesToDelete = <String>{};
-      
-      for (final sessionId in sessionsToSoftDelete) {
-        // 获取该会话的所有结果记录，以便删除关联的图片文件
-        final resultMaps = await db.query(
-          'dictation_results',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-        
-        for (final resultMap in resultMaps) {
-          final originalPath = resultMap['original_image_path'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          
-          if (originalPath != null && originalPath.isNotEmpty) {
-            imagesToDelete.add(originalPath);
-          }
-          if (annotatedPath != null && annotatedPath.isNotEmpty) {
-            imagesToDelete.add(annotatedPath);
-          }
-        }
-        
-        // 软删除会话（标记为已删除）
-        await db.update(
-          'dictation_sessions',
-          {
-            'deleted': 1,
-            'deleted_at': DateTime.now().millisecondsSinceEpoch,
-          },
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-      }
-      
-      // 删除关联的图片文件
-      if (imagesToDelete.isNotEmpty) {
-        print('[HistorySync] 删除 ${imagesToDelete.length} 个关联的图片文件');
-        await _deleteImageFiles(imagesToDelete);
-      }
-      
-      print('[HistorySync] 成功软删除 ${sessionsToSoftDelete.length} 个本地多余的会话记录');
-    } catch (e) {
-      print('[HistorySync] 软删除本地多余记录时出错: $e');
-      // 不抛出异常，避免影响整个同步过程
-    }
-  }
 
-  /// 删除图片文件
-  Future<void> _deleteImageFiles(Set<String> imagePaths) async {
-    for (final imagePath in imagePaths) {
-      try {
-        final file = File(path.join(_appDocDir.path, imagePath));
-        if (await file.exists()) {
-          await file.delete();
-          print('[HistorySync] 删除图片文件: $imagePath');
-        }
-      } catch (e) {
-        print('[HistorySync] 删除图片文件失败: $imagePath, $e');
-      }
-    }
-  }
 }
