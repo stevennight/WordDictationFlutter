@@ -62,7 +62,9 @@ class ImageSyncManager {
       final List<Map<String, dynamic>> imagesToUpload = [];
       
       for (final imageInfo in imageFiles) {
-        final localPath = path.join(_appDocDir.path, imageInfo.relativePath);
+        // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+    final pathSegments = imageInfo.relativePath.split('/');
+    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
         final file = File(localPath);
         
         if (!await file.exists()) {
@@ -185,7 +187,9 @@ class ImageSyncManager {
     Map<String, String> imagePathToObjectKey,
     SyncProvider provider,
   ) async {
-    final localPath = path.join(_appDocDir.path, imageInfo.relativePath);
+    // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+    final pathSegments = imageInfo.relativePath.split('/');
+    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
     final file = File(localPath);
     
     // 如果本地文件已存在且哈希匹配，跳过下载
@@ -242,7 +246,9 @@ class ImageSyncManager {
     ImageFileInfo imageInfo,
     Map<String, Map<String, dynamic>> imageMap,
   ) async {
-    final localPath = path.join(_appDocDir.path, imageInfo.relativePath);
+    // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+    final pathSegments = imageInfo.relativePath.split('/');
+    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
     final file = File(localPath);
     
     // 如果本地文件已存在且哈希匹配，跳过下载
@@ -307,7 +313,8 @@ class ImageSyncManager {
         if (await dir.exists()) {
           await for (final entity in dir.list(recursive: true)) {
             if (entity is File) {
-              final relativePath = path.relative(entity.path, from: _appDocDir.path);
+              // 生成使用正斜杠的相对路径，与数据库中存储的路径格式一致
+              final relativePath = path.relative(entity.path, from: _appDocDir.path).replaceAll('\\', '/');
               if (!referencedSet.contains(relativePath)) {
                 try {
                   await entity.delete();
@@ -339,8 +346,8 @@ class ImageSyncManager {
       final stat = await file.stat();
       final hash = _calculateFileHash(file);
       
-      // 计算相对路径
-      final relativePath = path.relative(filePath, from: _appDocDir.path);
+      // 计算相对路径，转换为使用正斜杠的跨平台兼容路径
+      final relativePath = path.relative(filePath, from: _appDocDir.path).replaceAll('\\', '/');
       
       return ImageFileInfo(
         relativePath: relativePath,

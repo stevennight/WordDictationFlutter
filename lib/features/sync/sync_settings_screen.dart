@@ -265,8 +265,8 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
                 const SizedBox(height: 8),
                 ListTile(
                   leading: const Icon(Icons.sync, color: Colors.green),
-                  title: const Text('智能同步历史记录'),
-                  subtitle: const Text('先下载远端记录合并到本地，再上传到云端\n✅ 保留双端数据，删除本地多余记录'),
+                  title: const Text('智能同步历史记录（实验性）'),
+                  subtitle: const Text('合并本地与云端数据\n⚠️ 目前实验性质，可能会损坏本地记录'),
                   onTap: () => Navigator.of(context).pop({
                     'type': 'history',
                     'action': 'smart_sync',

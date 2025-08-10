@@ -77,12 +77,7 @@ class HistoryDeletionService {
           whereArgs: [sessionId],
         );
         
-        // 删除会话相关的单词关联记录
-        await txn.delete(
-          'session_words',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
+        // Note: session_words table operations removed as table no longer exists
         
         // 删除会话记录（可选）
         if (deleteSession) {
@@ -183,12 +178,7 @@ class HistoryDeletionService {
           whereArgs: sessionIds,
         );
         
-        // 删除会话相关的单词关联记录
-        await txn.delete(
-          'session_words',
-          where: 'session_id IN ($placeholders)',
-          whereArgs: sessionIds,
-        );
+        // Note: session_words table operations removed as table no longer exists
         
         // 删除会话记录
         await txn.delete(
@@ -224,7 +214,7 @@ class HistoryDeletionService {
       
       await db.transaction((txn) async {
         await txn.delete('dictation_results');
-        await txn.delete('session_words');
+        // Note: session_words table operations removed as table no longer exists
         await txn.delete('dictation_sessions');
       });
       
@@ -272,12 +262,7 @@ class HistoryDeletionService {
             whereArgs: [session.sessionId],
           );
           
-          // 删除会话相关的单词关联记录
-          await txn.delete(
-            'session_words',
-            where: 'session_id = ?',
-            whereArgs: [session.sessionId],
-          );
+          // Note: session_words table operations removed as table no longer exists
           
           // 删除会话记录（使用数据库ID）
           await txn.delete(
@@ -435,7 +420,9 @@ class HistoryDeletionService {
             appDir = appDocDir.path;
           }
           
-          final absolutePath = path.join(appDir, imagePath);
+          // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+          final pathSegments = imagePath.split('/');
+          final absolutePath = path.joinAll([appDir, ...pathSegments]);
           imageFile = File(absolutePath);
         }
         

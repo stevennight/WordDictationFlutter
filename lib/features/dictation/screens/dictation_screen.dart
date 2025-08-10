@@ -620,6 +620,7 @@ class _DictationScreenState extends State<DictationScreen> {
   }
 
   /// 将绝对路径转换为相对于应用文档目录的相对路径
+  /// 返回使用正斜杠的跨平台兼容路径
   Future<String> _convertToRelativePath(String absolutePath) async {
     try {
       // For desktop platforms, use executable directory
@@ -636,7 +637,8 @@ class _DictationScreenState extends State<DictationScreen> {
       }
       
       final relativePath = path.relative(absolutePath, from: appDir);
-      return relativePath;
+      // 转换为使用正斜杠的跨平台兼容路径
+      return relativePath.replaceAll('\\', '/');
     } catch (e) {
       debugPrint('转换相对路径失败: $e');
       // 如果转换失败，返回原路径
@@ -645,6 +647,7 @@ class _DictationScreenState extends State<DictationScreen> {
   }
 
   /// 将相对路径转换为绝对路径
+  /// 处理数据库中存储的正斜杠路径，转换为系统适配的绝对路径
   Future<String> _convertToAbsolutePath(String relativePath) async {
     try {
       // 如果已经是绝对路径，直接返回
@@ -665,9 +668,10 @@ class _DictationScreenState extends State<DictationScreen> {
         appDir = appDocDir.path;
       }
       
-      // 规范化路径分隔符
-      final normalizedRelativePath = relativePath.replaceAll('\\', '/');
-      final absolutePath = path.join(appDir, normalizedRelativePath);
+      // 将数据库中的正斜杠路径转换为系统路径分隔符
+      // 使用path.joinAll来处理路径片段，确保使用正确的系统分隔符
+      final pathSegments = relativePath.split('/');
+      final absolutePath = path.joinAll([appDir, ...pathSegments]);
       debugPrint('Path conversion: $relativePath -> $absolutePath (appDir: $appDir)');
       return absolutePath;
     } catch (e) {

@@ -223,13 +223,7 @@ class HistorySyncService {
         orderBy: 'word_index ASC',
       );
       
-      // 获取会话单词关联
-      final sessionWordMaps = await db.query(
-        'session_words',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-        orderBy: 'word_order ASC',
-      );
+      // Note: session_words operations removed as table no longer exists
       
       // 收集所有图片文件信息
       final Set<String> allImagePaths = {};
@@ -260,7 +254,7 @@ class HistorySyncService {
         ),
         sessionData: Map<String, dynamic>.from(sessionMap),
         results: resultMaps.map((r) => Map<String, dynamic>.from(r)).toList(),
-        sessionWords: sessionWordMaps.map((w) => Map<String, dynamic>.from(w)).toList(),
+        sessionWords: [], // Note: session_words operations removed as table no longer exists
         imageFiles: imageFiles,
       ));
     }
@@ -504,11 +498,7 @@ class HistorySyncService {
                 importedResults++;
               }
               
-              // 重新导入会话单词关联
-              await db.delete('session_words', where: 'session_id = ?', whereArgs: [sessionSync.sessionId]);
-              for (final wordData in sessionSync.sessionWords) {
-                await db.insert('session_words', wordData);
-              }
+              // Note: session_words operations removed as table no longer exists
             }
           }
         }

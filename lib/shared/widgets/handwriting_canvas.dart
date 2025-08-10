@@ -106,9 +106,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
           appDir = appDocDir.path;
         }
         
-        // 规范化路径分隔符
-        final normalizedRelativePath = imagePath.replaceAll('\\', '/');
-        imagePath = path.join(appDir, normalizedRelativePath);
+        // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+        final pathSegments = imagePath.split('/');
+        imagePath = path.joinAll([appDir, ...pathSegments]);
         debugPrint('Converted relative path to absolute: $imagePath');
       }
       

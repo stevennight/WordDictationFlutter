@@ -437,7 +437,9 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
         appDir = appDocDir.path;
       }
       
-      final absolutePath = path.join(appDir, imagePath);
+      // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
+      final pathSegments = imagePath.split('/');
+      final absolutePath = path.joinAll([appDir, ...pathSegments]);
       return File(absolutePath);
     } catch (e) {
       debugPrint('获取图片文件失败: $e');
