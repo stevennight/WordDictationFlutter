@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
 
+import '../../main.dart' show navigatorKey;
 import '../../shared/models/dictation_session.dart';
 import '../../shared/models/dictation_result.dart';
+import '../../shared/widgets/conflict_resolution_dialog.dart';
 import '../database/database_helper.dart';
 import 'sync_service.dart';
 import 'dictation_service.dart';
@@ -324,6 +327,35 @@ class HistorySyncService {
       int importedResults = 0;
       final db = await _dbHelper.database;
       
+      // 先收集所有需要用户选择的冲突
+      final userChoiceConflicts = <SessionConflict>[];
+      
+      for (final sessionSync in syncData.sessions) {
+        final conflict = conflictMap[sessionSync.sessionId];
+
+        // test
+        // if (conflict != null) {
+        //   userChoiceConflicts.add(conflict);
+        // }
+
+        if (conflict != null && conflict.resolution == ConflictResolution.requireUserChoice) {
+          userChoiceConflicts.add(conflict);
+        }
+      }
+      
+      // 如果有需要用户选择的冲突，先处理用户选择
+      final Map<String, ConflictResolution> userChoices = {};
+      if (userChoiceConflicts.isNotEmpty) {
+        // 弹出用户选择对话框
+        final result = await _showConflictResolutionDialog(userChoiceConflicts);
+        if (result == null) {
+          // 用户取消了操作
+          throw Exception('用户取消了冲突解决操作');
+        }
+        userChoices.addAll(result);
+        print('[HistorySync] - 用户已选择 ${userChoices.length} 个冲突的解决方案');
+      }
+      
       for (final sessionSync in syncData.sessions) {
         final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
         final conflict = conflictMap[sessionSync.sessionId];
@@ -345,28 +377,43 @@ class HistorySyncService {
           // 有冲突，根据冲突解决方案处理
           print('[HistorySync] - 处理冲突: ${conflict.reason}');
           
-          if (_conflictResolver.shouldUpdateLocal(conflict)) {
-            final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
-            
-            if (sessionToUpdate == null) {
-              // 需要删除本地会话（使用公共的软删除方法）
-              await _dictationService.deleteSession(conflict.localSession.sessionId);
-              print('[HistorySync] - 软删除本地会话: ${conflict.localSession.sessionId}');
-            } else {
-              // 更新会话
-              await _dictationService.updateSession(sessionToUpdate);
-              print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
+          // 获取实际的解决方案（如果是用户选择类型，使用用户的选择结果）
+          ConflictResolution actualResolution = conflict.resolution;
+          if (conflict.resolution == ConflictResolution.requireUserChoice) {
+            actualResolution = userChoices[conflict.sessionId] ?? ConflictResolution.useRemote;
+          }
+          
+          switch (actualResolution) {
+            case ConflictResolution.useRemote:
+              final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
               
-              // 更新结果（简单起见，删除旧结果后重新插入）
-              await _deleteSessionResults(sessionSync.sessionId);
-              for (final resultData in sessionSync.results) {
-                final result = DictationResult.fromMap(resultData);
-                await _dictationService.saveResult(result);
-                importedResults++;
+              if (sessionToUpdate == null) {
+                // 需要删除本地会话（使用公共的软删除方法）
+                await _dictationService.deleteSession(conflict.localSession.sessionId);
+                print('[HistorySync] - 软删除本地会话: ${conflict.localSession.sessionId}');
+              } else {
+                // 更新会话
+                await _dictationService.updateSession(sessionToUpdate);
+                print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
+                
+                // 更新结果（简单起见，删除旧结果后重新插入）
+                await _deleteSessionResults(sessionSync.sessionId);
+                for (final resultData in sessionSync.results) {
+                  final result = DictationResult.fromMap(resultData);
+                  await _dictationService.saveResult(result);
+                  importedResults++;
+                }
               }
-            }
-          } else {
-            print('[HistorySync] - 保留本地数据，跳过更新');
+              break;
+              
+            case ConflictResolution.useLocal:
+              print('[HistorySync] - 保留本地数据，跳过更新');
+              break;
+              
+            case ConflictResolution.requireUserChoice:
+              // 这种情况不应该出现，因为已经在上面处理了
+              print('[HistorySync] - 警告: 未处理的用户选择冲突');
+              break;
           }
         }
       }
@@ -433,5 +480,29 @@ class HistorySyncService {
     await file.writeAsString(time.millisecondsSinceEpoch.toString());
   }
 
+  /// 显示冲突解决对话框
+  Future<Map<String, ConflictResolution>?> _showConflictResolutionDialog(
+    List<SessionConflict> conflicts,
+  ) async {
+    // 需要获取当前的 BuildContext
+    // 这里需要从调用方传入 context，或者使用全局导航器
+    final context = _getNavigatorContext();
+    if (context == null) {
+      print('[HistorySync] - 无法获取 BuildContext，使用默认解决方案');
+      // 如果无法获取 context，返回默认选择
+      final defaultChoices = <String, ConflictResolution>{};
+      for (final conflict in conflicts) {
+        defaultChoices[conflict.sessionId] = ConflictResolution.useRemote;
+      }
+      return defaultChoices;
+    }
+    
+    return await showConflictResolutionDialog(context, conflicts);
+  }
+  
+  /// 获取导航器上下文
+  BuildContext? _getNavigatorContext() {
+    return navigatorKey.currentContext;
+  }
 
 }

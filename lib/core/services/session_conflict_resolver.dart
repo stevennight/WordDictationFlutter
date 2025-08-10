@@ -254,20 +254,6 @@ class SessionConflictResolver {
     );
   }
 
-  /// 应用冲突解决方案
-  /// 返回是否需要更新本地数据
-  bool shouldUpdateLocal(SessionConflict conflict) {
-    switch (conflict.resolution) {
-      case ConflictResolution.useRemote:
-        return true;
-      case ConflictResolution.useLocal:
-        return false;
-      case ConflictResolution.requireUserChoice:
-        // 暂时默认使用远端数据，后续可以添加用户选择界面
-        return true;
-    }
-  }
-
   /// 获取应该应用的会话数据
   /// 如果返回 null，表示应该删除本地会话
   /// 如果需要用户选择，会抛出 UserChoiceRequiredException
