@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'local_config_service.dart';
 import 'json_data_service.dart';
 import 'import_data_service.dart';
 import 'object_storage_sync_provider.dart';
-import 'history_sync_service.dart';
 
 /// 同步数据类型枚举
 enum SyncDataType {
@@ -216,116 +214,17 @@ class SyncService {
     }
   }
 
+  /// 获取指定的同步提供商
+  SyncProvider? getProvider(String configId) {
+    return _providers[configId];
+  }
+
   /// 删除配置
   Future<void> removeConfig(String configId) async {
     _configs.removeWhere((c) => c.id == configId);
     _providers.remove(configId);
     await _saveConfigs();
   }
-
-  /// 智能同步历史记录数据（双向合并同步）
-  Future<SyncResult> smartSyncHistory(String configId, {
-    VoidCallback? onImportComplete,
-    void Function(String step, {int? current, int? total})? onProgress,
-  }) async {
-    try {
-      print('[SyncService] 开始智能同步历史记录');
-      
-      final provider = _providers[configId];
-      if (provider == null) {
-        return SyncResult.failure('同步配置不存在');
-      }
-
-      final historySyncService = HistorySyncService();
-      await historySyncService.initialize();
-      
-      // 1. 获取本地历史记录数据
-      onProgress?.call('正在获取本地历史记录数据...');
-      print('[SyncService] 第一步：获取本地历史记录数据');
-      final localHistoryData = await historySyncService.exportHistoryData();
-      final localSessions = localHistoryData['sessions'] as List<dynamic>;
-      print('[SyncService] 本地会话数量: ${localSessions.length}');
-      
-      // 2. 尝试下载远端记录
-      onProgress?.call('正在下载云端历史记录...');
-      print('[SyncService] 第二步：下载远端记录');
-      final downloadResult = await provider.downloadData(SyncDataType.history);
-      
-      Map<String, dynamic> remoteHistoryData;
-      List<dynamic> remoteSessions;
-      
-      if (!downloadResult.success) {
-        // 如果是文件不存在错误，说明是首次同步，创建空的远端数据
-        if (downloadResult.message?.contains('文件不存在') == true || downloadResult.message?.contains('404') == true) {
-          print('[SyncService] 远端文件不存在，这是首次同步');
-          remoteHistoryData = {'sessions': []};
-          remoteSessions = [];
-        } else {
-          print('[SyncService] 下载远端记录失败: ${downloadResult.message}');
-          return downloadResult;
-        }
-      } else {
-        remoteHistoryData = downloadResult.data!;
-        remoteSessions = remoteHistoryData['sessions'] as List<dynamic>;
-        print('[SyncService] 远端会话数量: ${remoteSessions.length}');
-      }
-      
-      // 3. 执行双向合并
-      onProgress?.call('正在合并本地和云端数据...');
-      print('[SyncService] 第三步：执行双向合并');
-      
-      // 将远端数据合并到本地（包括处理软删除）
-      if (remoteSessions.isNotEmpty) {
-        final importResult = await historySyncService.importHistoryData(
-          remoteHistoryData, 
-          provider, 
-          onImportComplete,
-          onProgress
-        );
-        if (!importResult.success) {
-          print('[SyncService] 导入远端记录失败: ${importResult.message}');
-          return importResult;
-        }
-      }
-      
-      // 4. 获取合并后的本地数据并上传到远端
-      onProgress?.call('正在上传合并后的数据到云端...');
-      print('[SyncService] 第四步：上传合并后的数据到远端');
-      final mergedHistoryData = await historySyncService.exportHistoryData();
-      final uploadResult = await provider.uploadData(SyncDataType.history, mergedHistoryData, onProgress);
-      
-      if (uploadResult.success) {
-        // 更新最后同步时间
-        await historySyncService.saveLastSyncTime(configId, DateTime.now());
-        
-        // 更新配置中的同步时间
-        final config = getConfig(configId);
-        if (config != null) {
-          final updatedConfig = SyncConfig(
-            id: config.id,
-            name: config.name,
-            providerType: config.providerType,
-            settings: config.settings,
-            autoSync: config.autoSync,
-            syncInterval: config.syncInterval,
-            lastSyncTime: DateTime.now(),
-            enabled: config.enabled,
-          );
-          await addConfig(updatedConfig);
-        }
-        
-        print('[SyncService] 智能同步完成');
-        return SyncResult.success(message: '智能同步完成');
-      } else {
-        print('[SyncService] 上传合并后的记录失败: ${uploadResult.message}');
-        return uploadResult;
-      }
-    } catch (e) {
-      print('[SyncService] 智能同步过程中发生错误: $e');
-      return SyncResult.failure('智能同步失败: $e');
-    }
-  }
-
 
 
   /// 同步词书数据

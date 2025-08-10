@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/sync_service.dart';
+import '../../core/services/history_sync_service.dart';
 import '../../shared/providers/history_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
@@ -300,7 +301,9 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             context: context,
             title: '智能同步历史记录',
             syncFunction: (onProgress) async {
-              return await _syncService.smartSyncHistory(
+              final historySyncService = HistorySyncService();
+              await historySyncService.initialize();
+              return await historySyncService.smartSyncHistory(
                 config.id,
                 onImportComplete: () {
                   // 刷新历史记录列表

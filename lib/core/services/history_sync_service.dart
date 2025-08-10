@@ -15,7 +15,7 @@ import '../database/database_helper.dart';
 import '../utils/file_hash_utils.dart';
 import 'sync_service.dart';
 import 'dictation_service.dart';
-import 'image_sync_manager.dart';
+import 'history_file_sync_manager.dart';
 import 'history_deletion_service.dart';
 import 'device_id_service.dart';
 import 'session_conflict_resolver.dart';
@@ -146,7 +146,7 @@ class HistorySyncService {
   final HistoryDeletionService _deletionService = HistoryDeletionService();
   final DeviceIdService _deviceIdService = DeviceIdService();
   final SessionConflictResolver _conflictResolver = SessionConflictResolver();
-  late ImageSyncManager _imageSyncManager;
+  late HistoryFileSyncManager _historyFileSyncManager;
   late String _deviceId;
   late Directory _appDocDir;
   late Directory _syncCacheDir;
@@ -174,8 +174,8 @@ class HistorySyncService {
       await _syncCacheDir.create(recursive: true);
     }
     
-    _imageSyncManager = ImageSyncManager();
-    await _imageSyncManager.initialize();
+    _historyFileSyncManager = HistoryFileSyncManager();
+    await _historyFileSyncManager.initialize();
   }
 
   /// 获取sync_cache目录路径
@@ -257,7 +257,7 @@ class HistorySyncService {
           final storedMd5 = entry.value;
           
           // 使用存储的MD5值构建ImageFileInfo，避免重复计算
-          final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
+          final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
           if (imageInfo != null) {
             imageFiles.add(imageInfo);
           }
@@ -369,7 +369,7 @@ class HistorySyncService {
         print("imagePath: $imagePath, storedMd5: $storedMd5");
 
         // 使用存储的MD5值构建ImageFileInfo
-        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
+        final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
         if (imageInfo != null) {
           allImageFiles.add(imageInfo);
         }
@@ -383,7 +383,7 @@ class HistorySyncService {
         try {
           onProgress?.call('正在下载图片文件...', current: 0, total: allImageFiles.length);
           print('[HistorySync] 开始下载图片文件...');
-          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data, onProgress: onProgress);
+          await _historyFileSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data, onProgress: onProgress);
           print('[HistorySync] 图片文件下载完成');
         } catch (e) {
           print('[HistorySync] 下载图片文件时出错: $e');
@@ -528,6 +528,108 @@ class HistorySyncService {
     await file.writeAsString(time.millisecondsSinceEpoch.toString());
   }
 
+  /// 智能同步历史记录数据（双向合并同步）
+  Future<SyncResult> smartSyncHistory(String configId, {
+    VoidCallback? onImportComplete,
+    void Function(String step, {int? current, int? total})? onProgress,
+  }) async {
+    try {
+      print('[HistorySyncService] 开始智能同步历史记录');
+      
+      // 需要从SyncService获取provider
+      final syncService = SyncService();
+      final provider = syncService.getProvider(configId);
+      if (provider == null) {
+        return SyncResult.failure('同步配置不存在');
+      }
+
+      // 1. 获取本地历史记录数据
+      onProgress?.call('正在获取本地历史记录数据...');
+      print('[HistorySyncService] 第一步：获取本地历史记录数据');
+      final localHistoryData = await exportHistoryData();
+      final localSessions = localHistoryData['sessions'] as List<dynamic>;
+      print('[HistorySyncService] 本地会话数量: ${localSessions.length}');
+      
+      // 2. 尝试下载远端记录
+      onProgress?.call('正在下载云端历史记录...');
+      print('[HistorySyncService] 第二步：下载远端记录');
+      final downloadResult = await provider.downloadData(SyncDataType.history);
+      
+      Map<String, dynamic> remoteHistoryData;
+      List<dynamic> remoteSessions;
+      
+      if (!downloadResult.success) {
+        // 如果是文件不存在错误，说明是首次同步，创建空的远端数据
+        if (downloadResult.message?.contains('文件不存在') == true || downloadResult.message?.contains('404') == true) {
+          print('[HistorySyncService] 远端文件不存在，这是首次同步');
+          remoteHistoryData = {'sessions': []};
+          remoteSessions = [];
+        } else {
+          print('[HistorySyncService] 下载远端记录失败: ${downloadResult.message}');
+          return downloadResult;
+        }
+      } else {
+        remoteHistoryData = downloadResult.data!;
+        remoteSessions = remoteHistoryData['sessions'] as List<dynamic>;
+        print('[HistorySyncService] 远端会话数量: ${remoteSessions.length}');
+      }
+      
+      // 3. 执行双向合并
+      onProgress?.call('正在合并本地和云端数据...');
+      print('[HistorySyncService] 第三步：执行双向合并');
+      
+      // 将远端数据合并到本地（包括处理软删除）
+      if (remoteSessions.isNotEmpty) {
+        final importResult = await importHistoryData(
+          remoteHistoryData, 
+          provider, 
+          onImportComplete,
+          onProgress
+        );
+        if (!importResult.success) {
+          print('[HistorySyncService] 导入远端记录失败: ${importResult.message}');
+          return importResult;
+        }
+      }
+      
+      // 4. 获取合并后的本地数据并上传到远端
+      onProgress?.call('正在上传合并后的数据到云端...');
+      print('[HistorySyncService] 第四步：上传合并后的数据到远端');
+      final mergedHistoryData = await exportHistoryData();
+      final uploadResult = await provider.uploadData(SyncDataType.history, mergedHistoryData, onProgress);
+      
+      if (uploadResult.success) {
+        // 更新最后同步时间
+        await saveLastSyncTime(configId, DateTime.now());
+        
+        // 更新配置中的同步时间
+        final config = syncService.getConfig(configId);
+        if (config != null) {
+          final updatedConfig = SyncConfig(
+            id: config.id,
+            name: config.name,
+            providerType: config.providerType,
+            settings: config.settings,
+            autoSync: config.autoSync,
+            syncInterval: config.syncInterval,
+            lastSyncTime: DateTime.now(),
+            enabled: config.enabled,
+          );
+          await syncService.addConfig(updatedConfig);
+        }
+        
+        print('[HistorySyncService] 智能同步完成');
+        return SyncResult.success(message: '智能同步完成');
+      } else {
+        print('[HistorySyncService] 上传合并后的记录失败: ${uploadResult.message}');
+        return uploadResult;
+      }
+    } catch (e) {
+      print('[HistorySyncService] 智能同步过程中发生错误: $e');
+      return SyncResult.failure('智能同步失败: $e');
+    }
+  }
+
   /// 显示冲突解决对话框
   Future<Map<String, ConflictResolution>?> _showConflictResolutionDialog(
     List<SessionConflict> conflicts,
@@ -588,6 +690,214 @@ class HistorySyncService {
     }
   }
   
+  /// 上传数据方法（从 ObjectStorageSyncProvider 移动过来）
+  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress, SyncProvider provider) async {
+    try {
+      print('[HistorySync] 开始上传数据，类型: $dataType');
+      
+      // 特殊处理历史记录图片上传
+      if (dataType == SyncDataType.historyImages) {
+        return await _uploadImageData(data, provider);
+      }
+      
+      // 特殊处理历史记录数据上传（包含图片文件）
+      if (dataType == SyncDataType.history) {
+        return await _uploadHistoryData(data, onProgress, provider);
+      }
+
+      // 对于其他数据类型，委托给 provider 处理
+      return await provider.uploadData(dataType, data, onProgress);
+    } catch (e) {
+      print('[HistorySync] 上传数据异常: $e');
+      return SyncResult.failure('上传数据失败: $e');
+    }
+  }
+
+  /// 上传历史记录数据（包含图片文件）
+  Future<SyncResult> _uploadHistoryData(Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress, SyncProvider provider) async {
+    try {
+      print('[HistorySync] 开始上传历史记录数据');
+      
+      final sessions = data['sessions'] as List<dynamic>? ?? [];
+      
+      // 首先收集所有需要上传的图片文件
+      final imagesToUpload = <String>{};
+      
+      for (final session in sessions) {
+        final sessionMap = session as Map<String, dynamic>;
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+        
+        for (final result in results) {
+          final resultMap = result as Map<String, dynamic>;
+          
+          if (sessionMap['sessionData']['deleted'] == 1) {
+            continue;
+          }
+
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          
+          if (originalPath != null && originalPath.isNotEmpty) {
+            imagesToUpload.add(originalPath);
+          }
+          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            imagesToUpload.add(annotatedPath);
+          }
+        }
+      }
+      
+      print('[HistorySync] 找到 ${imagesToUpload.length} 个图片文件需要上传');
+      
+      // 上传图片文件
+      final uploadedImages = <String, String>{}; // 原路径 -> 对象键
+      
+      for (final imagePath in imagesToUpload) {
+        onProgress?.call('正在上传图片: $imagePath', current: uploadedImages.length, total: imagesToUpload.length);
+
+        try {
+          // 上传图片文件到云端
+          final uploadResult = await _uploadSingleImage(imagePath, provider);
+          if (uploadResult != null) {
+            uploadedImages[imagePath] = uploadResult;
+            print('[HistorySync] 图片上传成功: $imagePath -> $uploadResult');
+          } else {
+            print('[HistorySync] 图片上传失败: $imagePath');
+          }
+        } catch (e) {
+          print('[HistorySync] 上传图片异常: $imagePath, 错误: $e');
+        }
+      }
+      
+      print('[HistorySync] 成功上传 ${uploadedImages.length} 个图片文件');
+      
+      // 更新历史记录数据中的图片路径为对象键
+      final updatedData = Map<String, dynamic>.from(data);
+      final updatedSessions = <Map<String, dynamic>>[];
+      
+      for (final session in sessions) {
+        final sessionMap = Map<String, dynamic>.from(session as Map<String, dynamic>);
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+        final updatedResults = <Map<String, dynamic>>[];
+        
+        for (final result in results) {
+          final resultMap = Map<String, dynamic>.from(result as Map<String, dynamic>);
+          
+          // 更新图片路径为对象键
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          
+          if (originalPath != null && uploadedImages.containsKey(originalPath)) {
+            resultMap['original_image_object_key'] = uploadedImages[originalPath];
+          }
+          if (annotatedPath != null && uploadedImages.containsKey(annotatedPath)) {
+            resultMap['annotated_image_object_key'] = uploadedImages[annotatedPath];
+          }
+          
+          updatedResults.add(resultMap);
+        }
+        
+        sessionMap['results'] = updatedResults;
+        updatedSessions.add(sessionMap);
+      }
+      
+      updatedData['sessions'] = updatedSessions;
+      
+      // 使用 provider 上传 JSON 数据
+      return await provider.uploadData(SyncDataType.history, updatedData, onProgress);
+    } catch (e) {
+      print('[HistorySync] 上传历史记录数据异常: $e');
+      return SyncResult.failure('上传历史记录数据失败: $e');
+    }
+  }
+
+  /// 上传图片数据
+  Future<SyncResult> _uploadImageData(Map<String, dynamic> data, SyncProvider provider) async {
+    try {
+      final images = data['images'] as List<dynamic>? ?? [];
+      final uploadedImages = <Map<String, dynamic>>[];
+      
+      for (final imageData in images) {
+        final imageMap = imageData as Map<String, dynamic>;
+        final imagePath = imageMap['path'] as String?;
+        
+        if (imagePath != null) {
+          final uploadResult = await _uploadSingleImage(imagePath, provider);
+          if (uploadResult != null) {
+            uploadedImages.add({
+              'originalPath': imagePath,
+              'objectKey': uploadResult,
+            });
+          }
+        }
+      }
+      
+      return SyncResult.success(
+        message: '图片上传成功',
+        data: {'uploadedImages': uploadedImages},
+      );
+    } catch (e) {
+      return SyncResult.failure('上传图片数据失败: $e');
+    }
+  }
+
+  /// 上传单个图片文件
+  Future<String?> _uploadSingleImage(String imagePath, SyncProvider provider) async {
+    try {
+      final file = File(imagePath);
+      if (!await file.exists()) {
+        print('[HistorySync] 图片文件不存在: $imagePath');
+        return null;
+      }
+
+      // 计算文件的MD5哈希值
+      final bytes = await file.readAsBytes();
+      final digest = md5.convert(bytes);
+      final hash = digest.toString();
+
+      // 生成对象键
+      final objectKey = FileHashUtils.generateCloudObjectKey(imagePath, hash);
+      print('[HistorySync] 生成图片对象键: $imagePath -> $objectKey');
+
+      // 上传图片文件
+       final uploadResult = await provider.uploadFile(
+         imagePath,
+         objectKey,
+       );
+
+      if (uploadResult.success) {
+        // 创建图片索引信息
+        final indexData = {
+          'originalPath': imagePath,
+          'hash': hash,
+          'uploadTime': DateTime.now().toIso8601String(),
+          'size': bytes.length,
+        };
+
+        // 上传索引文件
+         final indexKey = '$objectKey.index';
+         final indexResult = await provider.uploadBytes(
+           utf8.encode(jsonEncode(indexData)),
+           indexKey,
+           contentType: 'application/json',
+         );
+
+        if (indexResult.success) {
+          print('[HistorySync] 图片及索引上传成功: $objectKey');
+          return objectKey;
+        } else {
+          print('[HistorySync] 图片索引上传失败: $indexKey');
+          return objectKey; // 即使索引上传失败，图片已上传成功
+        }
+      } else {
+        print('[HistorySync] 图片上传失败: $objectKey, ${uploadResult.message}');
+        return null;
+      }
+    } catch (e) {
+      print('[HistorySync] 上传图片异常: $imagePath, 错误: $e');
+      return null;
+    }
+  }
+
   /// 获取导航器上下文
   BuildContext? _getNavigatorContext() {
     return navigatorKey.currentContext;

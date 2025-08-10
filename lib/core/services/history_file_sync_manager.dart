@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import '../../shared/utils/path_utils.dart';
@@ -12,10 +11,10 @@ import '../utils/file_hash_utils.dart';
 
 /// 图片同步管理器
 /// 负责处理历史记录中的笔迹图片文件的上传下载和去重
-class ImageSyncManager {
-  static final ImageSyncManager _instance = ImageSyncManager._internal();
-  factory ImageSyncManager() => _instance;
-  ImageSyncManager._internal();
+class HistoryFileSyncManager {
+  static final HistoryFileSyncManager _instance = HistoryFileSyncManager._internal();
+  factory HistoryFileSyncManager() => _instance;
+  HistoryFileSyncManager._internal();
 
   late Directory _appDocDir;
   late Directory _syncCacheDir;
