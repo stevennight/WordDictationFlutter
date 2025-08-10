@@ -172,7 +172,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   @override
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data) async {
+  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress,) async {
     try {
       _logDebug('开始上传数据，类型: $dataType');
       
@@ -183,7 +183,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
       
       // 特殊处理历史记录数据上传（包含图片文件）
       if (dataType == SyncDataType.history) {
-        return await _uploadHistoryData(data);
+        return await _uploadHistoryData(data, onProgress);
       }
 
       final objectKey = _getObjectKey(dataType);
@@ -644,7 +644,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   // 上传历史记录数据（包含图片文件）
-  Future<SyncResult> _uploadHistoryData(Map<String, dynamic> data) async {
+  Future<SyncResult> _uploadHistoryData(Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       _logDebug('开始上传历史记录数据');
       
@@ -685,6 +685,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
       final imageHashCache = <String, String>{}; // 哈希值 -> 对象键
       
       for (final imagePath in imagesToUpload) {
+        onProgress?.call('正在上传图片: $imagePath', current: uploadedImages.length, total: imagesToUpload.length);
+
         // 将相对路径转换为绝对路径
         final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
         final imageFile = File(absolutePath);

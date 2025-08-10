@@ -253,7 +253,7 @@ class HistorySyncService {
         final storedMd5 = entry.value;
         
         // 使用存储的MD5值构建ImageFileInfo，避免重复计算
-        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5);
+        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
         if (imageInfo != null) {
           imageFiles.add(imageInfo);
         }
@@ -285,7 +285,7 @@ class HistorySyncService {
 
 
   /// 导入历史记录数据（用于下载）
-  Future<SyncResult> importHistoryData(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete]) async {
+  Future<SyncResult> importHistoryData(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete, void Function(String step, {int? current, int? total})? onProgress]) async {
     try {
       final syncData = HistorySyncData.fromMap(data);
       
@@ -296,10 +296,39 @@ class HistorySyncService {
         print('[HistorySync] 冲突: ${conflict.reason}');
       }
       
-      // 收集所有需要下载的图片文件信息
+      // 收集所有需要下载的图片文件信息（直接从results中收集，不依赖imageFiles字段）
       final Set<ImageFileInfo> allImageFiles = {};
+      final Map<String, String> imagePathToMd5 = {};
+      
       for (final sessionSync in syncData.sessions) {
-        allImageFiles.addAll(sessionSync.imageFiles);
+        // 从results中收集图片路径和MD5
+        for (final resultMap in sessionSync.results) {
+          final originalPath = resultMap['original_image_path'] as String?;
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+          
+          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+            imagePathToMd5[originalPath] = originalMd5;
+          }
+          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+            imagePathToMd5[annotatedPath] = annotatedMd5;
+          }
+        }
+      }
+      
+      // 为每个图片路径创建ImageFileInfo
+      for (final entry in imagePathToMd5.entries) {
+        final imagePath = entry.key;
+        final storedMd5 = entry.value;
+        
+        print("imagePath: $imagePath, storedMd5: $storedMd5");
+
+        // 使用存储的MD5值构建ImageFileInfo
+        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
+        if (imageInfo != null) {
+          allImageFiles.add(imageInfo);
+        }
       }
       
       print('[HistorySync] 导入历史记录：找到 ${syncData.sessions.length} 个会话');
@@ -308,8 +337,9 @@ class HistorySyncService {
       // 如果提供了同步提供者，下载图片文件
       if (provider != null && allImageFiles.isNotEmpty) {
         try {
+          onProgress?.call('正在下载图片文件...', current: 0, total: allImageFiles.length);
           print('[HistorySync] 开始下载图片文件...');
-          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data);
+          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data, onProgress: onProgress);
           print('[HistorySync] 图片文件下载完成');
         } catch (e) {
           print('[HistorySync] 下载图片文件时出错: $e');

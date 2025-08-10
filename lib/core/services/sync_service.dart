@@ -114,7 +114,8 @@ abstract class SyncProvider {
   Future<SyncResult> testConnection();
 
   /// 上传数据
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data);
+  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress);
+
 
   /// 下载数据
   Future<SyncResult> downloadData(SyncDataType dataType);
@@ -182,6 +183,7 @@ class SyncService {
   /// 智能同步历史记录数据（双向合并同步）
   Future<SyncResult> smartSyncHistory(String configId, {
     VoidCallback? onImportComplete,
+    void Function(String step, {int? current, int? total})? onProgress,
   }) async {
     try {
       print('[SyncService] 开始智能同步历史记录');
@@ -195,12 +197,14 @@ class SyncService {
       await historySyncService.initialize();
       
       // 1. 获取本地历史记录数据
+      onProgress?.call('正在获取本地历史记录数据...');
       print('[SyncService] 第一步：获取本地历史记录数据');
       final localHistoryData = await historySyncService.exportHistoryData();
       final localSessions = localHistoryData['sessions'] as List<dynamic>;
       print('[SyncService] 本地会话数量: ${localSessions.length}');
       
       // 2. 尝试下载远端记录
+      onProgress?.call('正在下载云端历史记录...');
       print('[SyncService] 第二步：下载远端记录');
       final downloadResult = await provider.downloadData(SyncDataType.history);
       
@@ -224,6 +228,7 @@ class SyncService {
       }
       
       // 3. 执行双向合并
+      onProgress?.call('正在合并本地和云端数据...');
       print('[SyncService] 第三步：执行双向合并');
       
       // 将远端数据合并到本地（包括处理软删除）
@@ -231,7 +236,8 @@ class SyncService {
         final importResult = await historySyncService.importHistoryData(
           remoteHistoryData, 
           provider, 
-          onImportComplete
+          onImportComplete,
+          onProgress
         );
         if (!importResult.success) {
           print('[SyncService] 导入远端记录失败: ${importResult.message}');
@@ -240,9 +246,10 @@ class SyncService {
       }
       
       // 4. 获取合并后的本地数据并上传到远端
+      onProgress?.call('正在上传合并后的数据到云端...');
       print('[SyncService] 第四步：上传合并后的数据到远端');
       final mergedHistoryData = await historySyncService.exportHistoryData();
-      final uploadResult = await provider.uploadData(SyncDataType.history, mergedHistoryData);
+      final uploadResult = await provider.uploadData(SyncDataType.history, mergedHistoryData, onProgress);
       
       if (uploadResult.success) {
         // 更新最后同步时间
@@ -295,7 +302,7 @@ class SyncService {
           return SyncResult.failure('本地数据为空或无效，为避免覆盖远端数据，请先添加词书后再同步');
         }
         
-        final result = await provider.uploadData(SyncDataType.wordbooks, wordbooksData);
+        final result = await provider.uploadData(SyncDataType.wordbooks, wordbooksData, null);
         
         if (result.success) {
           // 更新最后同步时间

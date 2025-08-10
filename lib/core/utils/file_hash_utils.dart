@@ -53,17 +53,6 @@ class FileHashUtils {
   
   /// 生成基于原始文件名和MD5的云端对象键
   static String generateCloudObjectKey(String originalPath, String md5Hash) {
-    final fileName = originalPath.split('/').last;
-    final nameWithoutExt = fileName.contains('.') 
-        ? fileName.substring(0, fileName.lastIndexOf('.'))
-        : fileName;
-    final extension = fileName.contains('.') 
-        ? fileName.substring(fileName.lastIndexOf('.'))
-        : '';
-    
-    // 取MD5的前8位作为后缀
-    final hashPrefix = md5Hash.substring(0, 8);
-    
-    return 'handwriting_cache/${nameWithoutExt}_${hashPrefix}${extension}';
+    return originalPath;
   }
 }

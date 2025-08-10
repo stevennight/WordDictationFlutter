@@ -49,97 +49,19 @@ class ImageSyncManager {
     }
   }
 
-  /// 批量上传图片文件
-  /// 返回成功上传的文件路径列表
-  Future<List<String>> uploadImages(
-    List<ImageFileInfo> imageFiles,
-    SyncProvider provider,
-  ) async {
-    if (imageFiles.isEmpty) {
-      return [];
-    }
-
-    try {
-      // 准备批量上传的图片数据
-      final List<Map<String, dynamic>> imagesToUpload = [];
-      
-      for (final imageInfo in imageFiles) {
-        // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-    final pathSegments = imageInfo.relativePath.split('/');
-    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
-        final file = File(localPath);
-        
-        if (!await file.exists()) {
-          print('本地文件不存在: $localPath');
-          continue;
-        }
-        
-        // 读取文件内容
-        final bytes = await file.readAsBytes();
-        final extension = path.extension(localPath);
-        
-        imagesToUpload.add({
-          'hash': imageInfo.hash,
-          'extension': extension,
-          'bytes': bytes,
-          'relativePath': imageInfo.relativePath,
-          'size': imageInfo.size,
-          'lastModified': imageInfo.lastModified.toIso8601String(),
-        });
-      }
-      
-      if (imagesToUpload.isEmpty) {
-        print('没有有效的图片文件需要上传');
-        return [];
-      }
-      
-      // 批量上传图片
-      final uploadData = {
-        'images': imagesToUpload,
-      };
-      
-      final result = await provider.uploadData(SyncDataType.historyImages, uploadData);
-      
-      if (result.success) {
-        final uploadedPaths = imagesToUpload.map((img) => img['relativePath'] as String).toList();
-        print('批量上传图片成功: ${uploadedPaths.length} 个文件');
-        return uploadedPaths;
-      } else {
-        print('批量上传图片失败: ${result.message}');
-        return [];
-      }
-    } catch (e) {
-      print('批量上传图片异常: $e');
-      return [];
-    }
-  }
-
-  /// 上传单个图片文件（已弃用，使用批量上传）
-  @deprecated
-  Future<bool> _uploadSingleImage(
-    ImageFileInfo imageInfo,
-    SyncProvider provider,
-  ) async {
-    // 转换为批量上传
-    final result = await uploadImages([imageInfo], provider);
-    return result.isNotEmpty;
-  }
-
-  /// 下载缺失的图片文件（从历史记录数据中获取图片对象键）
+  /// 下载缺失的图片文件（直接从历史记录数据中获取图片信息）
   Future<void> downloadMissingImages(
-    List<ImageFileInfo> requiredImages,
+    List<ImageFileInfo> requiredImages, // 保持参数兼容性，但实际不使用
     SyncProvider provider,
-    Map<String, dynamic> historyData,
-  ) async {
-    if (requiredImages.isEmpty) {
-      return;
-    }
-    
+    Map<String, dynamic> historyData, {
+    void Function(String step, {int? current, int? total})? onProgress,
+  }) async {
     try {
-      print('[ImageSync] 开始从历史记录数据中提取图片对象键');
+      print('[ImageSync] 开始从历史记录数据中提取图片信息');
       
-      // 从历史记录数据中收集所有图片对象键
+      // 从历史记录数据中收集所有图片信息
       final Map<String, String> imagePathToObjectKey = {};
+      final Map<String, String> imagePathToMd5 = {};
       final sessions = historyData['sessions'] as List<dynamic>? ?? [];
       
       for (final session in sessions) {
@@ -149,32 +71,88 @@ class ImageSyncManager {
         for (final result in results) {
           final resultMap = result as Map<String, dynamic>;
           
-          // 收集原始图片对象键
+          // 收集原始图片信息
           final originalPath = resultMap['original_image_path'] as String?;
-          final originalObjectKey = resultMap['original_image_object_key'] as String?;
-          if (originalPath != null && originalObjectKey != null) {
-            imagePathToObjectKey[originalPath] = originalObjectKey;
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          if (originalPath != null && originalPath.isNotEmpty) {
+            if (originalMd5 != null && originalMd5.isNotEmpty) {
+              imagePathToMd5[originalPath] = originalMd5;
+              
+              // 使用相同的生成规则重新构建对象键
+              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(originalPath, originalMd5);
+              imagePathToObjectKey[originalPath] = generatedObjectKey;
+              print('[ImageSync] 生成原始图片对象键: $originalPath -> $generatedObjectKey');
+            }
           }
-          
-          // 收集批改图片对象键
+      
+          // 收集批改图片信息
           final annotatedPath = resultMap['annotated_image_path'] as String?;
-          final annotatedObjectKey = resultMap['annotated_image_object_key'] as String?;
-          if (annotatedPath != null && annotatedObjectKey != null) {
-            imagePathToObjectKey[annotatedPath] = annotatedObjectKey;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            if (annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+              imagePathToMd5[annotatedPath] = annotatedMd5;
+              
+              // 使用相同的生成规则重新构建对象键
+              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(annotatedPath, annotatedMd5);
+              imagePathToObjectKey[annotatedPath] = generatedObjectKey;
+              print('[ImageSync] 生成批改图片对象键: $annotatedPath -> $generatedObjectKey');
+            }
           }
         }
       }
       
       print('[ImageSync] 从历史记录中找到 ${imagePathToObjectKey.length} 个图片对象键');
-      print('[ImageSync] 需要下载的图片数量: ${requiredImages.length}');
+      print('[ImageSync] 从历史记录中找到 ${imagePathToMd5.length} 个图片MD5');
+      
+      // 检查哪些图片需要下载（本地不存在或MD5不匹配）
+      final List<String> imagesToDownload = [];
+      for (final imagePath in imagePathToMd5.keys) {
+        final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
+        final localFile = File(absolutedImagePath);
+        final expectedMd5 = imagePathToMd5[imagePath]!;
+        
+        bool needDownload = false;
+        if (!localFile.existsSync()) {
+          print('[ImageSync] 本地文件不存在，需要下载: $absolutedImagePath');
+          needDownload = true;
+        } else {
+          // 检查MD5是否匹配
+          needDownload = await FileHashUtils.needsSync(absolutedImagePath, expectedMd5);
+          print('[ImageSync] 根据文件MD5判断是否需要同步，是否同步:${needDownload.toString()}}');
+        }
+        
+        if (needDownload) {
+          imagesToDownload.add(imagePath);
+        }
+      }
+      
+      if (imagesToDownload.isEmpty) {
+        print('[ImageSync] 没有需要下载的图片文件');
+        return;
+      }
+      
+      print('[ImageSync] 需要下载 ${imagesToDownload.length} 个图片文件');
       
       // 下载每个需要的图片文件
-      for (final requiredImage in requiredImages) {
+      int downloadedCount = 0;
+      for (final imagePath in imagesToDownload) {
         try {
-          print('[ImageSync] 正在下载图片: ${requiredImage.relativePath}');
-          await _downloadSingleImageFromObjectKey(requiredImage, imagePathToObjectKey, provider);
+          onProgress?.call('正在下载图片: $imagePath', current: downloadedCount, total: imagesToDownload.length);
+          print('[ImageSync] 正在下载图片: $imagePath');
+          final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
+          final objectKey = imagePathToObjectKey[imagePath];
+          if (objectKey == null) {
+            throw '未找到图片对象键: $imagePath';
+          }
+          await _downloadSingleImageFromObjectKey(absolutedImagePath, objectKey, provider);
+          
+          downloadedCount++;
+
+          // 使用Future.delayed代替sleep，避免阻塞UI线程
+          await Future.delayed(const Duration(seconds: 5));
         } catch (e) {
-          print('[ImageSync] 下载图片失败: ${requiredImage.relativePath}, $e');
+          print('[ImageSync] 下载图片失败: $imagePath, $e');
+          downloadedCount++; // 即使失败也要增加计数
         }
       }
       print('[ImageSync] 图片下载完成');
@@ -185,40 +163,13 @@ class ImageSyncManager {
 
   /// 从对象键下载单个图片文件
   Future<void> _downloadSingleImageFromObjectKey(
-    ImageFileInfo imageInfo,
-    Map<String, String> imagePathToObjectKey,
+    String imagePath,
+    String objectKey,
     SyncProvider provider,
   ) async {
-    // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-    final pathSegments = imageInfo.relativePath.split('/');
-    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
-    final file = File(localPath);
+    final file = File(imagePath);
     
-    // 如果本地文件已存在，检查文件大小和修改时间作为快速验证
-    if (await file.exists()) {
-      try {
-        final stat = await file.stat();
-        // 如果文件大小和修改时间都匹配，可能不需要重新下载
-        // 但为了确保数据完整性，仍然进行MD5验证
-        final localMd5 = await FileHashUtils.calculateFileMd5Async(file);
-        if (localMd5 == imageInfo.hash) {
-          print('[ImageSync] 本地文件已存在且MD5匹配，跳过下载: ${imageInfo.relativePath}');
-          return;
-        } else {
-          print('[ImageSync] 本地文件MD5不匹配，需要重新下载: ${imageInfo.relativePath}');
-          print('[ImageSync] 期望MD5: ${imageInfo.hash}, 实际MD5: $localMd5');
-        }
-      } catch (e) {
-        print('[ImageSync] 验证本地文件失败，将重新下载: ${imageInfo.relativePath}, 错误: $e');
-      }
-    }
-    
-    // 查找对应的对象键
-    final objectKey = imagePathToObjectKey[imageInfo.relativePath];
-    if (objectKey == null) {
-      print('[ImageSync] 未找到图片对象键: ${imageInfo.relativePath}');
-      return;
-    }
+    print('[ImageSync] 开始下载图片: $imagePath, 对象键: $objectKey');
     
     try {
       // 直接从对象存储下载图片
@@ -231,7 +182,7 @@ class ImageSyncManager {
       final bytes = downloadResult.data!['content'] as List<int>;
       
       // 确保目录存在
-      final dir = Directory(path.dirname(localPath));
+      final dir = Directory(path.dirname(imagePath));
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
@@ -239,72 +190,9 @@ class ImageSyncManager {
       // 写入文件
       await file.writeAsBytes(bytes);
       
-      // 验证下载的文件哈希
-      final downloadedHash = _calculateFileHash(file);
-      if (downloadedHash == imageInfo.hash) {
-        print('[ImageSync] 图片下载成功: ${imageInfo.relativePath}');
-      } else {
-        print('[ImageSync] 图片下载后哈希不匹配: ${imageInfo.relativePath}');
-        await file.delete(); // 删除损坏的文件
-      }
+      print('[ImageSync] 图片下载成功: $imagePath -> $imagePath');
     } catch (e) {
-      print('[ImageSync] 保存图片文件失败: ${imageInfo.relativePath}, $e');
-    }
-  }
-
-  /// 从下载的图片数据中保存单个图片文件（已弃用）
-  @deprecated
-  Future<void> _downloadSingleImageFromData(
-    ImageFileInfo imageInfo,
-    Map<String, Map<String, dynamic>> imageMap,
-  ) async {
-    // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-    final pathSegments = imageInfo.relativePath.split('/');
-    final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
-    final file = File(localPath);
-    
-    // 如果本地文件已存在且哈希匹配，跳过下载
-    if (await file.exists()) {
-      final localHash = _calculateFileHash(file);
-      if (localHash == imageInfo.hash) {
-        print('本地文件已存在且哈希匹配，跳过下载: ${imageInfo.relativePath}');
-        return;
-      }
-    }
-    
-    // 从图片数据映射中查找对应的图片
-    final imageData = imageMap[imageInfo.hash];
-    if (imageData == null) {
-      print('未找到图片数据: ${imageInfo.hash}');
-      return;
-    }
-    
-    final bytes = imageData['bytes'] as List<int>?;
-    if (bytes == null) {
-      print('图片数据为空: ${imageInfo.hash}');
-      return;
-    }
-    
-    try {
-      // 确保目录存在
-      final dir = Directory(path.dirname(localPath));
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      
-      // 写入文件
-      await file.writeAsBytes(bytes);
-      
-      // 验证下载的文件哈希
-      final downloadedHash = _calculateFileHash(file);
-      if (downloadedHash == imageInfo.hash) {
-        print('图片下载成功: ${imageInfo.relativePath}');
-      } else {
-        print('图片下载后哈希不匹配: ${imageInfo.relativePath}');
-        await file.delete(); // 删除损坏的文件
-      }
-    } catch (e) {
-      print('保存图片文件失败: ${imageInfo.relativePath}, $e');
+      print('[ImageSync] 保存图片文件失败: $imagePath -> $imagePath, $e');
     }
   }
 
@@ -374,10 +262,10 @@ class ImageSyncManager {
   }
 
   /// 使用预先计算的MD5值获取图片文件信息，避免重复计算
-  Future<ImageFileInfo?> getImageFileInfoWithMd5(String filePath, String md5Hash) async {
+  Future<ImageFileInfo?> getImageFileInfoWithMd5(String filePath, String md5Hash, bool ignoreFileNotExist) async {
     try {
       final file = File(filePath);
-      if (!await file.exists()) {
+      if (!ignoreFileNotExist && !await file.exists()) {
         return null;
       }
       

@@ -4,6 +4,7 @@ import '../../core/services/sync_service.dart';
 import '../../shared/providers/history_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
+import 'widgets/sync_progress_dialog.dart';
 
 class SyncSettingsScreen extends StatefulWidget {
   const SyncSettingsScreen({super.key});
@@ -294,16 +295,23 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             upload: action['action'] == 'upload',
           );
         } else if (action['type'] == 'history') {
-          // 只支持智能同步
-          result = await _syncService.smartSyncHistory(
-            config.id,
-            onImportComplete: () {
-              // 刷新历史记录列表
-              if (mounted) {
-                context.read<HistoryProvider>().loadHistory();
-              }
+          // 使用进度对话框显示同步进度
+          result = await showSyncProgressDialog<SyncResult>(
+            context: context,
+            title: '智能同步历史记录',
+            syncFunction: (onProgress) async {
+              return await _syncService.smartSyncHistory(
+                config.id,
+                onImportComplete: () {
+                  // 刷新历史记录列表
+                  if (mounted) {
+                    context.read<HistoryProvider>().loadHistory();
+                  }
+                },
+                onProgress: onProgress,
+              );
             },
-          );
+          ) ?? SyncResult.failure('同步被取消');
         } else {
           result = SyncResult.failure('未知的同步类型');
         }
