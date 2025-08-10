@@ -314,7 +314,7 @@ Future<Map<String, ConflictResolution>?> showConflictResolutionDialog(
 ) {
   return showDialog<Map<String, ConflictResolution>>(
     context: context,
-    barrierDismissible: false, // 不允许点击外部关闭
+    barrierDismissible: true, // 不允许点击外部关闭
     builder: (context) => ConflictResolutionDialog(conflicts: conflicts),
   );
 }

@@ -19,7 +19,7 @@ class SessionConflict {
   final String sessionId;
   final DictationSession localSession;
   final DictationSession? remoteSession;
-  final ConflictResolution resolution;
+  ConflictResolution resolution; // 改为可变，允许用户选择后更新
   final String reason;
 
   SessionConflict({
@@ -29,6 +29,11 @@ class SessionConflict {
     required this.resolution,
     required this.reason,
   });
+  
+  /// 更新冲突解决方案
+  void updateResolution(ConflictResolution newResolution) {
+    resolution = newResolution;
+  }
 
   @override
   String toString() {
@@ -303,8 +308,8 @@ class SessionConflictResolver {
       case ConflictResolution.useLocal:
         return conflict.localSession;
       case ConflictResolution.requireUserChoice:
-        // 默认使用远程数据，实际应用中应该让用户选择
-        return conflict.remoteSession;
+        // 正常应该前置解决，不应该有这项
+        throw Exception("未处理的用户选择冲突");
     }
   }
 }

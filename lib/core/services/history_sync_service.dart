@@ -231,31 +231,36 @@ class HistorySyncService {
       
       // Note: session_words operations removed as table no longer exists
       
-      // 收集所有图片文件信息，直接使用数据库中存储的MD5值
-      final Map<String, String> imagePathToMd5 = {};
-      for (final resultMap in resultMaps) {
-        final originalPath = resultMap['original_image_path'] as String?;
-        final originalMd5 = resultMap['original_image_md5'] as String?;
-        final annotatedPath = resultMap['annotated_image_path'] as String?;
-        final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-        
-        if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-          imagePathToMd5[originalPath] = originalMd5;
-        }
-        if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-          imagePathToMd5[annotatedPath] = annotatedMd5;
-        }
-      }
-
+      // 收集图片文件信息（只有未删除的session才包含图片文件）
       final List<ImageFileInfo> imageFiles = [];
-      for (final entry in imagePathToMd5.entries) {
-        final imagePath = entry.key;
-        final storedMd5 = entry.value;
-        
-        // 使用存储的MD5值构建ImageFileInfo，避免重复计算
-        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
-        if (imageInfo != null) {
-          imageFiles.add(imageInfo);
+      final sessionDeleted = sessionMap['deleted'] == 1;
+      
+      if (!sessionDeleted) {
+        // 只有未删除的session才收集图片文件信息
+        final Map<String, String> imagePathToMd5 = {};
+        for (final resultMap in resultMaps) {
+          final originalPath = resultMap['original_image_path'] as String?;
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+          
+          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+            imagePathToMd5[originalPath] = originalMd5;
+          }
+          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+            imagePathToMd5[annotatedPath] = annotatedMd5;
+          }
+        }
+
+        for (final entry in imagePathToMd5.entries) {
+          final imagePath = entry.key;
+          final storedMd5 = entry.value;
+          
+          // 使用存储的MD5值构建ImageFileInfo，避免重复计算
+          final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
+          if (imageInfo != null) {
+            imageFiles.add(imageInfo);
+          }
         }
       }
       
@@ -295,24 +300,63 @@ class HistorySyncService {
       for (final conflict in conflicts) {
         print('[HistorySync] 冲突: ${conflict.reason}');
       }
+
+      // 创建冲突映射表，便于快速查找
+      // 先收集所有需要用户选择的冲突
+      final userChoiceConflicts = conflicts.where((conflict) => 
+          conflict.resolution == ConflictResolution.requireUserChoice).toList();
+
+      // 如果有需要用户选择的冲突，先处理用户选择
+      if (userChoiceConflicts.isNotEmpty) {
+        // 弹出用户选择对话框
+        final result = await _showConflictResolutionDialog(userChoiceConflicts);
+        if (result == null) {
+          // 用户取消了操作
+          throw Exception('用户取消了冲突解决操作');
+        }
+        
+        // 直接更新conflict对象的resolution值
+        for (final conflict in userChoiceConflicts) {
+          final userChoice = result[conflict.sessionId];
+          if (userChoice != null) {
+            conflict.updateResolution(userChoice);
+          }
+        }
+        print('[HistorySync] - 用户已选择 ${result.length} 个冲突的解决方案');
+      }
       
-      // 收集所有需要下载的图片文件信息（直接从results中收集，不依赖imageFiles字段）
+      // 收集所有需要下载的图片文件信息（根据冲突解决结果判断）
       final Set<ImageFileInfo> allImageFiles = {};
       final Map<String, String> imagePathToMd5 = {};
       
       for (final sessionSync in syncData.sessions) {
-        // 从results中收集图片路径和MD5
-        for (final resultMap in sessionSync.results) {
-          final originalPath = resultMap['original_image_path'] as String?;
-          final originalMd5 = resultMap['original_image_md5'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-          
-          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-            imagePathToMd5[originalPath] = originalMd5;
-          }
-          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-            imagePathToMd5[annotatedPath] = annotatedMd5;
+        // 查找对应的冲突
+        final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
+        
+        // 根据冲突解决结果获取最终的session状态
+        DictationSession? finalSession;
+        if (conflict != null) {
+          finalSession = _conflictResolver.getSessionToApply(conflict);
+        } else {
+          // 没有冲突，使用远程session
+          finalSession = DictationSession.fromMap(sessionSync.sessionData);
+        }
+        
+        // 只有当最终session存在且未被删除时，才收集其图片文件
+        if (finalSession != null && !finalSession.deleted) {
+          // 从results中收集图片路径和MD5
+          for (final resultMap in sessionSync.results) {
+            final originalPath = resultMap['original_image_path'] as String?;
+            final originalMd5 = resultMap['original_image_md5'] as String?;
+            final annotatedPath = resultMap['annotated_image_path'] as String?;
+            final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+            
+            if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+              imagePathToMd5[originalPath] = originalMd5;
+            }
+            if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+              imagePathToMd5[annotatedPath] = annotatedMd5;
+            }
           }
         }
       }
@@ -353,49 +397,14 @@ class HistorySyncService {
       
       // 注意：删除本地记录的逻辑现在由冲突检测和处理机制决定
       
-      // 创建冲突映射表，便于快速查找
-      final conflictMap = <String, SessionConflict>{};
-      for (final conflict in conflicts) {
-        conflictMap[conflict.sessionId] = conflict;
-      }
-      
       // 导入会话数据
       int importedSessions = 0;
       int importedResults = 0;
-      final db = await _dbHelper.database;
-      
-      // 先收集所有需要用户选择的冲突
-      final userChoiceConflicts = <SessionConflict>[];
-      
-      for (final sessionSync in syncData.sessions) {
-        final conflict = conflictMap[sessionSync.sessionId];
-
-        // test
-        // if (conflict != null) {
-        //   userChoiceConflicts.add(conflict);
-        // }
-
-        if (conflict != null && conflict.resolution == ConflictResolution.requireUserChoice) {
-          userChoiceConflicts.add(conflict);
-        }
-      }
-      
-      // 如果有需要用户选择的冲突，先处理用户选择
-      final Map<String, ConflictResolution> userChoices = {};
-      if (userChoiceConflicts.isNotEmpty) {
-        // 弹出用户选择对话框
-        final result = await _showConflictResolutionDialog(userChoiceConflicts);
-        if (result == null) {
-          // 用户取消了操作
-          throw Exception('用户取消了冲突解决操作');
-        }
-        userChoices.addAll(result);
-        print('[HistorySync] - 用户已选择 ${userChoices.length} 个冲突的解决方案');
-      }
       
       for (final sessionSync in syncData.sessions) {
         final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
-        final conflict = conflictMap[sessionSync.sessionId];
+        // 从conflicts列表中查找对应的冲突
+        final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
         
         if (conflict == null) {
           // 没有冲突，直接创建新会话
@@ -414,13 +423,7 @@ class HistorySyncService {
           // 有冲突，根据冲突解决方案处理
           print('[HistorySync] - 处理冲突: ${conflict.reason}');
           
-          // 获取实际的解决方案（如果是用户选择类型，使用用户的选择结果）
-          ConflictResolution actualResolution = conflict.resolution;
-          if (conflict.resolution == ConflictResolution.requireUserChoice) {
-            actualResolution = userChoices[conflict.sessionId] ?? ConflictResolution.useRemote;
-          }
-          
-          switch (actualResolution) {
+          switch (conflict.resolution) {
             case ConflictResolution.useRemote:
               final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
               
@@ -458,8 +461,7 @@ class HistorySyncService {
               
             case ConflictResolution.requireUserChoice:
               // 这种情况不应该出现，因为已经在上面处理了
-              print('[HistorySync] - 警告: 未处理的用户选择冲突');
-              break;
+              throw Exception("未处理的用户选择冲突");
           }
         }
       }

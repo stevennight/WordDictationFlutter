@@ -666,6 +666,11 @@ class ObjectStorageSyncProvider extends SyncProvider {
         
         for (final result in results) {
           final resultMap = result as Map<String, dynamic>;
+
+          if (resultMap['deleted'] == 1) {
+            continue;
+          }
+
           final originalPath = resultMap['original_image_path'] as String?;
           final annotatedPath = resultMap['annotated_image_path'] as String?;
           
