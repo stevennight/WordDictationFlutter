@@ -6,6 +6,7 @@ import '../../../shared/providers/theme_provider.dart';
 import '../../../shared/providers/history_provider.dart';
 import '../../../core/services/config_service.dart';
 import '../../../core/services/local_config_service.dart';
+import '../../../core/config/app_version.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
@@ -360,7 +361,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showLicensePage(
       context: context,
       applicationName: _packageInfo?.appName ?? 'Word Dictation',
-      applicationVersion: _packageInfo?.version ?? '1.0.0',
+      applicationVersion: _packageInfo?.version ?? AppVersion.version,
     );
   }
 

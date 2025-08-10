@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../../core/config/app_version.dart';
 
 class CustomAboutDialog extends StatelessWidget {
   final PackageInfo? packageInfo;
@@ -44,7 +45,7 @@ class CustomAboutDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '版本 ${packageInfo?.version ?? '1.0.0'}',
+                    '版本 ${packageInfo?.version ?? AppVersion.version}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -159,7 +160,7 @@ class CustomAboutDialog extends StatelessWidget {
             showLicensePage(
               context: context,
               applicationName: packageInfo?.appName ?? 'Word Dictation',
-              applicationVersion: packageInfo?.version ?? '1.0.0',
+              applicationVersion: packageInfo?.version ?? AppVersion.version,
             );
           },
           child: const Text('开源许可'),

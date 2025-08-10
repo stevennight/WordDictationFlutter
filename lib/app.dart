@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/config/app_version.dart';
 import 'features/home/screens/home_screen.dart';
 import 'features/dictation/screens/dictation_screen.dart';
 import 'features/history/screens/history_screen.dart';
@@ -140,7 +141,7 @@ class _WordDictationMainAppState extends State<WordDictationMainApp> {
     showAboutDialog(
       context: context,
       applicationName: '默写小助手',
-      applicationVersion: '1.0.0',
+      applicationVersion: AppVersion.version,
       applicationIcon: const Icon(
         Icons.edit,
         size: 48,
