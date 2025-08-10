@@ -31,12 +31,14 @@ class HistoryDeletionService {
         imagesToDelete = await _collectSessionImagePaths(sessionId);
       }
       
-      // 软删除会话（标记为已删除）
+      // 软删除会话（标记为已删除，同时更新最后修改时间）
+      final now = DateTime.now().millisecondsSinceEpoch;
       await db.update(
         'dictation_sessions',
         {
           'deleted': 1,
-          'deleted_at': DateTime.now().millisecondsSinceEpoch,
+          'deleted_at': now,
+          'start_time': now, // 更新lastModified时间，确保删除操作能在同步冲突中被正确识别
         },
         where: 'session_id = ?',
         whereArgs: [sessionId],
@@ -114,32 +116,9 @@ class HistoryDeletionService {
     if (sessionIds.isEmpty) return;
     
     try {
-      final db = await _dbHelper.database;
-      
-      // 收集需要删除的图片文件路径
-      Set<String> imagesToDelete = {};
-      if (deleteImages) {
-        for (final sessionId in sessionIds) {
-          final sessionImages = await _collectSessionImagePaths(sessionId);
-          imagesToDelete.addAll(sessionImages);
-        }
-      }
-      
-      // 批量软删除会话
-      final placeholders = sessionIds.map((_) => '?').join(',');
-      await db.update(
-        'dictation_sessions',
-        {
-          'deleted': 1,
-          'deleted_at': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'session_id IN ($placeholders)',
-        whereArgs: sessionIds,
-      );
-      
-      // 删除关联的图片文件
-      if (deleteImages && imagesToDelete.isNotEmpty) {
-        await _deleteImageFiles(imagesToDelete);
+      // 循环调用单个删除方法，确保删除逻辑的一致性和可维护性
+      for (final sessionId in sessionIds) {
+        await softDeleteSession(sessionId, deleteImages: deleteImages);
       }
       
       debugPrint('已批量软删除 ${sessionIds.length} 个会话');

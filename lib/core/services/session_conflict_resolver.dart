@@ -114,22 +114,6 @@ class SessionConflictResolver {
     String remoteDeviceId,
     String localDeviceId,
   ) {
-    // 如果是同一设备，通常不应该有冲突，直接使用远端数据
-    if (remoteDeviceId == localDeviceId) {
-      return SessionConflict(
-        sessionId: localSession.sessionId,
-        localSession: localSession,
-        remoteSession: remoteSession,
-        resolution: ConflictResolution.useRemote,
-        reason: '同一设备数据，使用远端数据',
-      );
-    }
-
-    // 检查删除状态冲突
-    if (localSession.deleted != remoteSession.deleted) {
-      return _resolveDeleteStatusConflict(localSession, remoteSession, remoteSessionSync);
-    }
-
     // 检查修改时间冲突
     final localModified = localSession.startTime;
     final remoteModified = remoteSessionSync.lastModified;
@@ -225,23 +209,77 @@ class SessionConflictResolver {
         );
       }
     } else if (remoteSession.deleted && !localSession.deleted) {
-      // 远端删除了，本地没删除，使用远端的删除状态
-      return SessionConflict(
-        sessionId: localSession.sessionId,
-        localSession: localSession,
-        remoteSession: remoteSession,
-        resolution: ConflictResolution.useRemote,
-        reason: '远端已删除，本地未删除，使用远端删除状态',
-      );
+      // 远端删除了，本地没删除，需要比较远端删除时间和本地最后修改时间
+      final remoteDeletedAt = remoteSession.deletedAt;
+      final localModified = localSession.startTime;
+      
+      if (remoteDeletedAt != null) {
+        // 比较远端删除时间和本地最后修改时间
+        if (remoteDeletedAt.isAfter(localModified)) {
+          // 远端删除时间更晚，使用删除状态
+          return SessionConflict(
+            sessionId: localSession.sessionId,
+            localSession: localSession,
+            remoteSession: remoteSession,
+            resolution: ConflictResolution.useRemote,
+            reason: '远端删除时间晚于本地修改时间，使用远端删除状态',
+          );
+        } else {
+          // 本地修改时间更晚，保留本地记录
+          return SessionConflict(
+            sessionId: localSession.sessionId,
+            localSession: localSession,
+            remoteSession: remoteSession,
+            resolution: ConflictResolution.useLocal,
+            reason: '本地修改时间晚于远端删除时间，保留本地记录',
+          );
+        }
+      } else {
+        // 远端没有删除时间，保留本地数据
+        return SessionConflict(
+          sessionId: localSession.sessionId,
+          localSession: localSession,
+          remoteSession: remoteSession,
+          resolution: ConflictResolution.useLocal,
+          reason: '远端删除时间缺失，保留本地数据',
+        );
+      }
     } else if (!remoteSession.deleted && localSession.deleted) {
-      // 本地删除了，远端没删除，保留本地的删除状态
-      return SessionConflict(
-        sessionId: localSession.sessionId,
-        localSession: localSession,
-        remoteSession: remoteSession,
-        resolution: ConflictResolution.useLocal,
-        reason: '本地已删除，远端未删除，保留本地删除状态',
-      );
+      // 本地删除了，远端没删除，需要比较删除时间和远端最后修改时间
+      final localDeletedAt = localSession.deletedAt;
+      final remoteModified = remoteSessionSync.lastModified;
+      
+      if (localDeletedAt != null) {
+        // 比较本地删除时间和远端最后修改时间
+        if (localDeletedAt.isAfter(remoteModified)) {
+          // 本地删除时间更晚，保留删除状态
+          return SessionConflict(
+            sessionId: localSession.sessionId,
+            localSession: localSession,
+            remoteSession: remoteSession,
+            resolution: ConflictResolution.useLocal,
+            reason: '本地删除时间晚于远端修改时间，保留本地删除状态',
+          );
+        } else {
+          // 远端修改时间更晚，恢复记录
+          return SessionConflict(
+            sessionId: localSession.sessionId,
+            localSession: localSession,
+            remoteSession: remoteSession,
+            resolution: ConflictResolution.useRemote,
+            reason: '远端修改时间晚于本地删除时间，恢复远端记录',
+          );
+        }
+      } else {
+        // 本地没有删除时间，使用远端数据
+        return SessionConflict(
+          sessionId: localSession.sessionId,
+          localSession: localSession,
+          remoteSession: remoteSession,
+          resolution: ConflictResolution.useRemote,
+          reason: '本地删除时间缺失，使用远端数据',
+        );
+      }
     }
 
     // 不应该到达这里
