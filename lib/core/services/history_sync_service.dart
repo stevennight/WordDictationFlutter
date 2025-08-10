@@ -14,6 +14,7 @@ import 'dictation_service.dart';
 import 'image_sync_manager.dart';
 import 'history_deletion_service.dart';
 import 'device_id_service.dart';
+import 'session_conflict_resolver.dart';
 
 /// 历史记录同步数据结构
 class HistorySyncData {
@@ -140,6 +141,7 @@ class HistorySyncService {
   final DictationService _dictationService = DictationService();
   final HistoryDeletionService _deletionService = HistoryDeletionService();
   final DeviceIdService _deviceIdService = DeviceIdService();
+  final SessionConflictResolver _conflictResolver = SessionConflictResolver();
   late ImageSyncManager _imageSyncManager;
   late String _deviceId;
   late Directory _appDocDir;
@@ -277,10 +279,11 @@ class HistorySyncService {
     try {
       final syncData = HistorySyncData.fromMap(data);
       
-      // 检测冲突
-      final conflicts = await _detectConflicts(syncData);
-      if (conflicts.isNotEmpty) {
-        return SyncResult.failure('检测到冲突: ${conflicts.join(", ")}');
+      // 检测并解决冲突
+      final conflicts = await _conflictResolver.detectAndResolveConflicts(syncData.sessions, syncData.deviceId, _deviceId);
+      print('[HistorySync] 检测到 ${conflicts.length} 个冲突');
+      for (final conflict in conflicts) {
+        print('[HistorySync] 冲突: ${conflict.reason}');
       }
       
       // 收集所有需要下载的图片文件信息
@@ -311,40 +314,29 @@ class HistorySyncService {
       // 删除本地存在但远端不存在的记录（实现真正的同步）
       await _deletionService.deleteLocalOnlyRecords(syncData.sessions.map((s) => s.sessionId).toSet());
       
+      // 创建冲突映射表，便于快速查找
+      final conflictMap = <String, SessionConflict>{};
+      for (final conflict in conflicts) {
+        conflictMap[conflict.sessionId] = conflict;
+      }
+      
       // 导入会话数据
       int importedSessions = 0;
       int importedResults = 0;
       final db = await _dbHelper.database;
       
       for (final sessionSync in syncData.sessions) {
-        // 检查会话是否已存在（包括已删除的会话）
-        final existingSessions = await _dictationService.getAllSessionsIncludingDeleted();
-        DictationSession? existingSession;
-        try {
-          existingSession = existingSessions.firstWhere(
-            (s) => s.sessionId == sessionSync.sessionId,
-          );
-        } catch (e) {
-          existingSession = null;
-        }
-        
         final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
+        final conflict = conflictMap[sessionSync.sessionId];
         
-        // 调试日志：检查远端数据格式
-        print('[HistorySync] 处理会话 ${remoteSession.sessionId}:');
-        print('[HistorySync] - 远端数据包含deleted字段: ${sessionSync.sessionData.containsKey('deleted')}');
-        print('[HistorySync] - 远端deleted值: ${sessionSync.sessionData['deleted']}');
-        print('[HistorySync] - 解析后deleted状态: ${remoteSession.deleted}');
-        
-        if (existingSession == null) {
-          // 创建新会话（包括可能的删除状态）
+        if (conflict == null) {
+          // 没有冲突，直接创建新会话
           await _dictationService.createSession(remoteSession);
           if (!remoteSession.deleted) {
             importedSessions++;
           }
-          print('[HistorySync] - 创建新会话，deleted=${remoteSession.deleted}');
           
-          // 如果远程会话未删除，导入结果和单词关联
+          // 如果远程会话未删除，导入结果数据
           if (!remoteSession.deleted) {
             // 导入结果
             for (final resultData in sessionSync.results) {
@@ -352,58 +344,30 @@ class HistorySyncService {
               await _dictationService.saveResult(result);
               importedResults++;
             }
-            
-            // Note: session_words operations removed as table no longer exists
           }
         } else {
-          // 检查是否需要更新
-          final existingModified = existingSession.startTime;
-          final remoteModified = remoteSession.deletedAt ?? remoteSession.startTime;
+          // 有冲突，根据冲突解决方案处理
+          print('[HistorySync] - 处理冲突: ${conflict.reason}');
           
-          print('[HistorySync] - 本地已存在会话，本地deleted=${existingSession.deleted}');
-          print('[HistorySync] - 删除状态是否不同: ${remoteSession.deleted != existingSession.deleted}');
-          
-          // 处理删除状态冲突：保留最新的删除操作
-          bool shouldUpdate = false;
-          DictationSession sessionToUpdate = remoteSession;
-          
-          if (remoteSession.deleted != existingSession.deleted) {
-            // 删除状态不同，需要比较删除时间
-            if (remoteSession.deleted && existingSession.deleted) {
-              // 两边都删除了，比较删除时间，保留最新的
-              final remoteDeletedAt = remoteSession.deletedAt;
-              final existingDeletedAt = existingSession.deletedAt;
-              if (remoteDeletedAt != null && existingDeletedAt != null) {
-                shouldUpdate = remoteDeletedAt.isAfter(existingDeletedAt);
-              } else if (remoteDeletedAt != null) {
-                shouldUpdate = true;
-              }
-            } else if (remoteSession.deleted && !existingSession.deleted) {
-              // 远端删除了，本地没删除，使用远端的删除状态
-              shouldUpdate = true;
-            } else if (!remoteSession.deleted && existingSession.deleted) {
-              // 本地删除了，远端没删除，保留本地的删除状态
-              sessionToUpdate = existingSession;
-              shouldUpdate = false;
-              print('[HistorySync] - 保留本地删除状态，不更新');
-            }
-          } else if (sessionSync.lastModified.isAfter(existingModified)) {
-            // 删除状态相同，但远端数据更新，正常更新
-            shouldUpdate = true;
-          }
-          
-          if (shouldUpdate) {
-            // 更新会话（包括删除状态）
+          if (_conflictResolver.shouldUpdateLocal(conflict)) {
+            final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
+            
+            // 更新会话
             await _dictationService.updateSession(sessionToUpdate);
             print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
             
-            // 更新结果（简单起见，删除旧结果后重新插入）
+            // 如果更新后的会话未删除，更新结果数据
+            if (!sessionToUpdate.deleted) {
+              // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
               for (final resultData in sessionSync.results) {
                 final result = DictationResult.fromMap(resultData);
                 await _dictationService.saveResult(result);
                 importedResults++;
               }
+            }
+          } else {
+            print('[HistorySync] - 保留本地数据，跳过更新');
           }
         }
       }
@@ -431,10 +395,11 @@ class HistorySyncService {
     try {
       final syncData = HistorySyncData.fromMap(data);
       
-      // 检测冲突
-      final conflicts = await _detectConflicts(syncData);
-      if (conflicts.isNotEmpty) {
-        return SyncResult.failure('检测到冲突: ${conflicts.join(", ")}');
+      // 检测并解决冲突
+      final conflicts = await _conflictResolver.detectAndResolveConflicts(syncData.sessions, syncData.deviceId, _deviceId);
+      print('[HistorySync] 检测到 ${conflicts.length} 个冲突（不删除本地记录模式）');
+      for (final conflict in conflicts) {
+        print('[HistorySync] 冲突: ${conflict.reason}');
       }
       
       // 收集所有需要下载的图片文件信息
@@ -464,33 +429,29 @@ class HistorySyncService {
       
       // 注意：这里不调用 _deleteLocalOnlyRecords 方法
       
+      // 创建冲突映射表，便于快速查找
+      final conflictMap = <String, SessionConflict>{};
+      for (final conflict in conflicts) {
+        conflictMap[conflict.sessionId] = conflict;
+      }
+      
       // 导入会话数据
       int importedSessions = 0;
       int importedResults = 0;
       final db = await _dbHelper.database;
       
       for (final sessionSync in syncData.sessions) {
-        // 检查会话是否已存在（包括已删除的会话）
-        final existingSessions = await _dictationService.getAllSessionsIncludingDeleted();
-        DictationSession? existingSession;
-        try {
-          existingSession = existingSessions.firstWhere(
-            (s) => s.sessionId == sessionSync.sessionId,
-          );
-        } catch (e) {
-          existingSession = null;
-        }
-        
         final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
+        final conflict = conflictMap[sessionSync.sessionId];
         
-        if (existingSession == null) {
-          // 创建新会话（包括可能的删除状态）
+        if (conflict == null) {
+          // 没有冲突，直接创建新会话
           await _dictationService.createSession(remoteSession);
           if (!remoteSession.deleted) {
             importedSessions++;
           }
           
-          // 如果远程会话未删除，导入结果和单词关联
+          // 如果远程会话未删除，导入结果数据
           if (!remoteSession.deleted) {
             // 导入结果
             for (final resultData in sessionSync.results) {
@@ -498,48 +459,19 @@ class HistorySyncService {
               await _dictationService.saveResult(result);
               importedResults++;
             }
-            
-            // Note: session_words operations removed as table no longer exists
           }
         } else {
-          // 检查是否需要更新
-          final existingModified = existingSession.startTime;
-          final remoteModified = remoteSession.deletedAt ?? remoteSession.startTime;
+          // 有冲突，根据冲突解决方案处理
+          print('[HistorySync] - 处理冲突: ${conflict.reason}');
           
-          // 处理删除状态冲突：保留最新的删除操作
-          bool shouldUpdate = false;
-          DictationSession sessionToUpdate = remoteSession;
-          
-          if (remoteSession.deleted != existingSession.deleted) {
-            // 删除状态不同，需要比较删除时间
-            if (remoteSession.deleted && existingSession.deleted) {
-              // 两边都删除了，比较删除时间，保留最新的
-              final remoteDeletedAt = remoteSession.deletedAt;
-              final existingDeletedAt = existingSession.deletedAt;
-              if (remoteDeletedAt != null && existingDeletedAt != null) {
-                shouldUpdate = remoteDeletedAt.isAfter(existingDeletedAt);
-              } else if (remoteDeletedAt != null) {
-                shouldUpdate = true;
-              }
-            } else if (remoteSession.deleted && !existingSession.deleted) {
-              // 远端删除了，本地没删除，使用远端的删除状态
-              shouldUpdate = true;
-            } else if (!remoteSession.deleted && existingSession.deleted) {
-              // 本地删除了，远端没删除，保留本地的删除状态
-              sessionToUpdate = existingSession;
-              shouldUpdate = false;
-              print('[HistorySync] - 保留本地删除状态，不更新');
-            }
-          } else if (sessionSync.lastModified.isAfter(existingModified)) {
-            // 删除状态相同，但远端数据更新，正常更新
-            shouldUpdate = true;
-          }
-          
-          if (shouldUpdate) {
-            // 更新会话（包括删除状态）
-            await _dictationService.updateSession(sessionToUpdate);
+          if (_conflictResolver.shouldUpdateLocal(conflict)) {
+            final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
             
-            // 如果更新后的会话未删除，更新结果和单词关联
+            // 更新会话
+            await _dictationService.updateSession(sessionToUpdate);
+            print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
+            
+            // 如果更新后的会话未删除，更新结果数据
             if (!sessionToUpdate.deleted) {
               // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
@@ -548,9 +480,9 @@ class HistorySyncService {
                 await _dictationService.saveResult(result);
                 importedResults++;
               }
-              
-              // Note: session_words operations removed as table no longer exists
             }
+          } else {
+            print('[HistorySync] - 保留本地数据，跳过更新');
           }
         }
       }
@@ -573,33 +505,7 @@ class HistorySyncService {
     }
   }
 
-  /// 检测同步冲突
-  Future<List<String>> _detectConflicts(HistorySyncData syncData) async {
-    final List<String> conflicts = [];
-    
-    // 检查设备ID冲突（同一设备不应该产生冲突）
-    if (syncData.deviceId == _deviceId) {
-      // 同一设备，跳过冲突检测
-      return conflicts;
-    }
-    
-    // 检查会话冲突
-    for (final sessionSync in syncData.sessions) {
-      final existingSession = await _dictationService.getSession(sessionSync.sessionId);
-      if (existingSession != null) {
-        final existingModified = existingSession.startTime;
-        final remoteModified = sessionSync.lastModified;
-        
-        // 如果两个时间戳相差很小（比如1秒内），认为是同一次修改
-        final timeDiff = existingModified.difference(remoteModified).abs();
-        if (timeDiff.inSeconds > 1) {
-          conflicts.add('会话 ${sessionSync.sessionId} 存在冲突');
-        }
-      }
-    }
-    
-    return conflicts;
-  }
+
 
   /// 删除会话结果和单词关联
   Future<void> _deleteSessionResults(String sessionId) async {
