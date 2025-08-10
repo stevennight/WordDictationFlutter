@@ -18,7 +18,7 @@ enum ConflictResolution {
 class SessionConflict {
   final String sessionId;
   final DictationSession localSession;
-  final DictationSession remoteSession;
+  final DictationSession? remoteSession;
   final ConflictResolution resolution;
   final String reason;
 
@@ -60,6 +60,10 @@ class SessionConflictResolver {
       localSessionMap[session.sessionId] = session;
     }
 
+    // 创建远程会话ID集合
+    final remoteSessionIds = remoteSessions.map((s) => s.sessionId).toSet();
+
+    // 1. 检测远程会话与本地会话的冲突
     for (final remoteSessionSync in remoteSessions) {
       final remoteSession = DictationSession.fromMap(remoteSessionSync.sessionData);
       final localSession = localSessionMap[remoteSession.sessionId];
@@ -77,6 +81,25 @@ class SessionConflictResolver {
         if (conflict != null) {
           conflicts.add(conflict);
         }
+      }
+    }
+
+    // 2. 检测本地存在但远端不存在的会话（需要删除）
+    for (final localSession in localSessions) {
+      // 跳过进行中的会话和已删除的会话
+      if (localSession.status.index == 0 || localSession.deleted) {
+        continue;
+      }
+      
+      // 如果本地会话在远端不存在，标记为需要删除
+      if (!remoteSessionIds.contains(localSession.sessionId)) {
+        conflicts.add(SessionConflict(
+          sessionId: localSession.sessionId,
+          localSession: localSession,
+          remoteSession: null,
+          resolution: ConflictResolution.useRemote, // 使用远端数据（即删除本地数据）
+          reason: '本地存在但远端不存在，需要删除本地记录',
+        ));
       }
     }
 
@@ -245,15 +268,18 @@ class SessionConflictResolver {
     }
   }
 
-  /// 获取要应用的会话数据
-  DictationSession getSessionToApply(SessionConflict conflict) {
+  /// 获取应该应用的会话数据
+  /// 如果返回 null，表示应该删除本地会话
+  /// 如果需要用户选择，会抛出 UserChoiceRequiredException
+  DictationSession? getSessionToApply(SessionConflict conflict) {
     switch (conflict.resolution) {
       case ConflictResolution.useRemote:
+        // 如果远程会话为 null，表示需要删除本地会话
         return conflict.remoteSession;
       case ConflictResolution.useLocal:
         return conflict.localSession;
       case ConflictResolution.requireUserChoice:
-        // 暂时默认使用远端数据，后续可以添加用户选择界面
+        // 默认使用远程数据，实际应用中应该让用户选择
         return conflict.remoteSession;
     }
   }

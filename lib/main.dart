@@ -18,6 +18,9 @@ import 'features/dictation/screens/dictation_screen.dart';
 import 'features/history/screens/history_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
 
+// 全局导航键，用于在服务中显示对话框
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -110,6 +113,7 @@ class _WordDictationAppState extends State<WordDictationApp> {
           return MaterialApp(
             title: '默写小助手',
             debugShowCheckedModeBanner: false,
+            navigatorKey: navigatorKey,
             theme: themeProvider.lightTheme,
             darkTheme: themeProvider.darkTheme,
             themeMode: themeProvider.themeMode,

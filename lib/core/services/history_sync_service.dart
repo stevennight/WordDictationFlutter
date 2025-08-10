@@ -311,8 +311,7 @@ class HistorySyncService {
         print('[HistorySync] 没有需要下载的图片文件');
       }
       
-      // 删除本地存在但远端不存在的记录（实现真正的同步）
-      await _deletionService.deleteLocalOnlyRecords(syncData.sessions.map((s) => s.sessionId).toSet());
+      // 注意：删除本地记录的逻辑现在由冲突检测和处理机制决定
       
       // 创建冲突映射表，便于快速查找
       final conflictMap = <String, SessionConflict>{};
@@ -336,14 +335,11 @@ class HistorySyncService {
             importedSessions++;
           }
           
-          // 如果远程会话未删除，导入结果数据
-          if (!remoteSession.deleted) {
-            // 导入结果
-            for (final resultData in sessionSync.results) {
-              final result = DictationResult.fromMap(resultData);
-              await _dictationService.saveResult(result);
-              importedResults++;
-            }
+          // 导入结果
+          for (final resultData in sessionSync.results) {
+            final result = DictationResult.fromMap(resultData);
+            await _dictationService.saveResult(result);
+            importedResults++;
           }
         } else {
           // 有冲突，根据冲突解决方案处理
@@ -352,12 +348,15 @@ class HistorySyncService {
           if (_conflictResolver.shouldUpdateLocal(conflict)) {
             final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
             
-            // 更新会话
-            await _dictationService.updateSession(sessionToUpdate);
-            print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
-            
-            // 如果更新后的会话未删除，更新结果数据
-            if (!sessionToUpdate.deleted) {
+            if (sessionToUpdate == null) {
+              // 需要删除本地会话（使用公共的软删除方法）
+              await _dictationService.deleteSession(conflict.localSession.sessionId);
+              print('[HistorySync] - 软删除本地会话: ${conflict.localSession.sessionId}');
+            } else {
+              // 更新会话
+              await _dictationService.updateSession(sessionToUpdate);
+              print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
+              
               // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
               for (final resultData in sessionSync.results) {
@@ -390,120 +389,7 @@ class HistorySyncService {
     }
   }
 
-  /// 导入历史记录数据（用于下载，不删除本地记录）
-  Future<SyncResult> importHistoryDataWithoutDelete(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete]) async {
-    try {
-      final syncData = HistorySyncData.fromMap(data);
-      
-      // 检测并解决冲突
-      final conflicts = await _conflictResolver.detectAndResolveConflicts(syncData.sessions, syncData.deviceId, _deviceId);
-      print('[HistorySync] 检测到 ${conflicts.length} 个冲突（不删除本地记录模式）');
-      for (final conflict in conflicts) {
-        print('[HistorySync] 冲突: ${conflict.reason}');
-      }
-      
-      // 收集所有需要下载的图片文件信息
-      final Set<ImageFileInfo> allImageFiles = {};
-      for (final sessionSync in syncData.sessions) {
-        allImageFiles.addAll(sessionSync.imageFiles);
-      }
-      
-      print('[HistorySync] 导入历史记录（不删除本地记录）：找到 ${syncData.sessions.length} 个会话');
-      print('[HistorySync] 导入历史记录（不删除本地记录）：需要下载 ${allImageFiles.length} 个图片文件');
-      
-      // 如果提供了同步提供者，下载图片文件
-      if (provider != null && allImageFiles.isNotEmpty) {
-        try {
-          print('[HistorySync] 开始下载图片文件...');
-          await _imageSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data);
-          print('[HistorySync] 图片文件下载完成');
-        } catch (e) {
-          print('[HistorySync] 下载图片文件时出错: $e');
-          // 继续导入历史记录数据，不因图片下载失败而中断
-        }
-      } else if (provider == null) {
-        print('[HistorySync] 未提供同步提供者，跳过图片下载');
-      } else {
-        print('[HistorySync] 没有需要下载的图片文件');
-      }
-      
-      // 注意：这里不调用 _deleteLocalOnlyRecords 方法
-      
-      // 创建冲突映射表，便于快速查找
-      final conflictMap = <String, SessionConflict>{};
-      for (final conflict in conflicts) {
-        conflictMap[conflict.sessionId] = conflict;
-      }
-      
-      // 导入会话数据
-      int importedSessions = 0;
-      int importedResults = 0;
-      final db = await _dbHelper.database;
-      
-      for (final sessionSync in syncData.sessions) {
-        final remoteSession = DictationSession.fromMap(sessionSync.sessionData);
-        final conflict = conflictMap[sessionSync.sessionId];
-        
-        if (conflict == null) {
-          // 没有冲突，直接创建新会话
-          await _dictationService.createSession(remoteSession);
-          if (!remoteSession.deleted) {
-            importedSessions++;
-          }
-          
-          // 如果远程会话未删除，导入结果数据
-          if (!remoteSession.deleted) {
-            // 导入结果
-            for (final resultData in sessionSync.results) {
-              final result = DictationResult.fromMap(resultData);
-              await _dictationService.saveResult(result);
-              importedResults++;
-            }
-          }
-        } else {
-          // 有冲突，根据冲突解决方案处理
-          print('[HistorySync] - 处理冲突: ${conflict.reason}');
-          
-          if (_conflictResolver.shouldUpdateLocal(conflict)) {
-            final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
-            
-            // 更新会话
-            await _dictationService.updateSession(sessionToUpdate);
-            print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
-            
-            // 如果更新后的会话未删除，更新结果数据
-            if (!sessionToUpdate.deleted) {
-              // 更新结果（简单起见，删除旧结果后重新插入）
-              await _deleteSessionResults(sessionSync.sessionId);
-              for (final resultData in sessionSync.results) {
-                final result = DictationResult.fromMap(resultData);
-                await _dictationService.saveResult(result);
-                importedResults++;
-              }
-            }
-          } else {
-            print('[HistorySync] - 保留本地数据，跳过更新');
-          }
-        }
-      }
-      
-      // 导入完成后调用回调
-      if (onImportComplete != null) {
-        onImportComplete();
-      }
-      
-      return SyncResult.success(
-        message: '成功导入 $importedSessions 个会话，$importedResults 个结果，${allImageFiles.length} 个图片文件（不删除本地记录）',
-        data: {
-          'importedSessions': importedSessions,
-          'importedResults': importedResults,
-          'downloadedImages': allImageFiles.length,
-        },
-      );
-    } catch (e) {
-      return SyncResult.failure('导入历史记录失败: $e');
-    }
-  }
+
 
 
 
