@@ -363,14 +363,42 @@ class HistorySyncService {
           print('[HistorySync] - 本地已存在会话，本地deleted=${existingSession.deleted}');
           print('[HistorySync] - 删除状态是否不同: ${remoteSession.deleted != existingSession.deleted}');
           
-          if (sessionSync.lastModified.isAfter(existingModified) || 
-              (remoteSession.deleted != existingSession.deleted)) {
+          // 处理删除状态冲突：保留最新的删除操作
+          bool shouldUpdate = false;
+          DictationSession sessionToUpdate = remoteSession;
+          
+          if (remoteSession.deleted != existingSession.deleted) {
+            // 删除状态不同，需要比较删除时间
+            if (remoteSession.deleted && existingSession.deleted) {
+              // 两边都删除了，比较删除时间，保留最新的
+              final remoteDeletedAt = remoteSession.deletedAt;
+              final existingDeletedAt = existingSession.deletedAt;
+              if (remoteDeletedAt != null && existingDeletedAt != null) {
+                shouldUpdate = remoteDeletedAt.isAfter(existingDeletedAt);
+              } else if (remoteDeletedAt != null) {
+                shouldUpdate = true;
+              }
+            } else if (remoteSession.deleted && !existingSession.deleted) {
+              // 远端删除了，本地没删除，使用远端的删除状态
+              shouldUpdate = true;
+            } else if (!remoteSession.deleted && existingSession.deleted) {
+              // 本地删除了，远端没删除，保留本地的删除状态
+              sessionToUpdate = existingSession;
+              shouldUpdate = false;
+              print('[HistorySync] - 保留本地删除状态，不更新');
+            }
+          } else if (sessionSync.lastModified.isAfter(existingModified)) {
+            // 删除状态相同，但远端数据更新，正常更新
+            shouldUpdate = true;
+          }
+          
+          if (shouldUpdate) {
             // 更新会话（包括删除状态）
-            await _dictationService.updateSession(remoteSession);
-            print('[HistorySync] - 更新会话，新deleted状态=${remoteSession.deleted}');
+            await _dictationService.updateSession(sessionToUpdate);
+            print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
             
-            // 如果远程会话未删除，更新结果和单词关联
-            if (!remoteSession.deleted) {
+            // 如果更新后的会话未删除，更新结果和单词关联
+            if (!sessionToUpdate.deleted) {
               // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
               for (final resultData in sessionSync.results) {
@@ -483,13 +511,41 @@ class HistorySyncService {
           final existingModified = existingSession.startTime;
           final remoteModified = remoteSession.deletedAt ?? remoteSession.startTime;
           
-          if (sessionSync.lastModified.isAfter(existingModified) || 
-              (remoteSession.deleted != existingSession.deleted)) {
+          // 处理删除状态冲突：保留最新的删除操作
+          bool shouldUpdate = false;
+          DictationSession sessionToUpdate = remoteSession;
+          
+          if (remoteSession.deleted != existingSession.deleted) {
+            // 删除状态不同，需要比较删除时间
+            if (remoteSession.deleted && existingSession.deleted) {
+              // 两边都删除了，比较删除时间，保留最新的
+              final remoteDeletedAt = remoteSession.deletedAt;
+              final existingDeletedAt = existingSession.deletedAt;
+              if (remoteDeletedAt != null && existingDeletedAt != null) {
+                shouldUpdate = remoteDeletedAt.isAfter(existingDeletedAt);
+              } else if (remoteDeletedAt != null) {
+                shouldUpdate = true;
+              }
+            } else if (remoteSession.deleted && !existingSession.deleted) {
+              // 远端删除了，本地没删除，使用远端的删除状态
+              shouldUpdate = true;
+            } else if (!remoteSession.deleted && existingSession.deleted) {
+              // 本地删除了，远端没删除，保留本地的删除状态
+              sessionToUpdate = existingSession;
+              shouldUpdate = false;
+              print('[HistorySync] - 保留本地删除状态，不更新');
+            }
+          } else if (sessionSync.lastModified.isAfter(existingModified)) {
+            // 删除状态相同，但远端数据更新，正常更新
+            shouldUpdate = true;
+          }
+          
+          if (shouldUpdate) {
             // 更新会话（包括删除状态）
-            await _dictationService.updateSession(remoteSession);
+            await _dictationService.updateSession(sessionToUpdate);
             
-            // 如果远程会话未删除，更新结果和单词关联
-            if (!remoteSession.deleted) {
+            // 如果更新后的会话未删除，更新结果和单词关联
+            if (!sessionToUpdate.deleted) {
               // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
               for (final resultData in sessionSync.results) {

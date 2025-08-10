@@ -32,10 +32,10 @@ class HistoryProvider with ChangeNotifier {
     try {
       final db = await _dbHelper.database;
       
-      // Load sessions (exclude inProgress status)
+      // Load sessions (exclude inProgress status and deleted sessions)
       final sessionMaps = await db.query(
         'dictation_sessions',
-        where: 'status != ?',
+        where: 'status != ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: ['inProgress'],
         orderBy: 'start_time DESC',
       );
@@ -73,7 +73,7 @@ class HistoryProvider with ChangeNotifier {
       final db = await _dbHelper.database;
       final maps = await db.query(
         'dictation_sessions',
-        where: 'id = ?',
+        where: 'id = ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: [sessionId],
       );
       
@@ -93,7 +93,7 @@ class HistoryProvider with ChangeNotifier {
       final db = await _dbHelper.database;
       final maps = await db.query(
         'dictation_sessions',
-        where: 'session_id = ?',
+        where: 'session_id = ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: [sessionId],
       );
       
