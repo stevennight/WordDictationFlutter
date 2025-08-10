@@ -359,10 +359,7 @@ class HistorySyncService {
               importedResults++;
             }
             
-            // 导入会话单词关联
-            for (final wordData in sessionSync.sessionWords) {
-              await db.insert('session_words', wordData);
-            }
+            // Note: session_words operations removed as table no longer exists
           }
         } else {
           // 检查是否需要更新
@@ -388,11 +385,7 @@ class HistorySyncService {
                 importedResults++;
               }
               
-              // 重新导入会话单词关联
-              await db.delete('session_words', where: 'session_id = ?', whereArgs: [sessionSync.sessionId]);
-              for (final wordData in sessionSync.sessionWords) {
-                await db.insert('session_words', wordData);
-              }
+              // Note: session_words operations removed as table no longer exists
             }
           }
         }
@@ -489,10 +482,7 @@ class HistorySyncService {
               importedResults++;
             }
             
-            // 导入会话单词关联
-            for (final wordData in sessionSync.sessionWords) {
-              await db.insert('session_words', wordData);
-            }
+            // Note: session_words operations removed as table no longer exists
           }
         } else {
           // 检查是否需要更新

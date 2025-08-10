@@ -242,6 +242,14 @@ class DictationProvider extends ChangeNotifier {
         annotatedImagePath: _annotatedImagePath,
         wordIndex: _currentSession!.currentWordIndex,
         timestamp: DateTime.now(),
+        // Store word details as snapshot to avoid foreign key issues
+        // 存储单词详细信息快照，实现数据快照策略：
+        // 1. 保证历史记录独立性 - 原单词信息变更不影响此记录
+        // 2. 避免外键约束问题 - 原单词删除不影响此记录
+        // 3. 提升查询性能 - 无需关联查询即可获取完整信息
+        category: _currentWord!.category,
+        partOfSpeech: _currentWord!.partOfSpeech,
+        level: _currentWord!.level,
       );
       
       _results.add(result);
@@ -297,14 +305,7 @@ class DictationProvider extends ChangeNotifier {
       // 保存session到数据库
       await _dictationService.createSession(_currentSession!);
       
-      // 保存session words
-      for (int i = 0; i < _sessionWords.length; i++) {
-        await _dictationService.addWordToSession(
-          _currentSession!.sessionId,
-          _sessionWords[i].id!,
-          i,
-        );
-      }
+      // Note: session_words table operations removed as no longer needed
       
       // 保存所有结果
       for (final result in _results) {

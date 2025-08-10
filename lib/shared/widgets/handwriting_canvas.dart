@@ -85,15 +85,47 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   void _loadBackgroundImage() async {
     if (widget.backgroundImagePath == null) return;
     
+    debugPrint('Loading background image: ${widget.backgroundImagePath}');
+    
     try {
-      final File imageFile = File(widget.backgroundImagePath!);
-      if (await imageFile.exists()) {
+      // 处理相对路径和绝对路径
+      String imagePath = widget.backgroundImagePath!;
+      
+      // 如果是相对路径，转换为绝对路径
+      if (!path.isAbsolute(imagePath)) {
+        // For desktop platforms, use executable directory
+        // For mobile platforms, fallback to documents directory
+        String appDir;
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          // Get executable directory for desktop platforms
+          final executablePath = Platform.resolvedExecutable;
+          appDir = path.dirname(executablePath);
+        } else {
+          // Fallback to documents directory for mobile platforms
+          final appDocDir = await getApplicationDocumentsDirectory();
+          appDir = appDocDir.path;
+        }
+        
+        // 规范化路径分隔符
+        final normalizedRelativePath = imagePath.replaceAll('\\', '/');
+        imagePath = path.join(appDir, normalizedRelativePath);
+        debugPrint('Converted relative path to absolute: $imagePath');
+      }
+      
+      final File imageFile = File(imagePath);
+      final bool exists = await imageFile.exists();
+      debugPrint('Image file exists: $exists');
+      
+      if (exists) {
         final Uint8List bytes = await imageFile.readAsBytes();
         final ui.Codec codec = await ui.instantiateImageCodec(bytes);
         final ui.FrameInfo frameInfo = await codec.getNextFrame();
         setState(() {
           _backgroundImage = frameInfo.image;
         });
+        debugPrint('Background image loaded successfully');
+      } else {
+        debugPrint('Image file does not exist: $imagePath');
       }
     } catch (e) {
       debugPrint('Error loading background image: $e');

@@ -41,7 +41,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 7,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -131,22 +131,17 @@ class DatabaseHelper {
         word_index INTEGER NOT NULL,
         timestamp INTEGER NOT NULL,
         user_notes TEXT,
+        category TEXT,
+        part_of_speech TEXT,
+        level TEXT,
+        wordbook_id INTEGER,
+        unit_id INTEGER,
         FOREIGN KEY (session_id) REFERENCES dictation_sessions (session_id),
         FOREIGN KEY (word_id) REFERENCES words (id)
       )
     ''');
 
-    // Create session_words table (many-to-many relationship)
-    await db.execute('''
-      CREATE TABLE session_words (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        word_id INTEGER NOT NULL,
-        word_order INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES dictation_sessions (session_id),
-        FOREIGN KEY (word_id) REFERENCES words (id)
-      )
-    ''');
+    // Note: session_words table removed as it's no longer needed with data snapshot approach
 
     // Create app_settings table
     await db.execute('''
@@ -169,7 +164,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_sessions_start_time ON dictation_sessions (start_time)');
     await db.execute('CREATE INDEX idx_results_session_id ON dictation_results (session_id)');
     await db.execute('CREATE INDEX idx_results_word_id ON dictation_results (word_id)');
-    await db.execute('CREATE INDEX idx_session_words_session_id ON session_words (session_id)');
+    // Note: session_words index removed
     await db.execute('CREATE INDEX idx_settings_key ON app_settings (key)');
   }
 
@@ -315,6 +310,95 @@ class DatabaseHelper {
       
       // Create index for deleted column for better performance
       await db.execute('CREATE INDEX idx_dictation_sessions_deleted ON dictation_sessions (deleted)');
+    }
+    
+    if (oldVersion < 8 && newVersion >= 8) {
+      // Add word detail fields to dictation_results table for data snapshot approach
+      // 为 dictation_results 表添加单词详细信息快照字段，实现数据快照策略：
+      // 1. 确保历史记录独立性 - 单词信息修改不影响已有默写记录
+      // 2. 避免外键约束问题 - 单词删除不会影响历史记录
+      // 3. 提升查询性能 - 减少多表关联查询
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN category TEXT');
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN part_of_speech TEXT');
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN level TEXT');
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN wordbook_id INTEGER');
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN unit_id INTEGER');
+      
+      // Migrate existing data: populate new fields from words table
+      // 迁移现有数据：从 words 表复制单词详细信息到快照字段
+      await db.execute('''
+        UPDATE dictation_results 
+        SET category = (
+          SELECT w.category FROM words w WHERE w.id = dictation_results.word_id
+        ),
+        part_of_speech = (
+          SELECT w.part_of_speech FROM words w WHERE w.id = dictation_results.word_id
+        ),
+        level = (
+          SELECT w.level FROM words w WHERE w.id = dictation_results.word_id
+        ),
+        wordbook_id = (
+          SELECT w.wordbook_id FROM words w WHERE w.id = dictation_results.word_id
+        ),
+        unit_id = (
+          SELECT w.unit_id FROM words w WHERE w.id = dictation_results.word_id
+        )
+        WHERE EXISTS (SELECT 1 FROM words w WHERE w.id = dictation_results.word_id)
+      ''');
+    }
+    
+    if (oldVersion < 9 && newVersion >= 9) {
+      // Remove wordbook_id and unit_id columns from dictation_results table
+      // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+      
+      // Create new table without wordbook_id and unit_id
+      await db.execute('''
+        CREATE TABLE dictation_results_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          word_id INTEGER NOT NULL,
+          prompt TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          is_correct INTEGER NOT NULL,
+          original_image_path TEXT,
+          annotated_image_path TEXT,
+          word_index INTEGER NOT NULL,
+          timestamp INTEGER NOT NULL,
+          user_notes TEXT,
+          category TEXT,
+          part_of_speech TEXT,
+          level TEXT,
+          FOREIGN KEY (session_id) REFERENCES dictation_sessions (session_id),
+          FOREIGN KEY (word_id) REFERENCES words (id)
+        )
+      ''');
+      
+      // Copy data from old table to new table (excluding wordbook_id and unit_id)
+      await db.execute('''
+        INSERT INTO dictation_results_new (
+          id, session_id, word_id, prompt, answer, is_correct,
+          original_image_path, annotated_image_path, word_index, timestamp,
+          user_notes, category, part_of_speech, level
+        )
+        SELECT 
+          id, session_id, word_id, prompt, answer, is_correct,
+          original_image_path, annotated_image_path, word_index, timestamp,
+          user_notes, category, part_of_speech, level
+        FROM dictation_results
+      ''');
+      
+      // Drop old table
+      await db.execute('DROP TABLE dictation_results');
+      
+      // Rename new table
+      await db.execute('ALTER TABLE dictation_results_new RENAME TO dictation_results');
+      
+      // Recreate indexes
+      await db.execute('CREATE INDEX idx_results_session_id ON dictation_results (session_id)');
+      await db.execute('CREATE INDEX idx_results_word_id ON dictation_results (word_id)');
+      
+      // Drop session_words table as it's no longer needed
+      await db.execute('DROP TABLE IF EXISTS session_words');
     }
   }
 

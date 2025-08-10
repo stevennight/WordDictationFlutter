@@ -53,26 +53,7 @@ class DictationService {
     );
   }
 
-  /// Add word to session
-  Future<int> addWordToSession(String sessionId, int wordId, int wordIndex) async {
-    final db = await _dbHelper.database;
-    return await db.insert('session_words', {
-      'session_id': sessionId,
-      'word_id': wordId,
-      'word_order': wordIndex,
-    });
-  }
-
-  /// Get session words
-  Future<List<Map<String, dynamic>>> getSessionWords(String sessionId) async {
-    final db = await _dbHelper.database;
-    return await db.query(
-      'session_words',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-      orderBy: 'word_order ASC',
-    );
-  }
+  // Note: session_words related methods removed as table is no longer needed
 
   /// Save dictation result
   Future<int> saveResult(DictationResult result) async {
@@ -214,7 +195,6 @@ class DictationService {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       await txn.delete('dictation_results');
-      await txn.delete('session_words');
       await txn.delete('dictation_sessions');
     });
   }

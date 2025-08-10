@@ -1,3 +1,16 @@
+/// 默写结果数据模型
+/// 
+/// 此模型采用数据快照方式存储单词详细信息，包含以下快照字段：
+/// - category: 单词分类快照
+/// - partOfSpeech: 词性快照  
+/// - level: 等级快照
+/// 
+/// 这些快照字段在创建默写结果时从 Word 模型复制而来，确保：
+/// 1. 历史记录的独立性 - 即使原单词信息被修改，历史记录保持不变
+/// 2. 数据完整性 - 避免因单词删除导致的外键约束问题
+/// 3. 查询性能 - 减少多表关联查询的需要
+/// 
+/// 如果为 Word 模型添加新字段，请考虑是否需要在此处添加相应的快照字段。
 class DictationResult {
   final int? id;
   final String sessionId;
@@ -10,6 +23,10 @@ class DictationResult {
   final int wordIndex;
   final DateTime timestamp;
   final String? userNotes;
+  // Word detail fields for data snapshot approach - 单词详细信息快照字段
+  final String? category;
+  final String? partOfSpeech;
+  final String? level;
 
   const DictationResult({
     this.id,
@@ -23,6 +40,9 @@ class DictationResult {
     required this.wordIndex,
     required this.timestamp,
     this.userNotes,
+    this.category,
+    this.partOfSpeech,
+    this.level,
   });
 
   DictationResult copyWith({
@@ -37,6 +57,9 @@ class DictationResult {
     int? wordIndex,
     DateTime? timestamp,
     String? userNotes,
+    String? category,
+    String? partOfSpeech,
+    String? level,
   }) {
     return DictationResult(
       id: id ?? this.id,
@@ -50,6 +73,9 @@ class DictationResult {
       wordIndex: wordIndex ?? this.wordIndex,
       timestamp: timestamp ?? this.timestamp,
       userNotes: userNotes ?? this.userNotes,
+      category: category ?? this.category,
+      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+      level: level ?? this.level,
     );
   }
 
@@ -70,6 +96,9 @@ class DictationResult {
       'word_index': wordIndex,
       'timestamp': timestamp.millisecondsSinceEpoch,
       'user_notes': userNotes,
+      'category': category,
+      'part_of_speech': partOfSpeech,
+      'level': level,
     };
   }
 
@@ -86,6 +115,9 @@ class DictationResult {
       wordIndex: map['word_index']?.toInt() ?? 0,
       timestamp: DateTime.fromMillisecondsSinceEpoch(map['timestamp']),
       userNotes: map['user_notes'],
+      category: map['category'],
+      partOfSpeech: map['part_of_speech'],
+      level: map['level'],
     );
   }
 

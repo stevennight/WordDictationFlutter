@@ -1,3 +1,11 @@
+/// 单词数据模型
+/// 
+/// 注意：当单词被用于默写时，其详细信息（category、partOfSpeech、level等）
+/// 会被复制到 dictation_results 表中作为数据快照，以确保历史记录的独立性。
+/// 这意味着即使后续修改了单词表中的这些字段，历史默写记录仍会保持当时的数据状态。
+/// 
+/// 如果需要为单词表添加新字段，请考虑是否也需要在 DictationResult 模型中
+/// 添加相应的快照字段，以保持数据一致性。
 class Word {
   final int? id;
   final String prompt;  // 单词

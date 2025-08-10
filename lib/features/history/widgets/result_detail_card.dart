@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
-import '../../../core/services/word_service.dart';
 import '../../dictation/screens/copying_screen.dart';
 
 class ResultDetailCard extends StatefulWidget {
@@ -28,38 +27,13 @@ class ResultDetailCard extends StatefulWidget {
 }
 
 class _ResultDetailCardState extends State<ResultDetailCard> {
-  Word? _word;
-  bool _isLoadingWord = false;
+  // No longer need to load word details from database
+  // Word details are now stored directly in DictationResult
 
   @override
   void initState() {
     super.initState();
-    _loadWordDetails();
-  }
-
-  Future<void> _loadWordDetails() async {
-    if (widget.result.wordId <= 0) return;
-    
-    setState(() {
-      _isLoadingWord = true;
-    });
-    
-    try {
-      final wordService = WordService();
-      final word = await wordService.getWordById(widget.result.wordId);
-      if (mounted) {
-        setState(() {
-          _word = word;
-          _isLoadingWord = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingWord = false;
-        });
-      }
-    }
+    // No need to load word details anymore
   }
 
   @override
@@ -236,12 +210,12 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                     ),
                   ),
                   
-                  // 词性和等级信息
-                  if (_word != null && (_word!.partOfSpeech != null || _word!.level != null)) ...[
+                  // 词性和等级信息 - 直接从DictationResult获取
+                  if (widget.result.partOfSpeech != null || widget.result.level != null) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        if (_word!.partOfSpeech != null)
+                        if (widget.result.partOfSpeech != null)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
@@ -249,7 +223,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              _word!.partOfSpeech!,
+                              widget.result.partOfSpeech!,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context).colorScheme.onSecondaryContainer,
@@ -257,9 +231,9 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               ),
                             ),
                           ),
-                        if (_word!.partOfSpeech != null && _word!.level != null)
+                        if (widget.result.partOfSpeech != null && widget.result.level != null)
                           const SizedBox(width: 8),
-                        if (_word!.level != null)
+                        if (widget.result.level != null)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
@@ -267,7 +241,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              _word!.level!,
+                              widget.result.level!,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context).colorScheme.onTertiaryContainer,
@@ -617,10 +591,13 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
     try {
       final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
       
-      // Use the loaded word if available, otherwise create a basic word object
-      final word = _word ?? Word(
+      // Create a word object from the result data
+      final word = Word(
         prompt: widget.result.prompt,
         answer: widget.result.answer,
+        category: widget.result.category,
+        partOfSpeech: widget.result.partOfSpeech,
+        level: widget.result.level,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
