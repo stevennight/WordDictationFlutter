@@ -397,18 +397,13 @@ class HistorySyncService {
             await _dictationService.updateSession(sessionToUpdate);
             print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
             
-            // 如果更新后的会话未删除，更新结果和单词关联
-            if (!sessionToUpdate.deleted) {
-              // 更新结果（简单起见，删除旧结果后重新插入）
+            // 更新结果（简单起见，删除旧结果后重新插入）
               await _deleteSessionResults(sessionSync.sessionId);
               for (final resultData in sessionSync.results) {
                 final result = DictationResult.fromMap(resultData);
                 await _dictationService.saveResult(result);
                 importedResults++;
               }
-              
-              // Note: session_words operations removed as table no longer exists
-            }
           }
         }
       }
