@@ -422,10 +422,10 @@ class HistorySyncService {
         } else {
           // 有冲突，根据冲突解决方案处理
           print('[HistorySync] - 处理冲突: ${conflict.reason}');
+          DictationSession? sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
           
           switch (conflict.resolution) {
             case ConflictResolution.useRemote:
-              final sessionToUpdate = _conflictResolver.getSessionToApply(conflict);
               
               if (sessionToUpdate == null) {
                 // 需要删除本地会话（使用公共的软删除方法）
@@ -438,7 +438,7 @@ class HistorySyncService {
                 
                 // 如果会话被标记为删除，需要删除云端的笔迹文件
                 if (sessionToUpdate.deleted) {
-                  await _deleteCloudHandwritingFiles(conflict.localSession.sessionId, provider);
+                  await _deleteCloudHandwritingFilesFromResults(sessionSync.results, provider);
                 }
                 
                 // 更新结果（简单起见，删除旧结果后重新插入）
@@ -454,8 +454,8 @@ class HistorySyncService {
             case ConflictResolution.useLocal:
               print('[HistorySync] - 保留本地数据，跳过更新');
               // 如果本地会话被删除，也需要删除云端的笔迹文件
-              if (conflict.localSession.deleted) {
-                await _deleteCloudHandwritingFiles(conflict.localSession.sessionId, provider);
+              if (sessionToUpdate != null && sessionToUpdate.deleted) {
+                await _deleteCloudHandwritingFilesFromResults(sessionSync.results, provider);
               }
               break;
               
@@ -549,63 +549,43 @@ class HistorySyncService {
   }
   
   /// 删除云端笔迹文件
-  Future<void> _deleteCloudHandwritingFiles(String sessionId, [SyncProvider? provider]) async {
-    // todo::
-    // try {
-    //   print('[HistorySync] - 开始删除会话 $sessionId 的云端笔迹文件');
+  /// [objectKey] 要删除的对象键
+  /// [provider] 同步提供者，如果未提供则使用默认提供者
+  Future<void> _deleteCloudHandwritingFiles(String objectKey, [SyncProvider? provider]) async {
+    try {
+      final syncProvider = provider;
+      if (syncProvider == null) {
+        debugPrint('同步提供者未初始化，无法删除云端文件: $objectKey');
+        return;
+      }
       
-    //   // 获取会话的所有结果数据，收集笔迹文件信息
-    //   final results = await _dictationService.getSessionResults(sessionId);
-    //   final imageObjectKeys = <String>{};
+      // 使用对象存储同步提供者删除文件
+      final result = await syncProvider.deleteFileByPath(objectKey);
+      if (result.success) {
+        debugPrint('成功删除云端文件: $objectKey');
+      } else {
+        debugPrint('删除云端文件失败: $objectKey, ${result.message}');
+      }
+    } catch (e) {
+      debugPrint('删除云端文件异常: $objectKey, $e');
+    }
+  }
+
+  /// 从结果列表中删除云端笔迹文件
+  Future<void> _deleteCloudHandwritingFilesFromResults(List<Map<String, dynamic>> results, SyncProvider? provider) async {
+    for (final resultMap in results) {
+      // 删除原始图片文件
+      final originalPath = resultMap['original_image_path'] as String?;
+      if (originalPath != null && originalPath.isNotEmpty) {
+        await _deleteCloudHandwritingFiles(originalPath, provider);
+      }
       
-    //   for (final result in results) {
-    //     // 根据本地图片路径和MD5生成云端对象键
-    //     if (result.originalImagePath != null && result.originalImagePath!.isNotEmpty && 
-    //         result.originalImageMd5 != null && result.originalImageMd5!.isNotEmpty) {
-    //       final objectKey = FileHashUtils.generateCloudObjectKey(result.originalImagePath!, result.originalImageMd5!);
-    //       imageObjectKeys.add(objectKey);
-    //     }
-        
-    //     if (result.annotatedImagePath != null && result.annotatedImagePath!.isNotEmpty && 
-    //         result.annotatedImageMd5 != null && result.annotatedImageMd5!.isNotEmpty) {
-    //       final objectKey = FileHashUtils.generateCloudObjectKey(result.annotatedImagePath!, result.annotatedImageMd5!);
-    //       imageObjectKeys.add(objectKey);
-    //     }
-    //   }
-      
-    //   if (imageObjectKeys.isEmpty) {
-    //     print('[HistorySync] - 会话 $sessionId 没有关联的笔迹文件');
-    //     return;
-    //   }
-      
-    //   print('[HistorySync] - 找到 ${imageObjectKeys.length} 个笔迹文件需要删除');
-      
-    //   // 如果提供了同步提供商，删除云端文件
-    //   if (provider != null) {
-    //     int deletedCount = 0;
-    //     for (final objectKey in imageObjectKeys) {
-    //       try {
-    //         // 使用提供商的公共方法删除对象
-    //         final deleteResult = await provider.deleteObjectByKey(objectKey);
-    //         if (deleteResult.success) {
-    //           deletedCount++;
-    //           print('[HistorySync] - 删除云端笔迹文件成功: $objectKey');
-    //         } else {
-    //           print('[HistorySync] - 删除云端笔迹文件失败: $objectKey, ${deleteResult.message}');
-    //         }
-    //       } catch (e) {
-    //         print('[HistorySync] - 删除云端笔迹文件异常: $objectKey, $e');
-    //       }
-    //     }
-        
-    //     print('[HistorySync] - 云端笔迹文件删除完成，成功删除 $deletedCount/${imageObjectKeys.length} 个文件');
-    //   } else {
-    //     print('[HistorySync] - 当前同步提供商不支持删除云端文件');
-    //   }
-    // } catch (e) {
-    //   print('[HistorySync] - 删除云端笔迹文件时发生异常: $e');
-    //   // 不抛出异常，允许同步操作继续进行
-    // }
+      // 删除标注图片文件
+      final annotatedPath = resultMap['annotated_image_path'] as String?;
+      if (annotatedPath != null && annotatedPath.isNotEmpty) {
+        await _deleteCloudHandwritingFiles(annotatedPath, provider);
+      }
+    }
   }
   
   /// 获取导航器上下文

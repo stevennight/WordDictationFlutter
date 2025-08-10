@@ -935,8 +935,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
     }
   }
 
-  /// 通过对象键直接删除文件
-  Future<SyncResult> deleteObjectByKey(String objectKey) async {
+  @override
+  Future<SyncResult> deleteFileByPath(String objectKey) async {
     try {
       // 如果是相对路径，转换为完整路径
       final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 

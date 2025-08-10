@@ -1,9 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import '../../shared/models/wordbook.dart';
-import '../../shared/models/word.dart';
-import '../../shared/models/unit.dart';
-import '../../shared/providers/history_provider.dart';
 import 'local_config_service.dart';
 import 'json_data_service.dart';
 import 'import_data_service.dart';
@@ -131,6 +127,10 @@ abstract class SyncProvider {
 
   /// 通过对象键直接下载图片文件
   Future<SyncResult> downloadImageByObjectKey(String objectKey);
+
+  /// 根据相对路径删除指定文件
+  /// [relativePath] 不包含目录前缀的相对路径
+  Future<SyncResult> deleteFileByPath(String relativePath);
 }
 
 /// 同步服务主类

@@ -1,7 +1,5 @@
-import '../database/database_helper.dart';
 import '../../shared/models/dictation_session.dart';
 import 'dictation_service.dart';
-import 'sync_service.dart';
 import 'history_sync_service.dart';
 
 /// 会话冲突处理结果
@@ -308,7 +306,7 @@ class SessionConflictResolver {
       case ConflictResolution.useLocal:
         return conflict.localSession;
       case ConflictResolution.requireUserChoice:
-        // 正常应该前置解决，不应该有这项
+        // 正常不应该有这项
         throw Exception("未处理的用户选择冲突");
     }
   }
