@@ -786,7 +786,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
       }
       
       updatedData['sessions'] = updatedSessions;
-      updatedData['uploaded_images'] = uploadedImages;
       
       // 上传更新后的JSON数据
       final objectKey = _getObjectKey(SyncDataType.history);
