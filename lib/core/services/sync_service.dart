@@ -131,6 +131,49 @@ abstract class SyncProvider {
   /// 根据相对路径删除指定文件
   /// [relativePath] 不包含目录前缀的相对路径
   Future<SyncResult> deleteFileByPath(String relativePath);
+
+  // ========== 纯文件存储操作方法 ==========
+  
+  /// 上传文件到指定路径
+  /// [filePath] 本地文件路径
+  /// [remotePath] 远程存储路径
+  /// [onProgress] 上传进度回调
+  Future<SyncResult> uploadFile(String filePath, String remotePath, {void Function(int current, int total)? onProgress});
+
+  /// 从指定路径下载文件
+  /// [remotePath] 远程存储路径
+  /// [localPath] 本地保存路径
+  /// [onProgress] 下载进度回调
+  Future<SyncResult> downloadFile(String remotePath, String localPath, {void Function(int current, int total)? onProgress});
+
+  /// 删除指定路径的文件
+  /// [remotePath] 远程存储路径
+  Future<SyncResult> deleteFile(String remotePath);
+
+  /// 上传字节数据到指定路径
+  /// [data] 要上传的字节数据
+  /// [remotePath] 远程存储路径
+  /// [contentType] 内容类型，如 'application/json', 'image/png' 等
+  /// [onProgress] 上传进度回调
+  Future<SyncResult> uploadBytes(List<int> data, String remotePath, {String? contentType, void Function(int current, int total)? onProgress});
+
+  /// 从指定路径下载字节数据
+  /// [remotePath] 远程存储路径
+  /// [onProgress] 下载进度回调
+  Future<SyncResult> downloadBytes(String remotePath, {void Function(int current, int total)? onProgress});
+
+  /// 检查文件是否存在
+  /// [remotePath] 远程存储路径
+  Future<SyncResult> fileExists(String remotePath);
+
+  /// 获取文件信息（大小、修改时间等）
+  /// [remotePath] 远程存储路径
+  Future<SyncResult> getFileInfo(String remotePath);
+
+  /// 列出指定目录下的文件
+  /// [remotePath] 远程目录路径
+  /// [recursive] 是否递归列出子目录
+  Future<SyncResult> listFiles(String remotePath, {bool recursive = false});
 }
 
 /// 同步服务主类

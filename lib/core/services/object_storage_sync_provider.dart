@@ -318,16 +318,27 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   // 内部HTTP请求方法
-  Future<SyncResult> _putObject(String objectKey, List<int> data) async {
+  Future<SyncResult> _putObject(String objectKey, List<int> data, {String? contentType, void Function(int current, int total)? onProgress}) async {
     try {
       final url = _buildObjectUrl(objectKey);
       final headers = await _buildHeaders('PUT', objectKey, data);
+      
+      // 如果指定了内容类型，添加到headers中
+      if (contentType != null) {
+        headers['Content-Type'] = contentType;
+      }
+      
+      // 如果有进度回调，先调用开始状态
+      onProgress?.call(0, data.length);
       
       final response = await http.put(
         Uri.parse(url),
         headers: headers,
         body: data,
       );
+      
+      // 上传完成后调用进度回调
+      onProgress?.call(data.length, data.length);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return SyncResult.success();
@@ -341,7 +352,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
     }
   }
 
-  Future<SyncResult> _getObject(String objectKey) async {
+  Future<SyncResult> _getObject(String objectKey, {void Function(int current, int total)? onProgress}) async {
     try {
       final url = _buildObjectUrl(objectKey);
       final headers = await _buildHeaders('GET', objectKey);
@@ -357,10 +368,16 @@ class ObjectStorageSyncProvider extends SyncProvider {
           return SyncResult.failure('服务器返回空响应');
         }
         
+        // 如果有进度回调，调用完成状态
+        final bytes = response.bodyBytes;
+        onProgress?.call(bytes.length, bytes.length);
+        
         return SyncResult.success(data: {
-          'content': response.bodyBytes,
+          'data': bytes, // 使用 'data' 字段名以与新方法保持一致
+          'content': bytes, // 保留原有字段名以兼容现有代码
           'contentType': response.headers['content-type'],
           'lastModified': response.headers['last-modified'],
+          'size': bytes.length,
         });
       } else if (response.statusCode == 404) {
         return SyncResult.failure('文件不存在');
@@ -1059,6 +1076,215 @@ class ObjectStorageSyncProvider extends SyncProvider {
     } catch (e) {
       _logDebug('删除关联图片文件时发生异常: $e');
       // 不抛出异常，允许继续删除历史记录数据
+    }
+  }
+
+  // ========== 纯文件存储操作方法实现 ==========
+
+  @override
+  Future<SyncResult> uploadFile(String filePath, String remotePath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return SyncResult.failure('本地文件不存在: $filePath');
+      }
+
+      final bytes = await file.readAsBytes();
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('上传文件: $filePath -> $objectKey');
+      
+      final result = await _putObject(objectKey, bytes, onProgress: onProgress);
+      if (result.success) {
+        _logDebug('文件上传成功: $objectKey');
+        return SyncResult.success(message: '文件上传成功', data: {'objectKey': objectKey, 'size': bytes.length});
+      } else {
+        return SyncResult.failure('文件上传失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('上传文件异常: $e');
+      return SyncResult.failure('上传文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> downloadFile(String remotePath, String localPath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('下载文件: $objectKey -> $localPath');
+      
+      final result = await _getObject(objectKey, onProgress: onProgress);
+      if (result.success && result.data != null) {
+        final bytes = result.data!['data'] as List<int>;
+        
+        // 确保目录存在
+        final file = File(localPath);
+        await file.parent.create(recursive: true);
+        
+        await file.writeAsBytes(bytes);
+        
+        _logDebug('文件下载成功: $localPath');
+        return SyncResult.success(message: '文件下载成功', data: {'localPath': localPath, 'size': bytes.length});
+      } else {
+        return SyncResult.failure('文件下载失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('下载文件异常: $e');
+      return SyncResult.failure('下载文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> deleteFile(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('删除文件: $objectKey');
+      
+      final result = await _deleteObject(objectKey);
+      if (result.success) {
+        _logDebug('文件删除成功: $objectKey');
+        return SyncResult.success(message: '文件删除成功', data: {'objectKey': objectKey});
+      } else {
+        return SyncResult.failure('文件删除失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('删除文件异常: $e');
+      return SyncResult.failure('删除文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> uploadBytes(List<int> data, String remotePath, {String? contentType, void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('上传字节数据: $objectKey (${data.length} bytes)');
+      
+      final result = await _putObject(objectKey, data, contentType: contentType, onProgress: onProgress);
+      if (result.success) {
+        _logDebug('字节数据上传成功: $objectKey');
+        return SyncResult.success(message: '数据上传成功', data: {'objectKey': objectKey, 'size': data.length});
+      } else {
+        return SyncResult.failure('数据上传失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('上传字节数据异常: $e');
+      return SyncResult.failure('上传数据失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> downloadBytes(String remotePath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('下载字节数据: $objectKey');
+      
+      final result = await _getObject(objectKey, onProgress: onProgress);
+      if (result.success && result.data != null) {
+        final bytes = result.data!['data'] as List<int>;
+        
+        _logDebug('字节数据下载成功: $objectKey (${bytes.length} bytes)');
+        return SyncResult.success(message: '数据下载成功', data: {'data': bytes, 'size': bytes.length});
+      } else {
+        return SyncResult.failure('数据下载失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('下载字节数据异常: $e');
+      return SyncResult.failure('下载数据失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> fileExists(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('检查文件是否存在: $objectKey');
+      
+      final result = await _headObject(objectKey);
+      if (result.success) {
+        _logDebug('文件存在: $objectKey');
+        return SyncResult.success(message: '文件存在', data: {'exists': true, 'objectKey': objectKey});
+      } else {
+        _logDebug('文件不存在: $objectKey');
+        return SyncResult.success(message: '文件不存在', data: {'exists': false, 'objectKey': objectKey});
+      }
+    } catch (e) {
+      _logDebug('检查文件存在异常: $e');
+      return SyncResult.failure('检查文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> getFileInfo(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('获取文件信息: $objectKey');
+      
+      final result = await _headObject(objectKey);
+      if (result.success && result.data != null) {
+        _logDebug('获取文件信息成功: $objectKey');
+        return SyncResult.success(message: '获取文件信息成功', data: result.data);
+      } else {
+        return SyncResult.failure('获取文件信息失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('获取文件信息异常: $e');
+      return SyncResult.failure('获取文件信息失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> listFiles(String remotePath, {bool recursive = false}) async {
+    try {
+      final prefix = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('列出文件: $prefix (recursive: $recursive)');
+      
+      final result = await _listObjects(prefix: prefix);
+      if (result.success && result.data != null) {
+        final objects = result.data!['objects'] as List<Map<String, dynamic>>;
+        
+        // 过滤文件：如果不是递归模式，只返回直接子文件
+        List<Map<String, dynamic>> filteredObjects = objects;
+        if (!recursive) {
+          filteredObjects = objects.where((obj) {
+            final key = obj['key'] as String;
+            final relativePath = key.startsWith('${_storageConfig.pathPrefix}/') 
+                ? key.substring('${_storageConfig.pathPrefix}/'.length)
+                : key;
+            // 检查是否为直接子文件（不包含额外的斜杠）
+            final pathAfterRemote = relativePath.startsWith('$remotePath/') 
+                ? relativePath.substring('$remotePath/'.length)
+                : relativePath;
+            return !pathAfterRemote.contains('/');
+          }).toList();
+        }
+        
+        // 移除路径前缀，返回相对路径
+        final files = filteredObjects.map((obj) {
+          final key = obj['key'] as String;
+          final relativePath = key.startsWith('${_storageConfig.pathPrefix}/') 
+              ? key.substring('${_storageConfig.pathPrefix}/'.length)
+              : key;
+          return {
+            ...obj,
+            'relativePath': relativePath,
+          };
+        }).toList();
+        
+        _logDebug('列出文件成功: ${files.length} 个文件');
+        return SyncResult.success(message: '列出文件成功', data: {'files': files});
+      } else {
+        return SyncResult.failure('列出文件失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('列出文件异常: $e');
+      return SyncResult.failure('列出文件失败: $e');
     }
   }
 }
