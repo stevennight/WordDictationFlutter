@@ -4,8 +4,10 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
+import 'package:provider/provider.dart';
 import 'sync_service.dart';
 import 'history_deletion_service.dart';
+import 'wordbook_sync_service.dart';
 import '../utils/file_hash_utils.dart';
 import '../../shared/utils/path_utils.dart';
 
@@ -168,43 +170,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     } catch (e) {
       _logDebug('连接测试异常: $e');
       return SyncResult.failure('连接测试失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress,) async {
-    try {
-      _logDebug('开始上传数据，类型: $dataType');
-      
-      final objectKey = _getObjectKey(dataType);
-      final latestKey = _getLatestObjectKey(dataType);
-      final jsonData = jsonEncode(data);
-      final bytes = utf8.encode(jsonData);
-      
-      _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
-
-      // 上传带时间戳的文件
-      final uploadResult = await _putObject(objectKey, bytes);
-      if (!uploadResult.success) {
-        _logDebug('上传主文件失败: ${uploadResult.message}');
-        return uploadResult;
-      }
-
-      // 同时上传latest文件作为最新版本的快速访问
-      final latestResult = await _putObject(latestKey, bytes);
-      if (!latestResult.success) {
-        _logDebug('上传latest文件失败: ${latestResult.message}');
-        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
-      }
-      
-      _logDebug('数据上传成功');
-      return SyncResult.success(
-        message: '数据上传成功',
-        data: {'objectKey': objectKey, 'latestKey': latestKey},
-      );
-    } catch (e) {
-      _logDebug('上传数据异常: $e');
-      return SyncResult.failure('上传数据失败: $e');
     }
   }
 
@@ -1040,5 +1005,10 @@ class ObjectStorageSyncProvider extends SyncProvider {
       _logDebug('列出文件异常: $e');
       return SyncResult.failure('列出文件失败: $e');
     }
+  }
+
+  @override
+  Future<String> getPathPrefix() async {
+    return '${_storageConfig.pathPrefix}/';
   }
 }

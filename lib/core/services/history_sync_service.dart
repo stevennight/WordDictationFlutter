@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_word_dictation/core/services/wordbook_sync_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
@@ -596,7 +597,11 @@ class HistorySyncService {
       onProgress?.call('正在上传合并后的数据到云端...');
       print('[HistorySyncService] 第四步：上传合并后的数据到远端');
       final mergedHistoryData = await exportHistoryData();
-      final uploadResult = await provider.uploadData(SyncDataType.history, mergedHistoryData, onProgress);
+      final wordbookSync = WordbookSyncService.instance;
+
+      // todo::专属方法。
+      final uploadResult = await uploadData(provider, SyncDataType.history, mergedHistoryData, onProgress);
+
       
       if (uploadResult.success) {
         // 更新最后同步时间
@@ -691,7 +696,7 @@ class HistorySyncService {
   }
   
   /// 上传数据方法（从 ObjectStorageSyncProvider 移动过来）
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress, SyncProvider provider) async {
+  Future<SyncResult> uploadData(SyncProvider provider, SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       print('[HistorySync] 开始上传数据，类型: $dataType');
       
@@ -706,7 +711,37 @@ class HistorySyncService {
       }
 
       // 对于其他数据类型，委托给 provider 处理
-      return await provider.uploadData(dataType, data, onProgress);
+      _logDebug('开始上传数据，类型: $dataType');
+      
+      final pathPrefix = await provider.getPathPrefix();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final dataTypeName = dataType.toString().split('.').last;
+      final objectKey = "$pathPrefix$dataTypeName-$timestamp.json";
+      final latestKey = "$pathPrefix$dataTypeName-latest.json";
+      final jsonData = jsonEncode(data);
+      final bytes = utf8.encode(jsonData);
+      
+      _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
+
+      // 上传带时间戳的文件
+      final uploadResult = await provider.uploadBytes(bytes, objectKey);
+      if (!uploadResult.success) {
+        _logDebug('上传主文件失败: ${uploadResult.message}');
+        return uploadResult;
+      }
+
+      // 同时上传latest文件作为最新版本的快速访问
+      final latestResult = await provider.uploadBytes(bytes, latestKey);
+      if (!latestResult.success) {
+        _logDebug('上传latest文件失败: ${latestResult.message}');
+        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
+      }
+      
+      _logDebug('数据上传成功');
+      return SyncResult.success(
+        message: '数据上传成功',
+        data: {'objectKey': objectKey, 'latestKey': latestKey},
+      );
     } catch (e) {
       print('[HistorySync] 上传数据异常: $e');
       return SyncResult.failure('上传数据失败: $e');
@@ -803,7 +838,8 @@ class HistorySyncService {
       updatedData['sessions'] = updatedSessions;
       
       // 使用 provider 上传 JSON 数据
-      return await provider.uploadData(SyncDataType.history, updatedData, onProgress);
+      return await uploadData(provider, SyncDataType.history, updatedData, onProgress);
+
     } catch (e) {
       print('[HistorySync] 上传历史记录数据异常: $e');
       return SyncResult.failure('上传历史记录数据失败: $e');
@@ -896,6 +932,11 @@ class HistorySyncService {
       print('[HistorySync] 上传图片异常: $imagePath, 错误: $e');
       return null;
     }
+  }
+
+  /// 日志输出
+  void _logDebug(String message) {
+    print('[historySync] $message');
   }
 
   /// 获取导航器上下文

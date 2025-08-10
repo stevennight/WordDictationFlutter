@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/sync_service.dart';
 import '../../core/services/history_sync_service.dart';
+import '../../core/services/wordbook_sync_service.dart';
 import '../../shared/providers/history_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
@@ -291,7 +292,8 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         SyncResult result;
         
         if (action['type'] == 'wordbooks') {
-          result = await _syncService.syncWordbooks(
+          final wordbookSyncService = WordbookSyncService();
+          result = await wordbookSyncService.syncWordbooks(
             config.id,
             upload: action['action'] == 'upload',
           );
