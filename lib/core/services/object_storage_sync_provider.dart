@@ -666,8 +666,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
         
         for (final result in results) {
           final resultMap = result as Map<String, dynamic>;
-
-          if (resultMap['deleted'] == 1) {
+          
+          if (sessionMap['sessionData']['deleted'] == 1) {
             continue;
           }
 
