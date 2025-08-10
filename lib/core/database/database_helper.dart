@@ -41,7 +41,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -128,6 +128,8 @@ class DatabaseHelper {
         is_correct INTEGER NOT NULL,
         original_image_path TEXT,
         annotated_image_path TEXT,
+        original_image_md5 TEXT,
+        annotated_image_md5 TEXT,
         word_index INTEGER NOT NULL,
         timestamp INTEGER NOT NULL,
         user_notes TEXT,
@@ -399,6 +401,12 @@ class DatabaseHelper {
       
       // Drop session_words table as it's no longer needed
       await db.execute('DROP TABLE IF EXISTS session_words');
+    }
+    
+    if (oldVersion < 10 && newVersion >= 10) {
+      // Add MD5 hash fields for image files
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN original_image_md5 TEXT');
+      await db.execute('ALTER TABLE dictation_results ADD COLUMN annotated_image_md5 TEXT');
     }
   }
 

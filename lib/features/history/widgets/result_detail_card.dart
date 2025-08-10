@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import '../../../shared/utils/path_utils.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
@@ -418,28 +417,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
   /// 根据路径获取图片文件，支持相对路径和绝对路径
   Future<File?> _getImageFile(String imagePath) async {
     try {
-      // 如果是绝对路径，直接使用
-      if (path.isAbsolute(imagePath)) {
-        return File(imagePath);
-      }
-      
-      // 如果是相对路径，转换为绝对路径
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final appDocDir = await getApplicationDocumentsDirectory();
-        appDir = appDocDir.path;
-      }
-      
-      // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-      final pathSegments = imagePath.split('/');
-      final absolutePath = path.joinAll([appDir, ...pathSegments]);
+      final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
       return File(absolutePath);
     } catch (e) {
       debugPrint('获取图片文件失败: $e');

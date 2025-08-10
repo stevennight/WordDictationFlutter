@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'sync_service.dart';
 import 'history_deletion_service.dart';
+import '../utils/file_hash_utils.dart';
+import '../../shared/utils/path_utils.dart';
 
 /// 对象存储类型
 enum ObjectStorageType {
@@ -678,12 +680,14 @@ class ObjectStorageSyncProvider extends SyncProvider {
       
       _logDebug('找到 ${imagesToUpload.length} 个图片文件需要上传');
       
-      // 上传图片文件（基于哈希值去重）
+      // 上传图片文件（基于MD5哈希值去重和改进的命名规则）
       final uploadedImages = <String, String>{}; // 原路径 -> 对象键
       final imageHashCache = <String, String>{}; // 哈希值 -> 对象键
       
       for (final imagePath in imagesToUpload) {
-        final imageFile = File(imagePath);
+        // 将相对路径转换为绝对路径
+        final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
+        final imageFile = File(absolutePath);
         
         if (!await imageFile.exists()) {
           _logDebug('图片文件不存在，跳过: $imagePath');
@@ -691,10 +695,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
         }
         
         try {
-          final imageBytes = await imageFile.readAsBytes();
-          
-          // 计算文件哈希值
-          final hash = sha256.convert(imageBytes).toString();
+          // 使用MD5计算文件哈希值
+          final hash = await FileHashUtils.calculateFileMd5Async(imageFile);
           
           // 检查是否已经上传过相同哈希的文件
           if (imageHashCache.containsKey(hash)) {
@@ -704,11 +706,9 @@ class ObjectStorageSyncProvider extends SyncProvider {
             continue;
           }
           
-          // 使用哈希值作为对象键的一部分
-          final fileName = path.basename(imagePath);
-          final extension = path.extension(fileName);
-          final relativeObjectKey = _getImageObjectKey(hash, extension);
-          final fullObjectKey = _getFullImageObjectKey(hash, extension);
+          // 使用改进的命名规则：原始文件名 + MD5前缀
+          final relativeObjectKey = FileHashUtils.generateCloudObjectKey(imagePath, hash);
+          final fullObjectKey = '${_storageConfig.pathPrefix}/$relativeObjectKey';
           
           // 检查远端是否已存在该对象键
           final existsResult = await _checkObjectExists(fullObjectKey);
@@ -719,6 +719,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
             continue;
           }
           
+          // 读取文件字节用于上传
+          final imageBytes = await imageFile.readAsBytes();
           _logDebug('上传图片: $imagePath -> $relativeObjectKey (${imageBytes.length} bytes)');
           
           final uploadResult = await _putObject(fullObjectKey, imageBytes);
@@ -750,15 +752,23 @@ class ObjectStorageSyncProvider extends SyncProvider {
         for (final result in results) {
           final resultMap = Map<String, dynamic>.from(result as Map<String, dynamic>);
           
-          // 更新图片路径为对象键
+          // 更新图片路径为对象键，并添加MD5信息
           final originalPath = resultMap['original_image_path'] as String?;
           final annotatedPath = resultMap['annotated_image_path'] as String?;
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
           
           if (originalPath != null && uploadedImages.containsKey(originalPath)) {
             resultMap['original_image_object_key'] = uploadedImages[originalPath];
+            if (originalMd5 != null) {
+              resultMap['original_image_md5'] = originalMd5;
+            }
           }
           if (annotatedPath != null && uploadedImages.containsKey(annotatedPath)) {
             resultMap['annotated_image_object_key'] = uploadedImages[annotatedPath];
+            if (annotatedMd5 != null) {
+              resultMap['annotated_image_md5'] = annotatedMd5;
+            }
           }
           
           updatedResults.add(resultMap);
@@ -915,6 +925,30 @@ class ObjectStorageSyncProvider extends SyncProvider {
       );
     } catch (e) {
       return SyncResult.failure('下载图片数据失败: $e');
+    }
+  }
+
+  /// 通过对象键直接删除文件
+  Future<SyncResult> deleteObjectByKey(String objectKey) async {
+    try {
+      // 如果是相对路径，转换为完整路径
+      final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
+          ? objectKey 
+          : '${_storageConfig.pathPrefix}/$objectKey';
+      
+      _logDebug('开始删除对象: $objectKey -> $fullObjectKey');
+      
+      final result = await _deleteObject(fullObjectKey);
+      if (result.success) {
+        _logDebug('删除对象成功: $objectKey');
+        return SyncResult.success(message: '删除对象成功');
+      } else {
+        _logDebug('删除对象失败: $objectKey, ${result.message}');
+        return SyncResult.failure('删除对象失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('删除对象异常: $objectKey, $e');
+      return SyncResult.failure('删除对象失败: $e');
     }
   }
 

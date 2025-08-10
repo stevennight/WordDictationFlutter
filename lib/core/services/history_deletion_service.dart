@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import '../../shared/utils/path_utils.dart';
 
 import '../database/database_helper.dart';
 import '../../shared/models/dictation_session.dart';
@@ -404,27 +403,9 @@ class HistoryDeletionService {
       try {
         File imageFile;
         
-        // 如果是绝对路径，直接使用
-        if (path.isAbsolute(imagePath)) {
-          imageFile = File(imagePath);
-        } else {
-          // 如果是相对路径，转换为绝对路径
-          String appDir;
-          if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-            // Get executable directory for desktop platforms
-            final executablePath = Platform.resolvedExecutable;
-            appDir = path.dirname(executablePath);
-          } else {
-            // Fallback to documents directory for mobile platforms
-            final appDocDir = await getApplicationDocumentsDirectory();
-            appDir = appDocDir.path;
-          }
-          
-          // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-          final pathSegments = imagePath.split('/');
-          final absolutePath = path.joinAll([appDir, ...pathSegments]);
-          imageFile = File(absolutePath);
-        }
+        // 使用公共路径工具类处理路径
+        final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
+        imageFile = File(absolutePath);
         
         if (await imageFile.exists()) {
           await imageFile.delete();

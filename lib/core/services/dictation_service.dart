@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../shared/models/dictation_session.dart';
@@ -59,6 +60,9 @@ class DictationService {
   Future<int> saveResult(DictationResult result) async {
     final db = await _dbHelper.database;
     
+    // 调试信息：检查传入的MD5值
+    debugPrint('DictationService.saveResult: wordIndex=${result.wordIndex}, originalMd5=${result.originalImageMd5}, annotatedMd5=${result.annotatedImageMd5}');
+    
     try {
       // 先检查是否已存在相同的记录（基于session_id和word_index）
       final existing = await db.query(
@@ -71,16 +75,19 @@ class DictationService {
         // 如果已存在，更新记录而不是插入新记录
         final existingId = existing.first['id'] as int;
         final updatedResult = result.copyWith(id: existingId);
+        final resultMap = updatedResult.toMap();
+        debugPrint('更新数据库记录: id=$existingId, originalMd5=${resultMap['original_image_md5']}, annotatedMd5=${resultMap['annotated_image_md5']}');
         await db.update(
           'dictation_results',
-          updatedResult.toMap(),
+          resultMap,
           where: 'id = ?',
           whereArgs: [existingId],
         );
         return existingId;
       } else {
         // 如果不存在，插入新记录
-        return await db.insert('dictation_results', result.toMap());
+        final resultMap = result.toMap();
+        return await db.insert('dictation_results', resultMap);
       }
     } catch (e) {
       // 如果仍然出现唯一性冲突，使用INSERT OR REPLACE

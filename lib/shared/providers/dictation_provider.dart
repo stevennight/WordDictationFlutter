@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
 import '../models/word.dart';
@@ -6,6 +9,7 @@ import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
 import '../../core/services/dictation_service.dart';
 import '../../core/services/word_service.dart';
+import '../../core/utils/file_hash_utils.dart';
 
 enum DictationState {
   idle,
@@ -36,6 +40,10 @@ class DictationProvider extends ChangeNotifier {
   String? _originalImagePath;
   String? _annotatedImagePath;
   bool _isAnnotationMode = false;
+  
+  // Cached MD5 values to avoid recalculation
+  String? _originalImageMd5;
+  String? _annotatedImageMd5;
   
   // Getters
   DictationState get state => _state;
@@ -213,13 +221,57 @@ class DictationProvider extends ChangeNotifier {
     }
   }
   
-  void setOriginalImagePath(String? path) {
+  Future<void> setOriginalImagePath(String? path) async {
     _originalImagePath = path;
+    
+    // 立即计算MD5值并缓存，避免后续文件变化导致的问题
+    if (path != null && path.isNotEmpty) {
+      try {
+        // 将相对路径转换为绝对路径
+        final absolutePath = await _convertToAbsolutePath(path);
+        final file = File(absolutePath);
+        if (await file.exists()) {
+          _originalImageMd5 = await FileHashUtils.calculateFileMd5Async(file);
+          debugPrint('原始图片MD5已计算并缓存: $_originalImageMd5 (路径: $absolutePath)');
+        } else {
+          _originalImageMd5 = null;
+          debugPrint('原始图片文件不存在，无法计算MD5: $absolutePath (相对路径: $path)');
+        }
+      } catch (e) {
+        _originalImageMd5 = null;
+        debugPrint('计算原始图片MD5失败: $e');
+      }
+    } else {
+      _originalImageMd5 = null;
+    }
+    
     notifyListeners();
   }
   
-  void setAnnotatedImagePath(String? path) {
+  Future<void> setAnnotatedImagePath(String? path) async {
     _annotatedImagePath = path;
+    
+    // 立即计算MD5值并缓存，避免后续文件变化导致的问题
+    if (path != null && path.isNotEmpty) {
+      try {
+        // 将相对路径转换为绝对路径
+        final absolutePath = await _convertToAbsolutePath(path);
+        final file = File(absolutePath);
+        if (await file.exists()) {
+          _annotatedImageMd5 = await FileHashUtils.calculateFileMd5Async(file);
+          debugPrint('批改图片MD5已计算并缓存: $_annotatedImageMd5 (路径: $absolutePath)');
+        } else {
+          _annotatedImageMd5 = null;
+          debugPrint('批改图片文件不存在，无法计算MD5: $absolutePath (相对路径: $path)');
+        }
+      } catch (e) {
+        _annotatedImageMd5 = null;
+        debugPrint('计算批改图片MD5失败: $e');
+      }
+    } else {
+      _annotatedImageMd5 = null;
+    }
+    
     notifyListeners();
   }
   
@@ -232,6 +284,38 @@ class DictationProvider extends ChangeNotifier {
     if (_currentWord == null || _currentSession == null) return;
     
     try {
+      // 使用缓存的MD5值，避免重复计算
+      // 如果缓存值不存在，则尝试重新计算（兜底逻辑）
+      String? originalImageMd5 = _originalImageMd5;
+      String? annotatedImageMd5 = _annotatedImageMd5;
+      
+      // 兜底逻辑：如果缓存的MD5为空但文件路径存在，尝试重新计算
+      if (originalImageMd5 == null && _originalImagePath != null && _originalImagePath!.isNotEmpty) {
+        try {
+          final absolutePath = await _convertToAbsolutePath(_originalImagePath!);
+          final originalFile = File(absolutePath);
+          if (await originalFile.exists()) {
+            originalImageMd5 = await FileHashUtils.calculateFileMd5Async(originalFile);
+            debugPrint('原始图片MD5兜底计算: $originalImageMd5');
+          }
+        } catch (e) {
+          debugPrint('兜底计算原始图片MD5失败: $e');
+        }
+      }
+      
+      if (annotatedImageMd5 == null && _annotatedImagePath != null && _annotatedImagePath!.isNotEmpty) {
+        try {
+          final absolutePath = await _convertToAbsolutePath(_annotatedImagePath!);
+          final annotatedFile = File(absolutePath);
+          if (await annotatedFile.exists()) {
+            annotatedImageMd5 = await FileHashUtils.calculateFileMd5Async(annotatedFile);
+            debugPrint('批改图片MD5兜底计算: $annotatedImageMd5');
+          }
+        } catch (e) {
+          debugPrint('兜底计算批改图片MD5失败: $e');
+        }
+      }
+      
       final result = DictationResult(
         sessionId: _currentSession!.sessionId,
         wordId: _currentWord!.id!,
@@ -240,6 +324,8 @@ class DictationProvider extends ChangeNotifier {
         isCorrect: isCorrect,
         originalImagePath: _originalImagePath,
         annotatedImagePath: _annotatedImagePath,
+        originalImageMd5: originalImageMd5,
+        annotatedImageMd5: annotatedImageMd5,
         wordIndex: _currentSession!.currentWordIndex,
         timestamp: DateTime.now(),
         // Store word details as snapshot to avoid foreign key issues
@@ -400,6 +486,11 @@ class DictationProvider extends ChangeNotifier {
     _annotatedImagePath = null;
     _isAnnotationMode = false;
     _errorMessage = null;
+    
+    // 清理缓存的MD5值
+    _originalImageMd5 = null;
+    _annotatedImageMd5 = null;
+    
     _setState(DictationState.idle);
   }
   
@@ -476,6 +567,13 @@ class DictationProvider extends ChangeNotifier {
   void clearCanvas() {
     // This method will be called to clear the handwriting canvas
     // The actual canvas clearing will be handled by the canvas widget
+    
+    // 清理图片路径和缓存的MD5值
+    _originalImagePath = null;
+    _annotatedImagePath = null;
+    _originalImageMd5 = null;
+    _annotatedImageMd5 = null;
+    
     notifyListeners();
   }
 
@@ -526,5 +624,40 @@ class DictationProvider extends ChangeNotifier {
       correctCount: correctCount,
       incorrectCount: incorrectCount,
     );
+  }
+
+  /// 将相对路径转换为绝对路径
+  /// 处理数据库中存储的正斜杠路径，转换为系统适配的绝对路径
+  Future<String> _convertToAbsolutePath(String relativePath) async {
+    try {
+      // 如果已经是绝对路径，直接返回
+      if (path.isAbsolute(relativePath)) {
+        return relativePath;
+      }
+      
+      // For desktop platforms, use executable directory
+      // For mobile platforms, fallback to documents directory
+      String appDir;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        // Get executable directory for desktop platforms
+        final executablePath = Platform.resolvedExecutable;
+        appDir = path.dirname(executablePath);
+      } else {
+        // Fallback to documents directory for mobile platforms
+        final appDocDir = await getApplicationDocumentsDirectory();
+        appDir = appDocDir.path;
+      }
+      
+      // 将数据库中的正斜杠路径转换为系统路径分隔符
+      // 使用path.joinAll来处理路径片段，确保使用正确的系统分隔符
+      final pathSegments = relativePath.split('/');
+      final absolutePath = path.joinAll([appDir, ...pathSegments]);
+      debugPrint('Path conversion: $relativePath -> $absolutePath (appDir: $appDir)');
+      return absolutePath;
+    } catch (e) {
+      debugPrint('转换绝对路径失败: $e');
+      // 如果转换失败，返回原路径
+      return relativePath;
+    }
   }
 }

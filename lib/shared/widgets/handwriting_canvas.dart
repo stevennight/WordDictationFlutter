@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import '../utils/path_utils.dart';
 import '../enums/pen_mode.dart';
 
 enum DrawingMode {
@@ -91,26 +93,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       // 处理相对路径和绝对路径
       String imagePath = widget.backgroundImagePath!;
       
-      // 如果是相对路径，转换为绝对路径
-      if (!path.isAbsolute(imagePath)) {
-        // For desktop platforms, use executable directory
-        // For mobile platforms, fallback to documents directory
-        String appDir;
-        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-          // Get executable directory for desktop platforms
-          final executablePath = Platform.resolvedExecutable;
-          appDir = path.dirname(executablePath);
-        } else {
-          // Fallback to documents directory for mobile platforms
-          final appDocDir = await getApplicationDocumentsDirectory();
-          appDir = appDocDir.path;
-        }
-        
-        // 处理数据库中存储的正斜杠路径，转换为系统适配的路径
-        final pathSegments = imagePath.split('/');
-        imagePath = path.joinAll([appDir, ...pathSegments]);
-        debugPrint('Converted relative path to absolute: $imagePath');
-      }
+      // 转换为绝对路径
+      imagePath = await PathUtils.convertToAbsolutePath(imagePath);
+      debugPrint('Converted to absolute path: $imagePath');
       
       final File imageFile = File(imagePath);
       final bool exists = await imageFile.exists();

@@ -2,11 +2,13 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
+import '../../shared/utils/path_utils.dart';
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
 
 import 'sync_service.dart';
 import 'history_sync_service.dart';
+import '../utils/file_hash_utils.dart';
 
 /// 图片同步管理器
 /// 负责处理历史记录中的笔迹图片文件的上传下载和去重
@@ -192,12 +194,22 @@ class ImageSyncManager {
     final localPath = path.joinAll([_appDocDir.path, ...pathSegments]);
     final file = File(localPath);
     
-    // 如果本地文件已存在且哈希匹配，跳过下载
+    // 如果本地文件已存在，检查文件大小和修改时间作为快速验证
     if (await file.exists()) {
-      final localHash = _calculateFileHash(file);
-      if (localHash == imageInfo.hash) {
-        print('[ImageSync] 本地文件已存在且哈希匹配，跳过下载: ${imageInfo.relativePath}');
-        return;
+      try {
+        final stat = await file.stat();
+        // 如果文件大小和修改时间都匹配，可能不需要重新下载
+        // 但为了确保数据完整性，仍然进行MD5验证
+        final localMd5 = await FileHashUtils.calculateFileMd5Async(file);
+        if (localMd5 == imageInfo.hash) {
+          print('[ImageSync] 本地文件已存在且MD5匹配，跳过下载: ${imageInfo.relativePath}');
+          return;
+        } else {
+          print('[ImageSync] 本地文件MD5不匹配，需要重新下载: ${imageInfo.relativePath}');
+          print('[ImageSync] 期望MD5: ${imageInfo.hash}, 实际MD5: $localMd5');
+        }
+      } catch (e) {
+        print('[ImageSync] 验证本地文件失败，将重新下载: ${imageInfo.relativePath}, 错误: $e');
       }
     }
     
@@ -313,8 +325,8 @@ class ImageSyncManager {
         if (await dir.exists()) {
           await for (final entity in dir.list(recursive: true)) {
             if (entity is File) {
-              // 生成使用正斜杠的相对路径，与数据库中存储的路径格式一致
-              final relativePath = path.relative(entity.path, from: _appDocDir.path).replaceAll('\\', '/');
+              // 使用公共路径工具类生成相对路径
+              final relativePath = await PathUtils.convertToRelativePath(entity.path);
               if (!referencedSet.contains(relativePath)) {
                 try {
                   await entity.delete();
@@ -346,12 +358,37 @@ class ImageSyncManager {
       final stat = await file.stat();
       final hash = _calculateFileHash(file);
       
-      // 计算相对路径，转换为使用正斜杠的跨平台兼容路径
-      final relativePath = path.relative(filePath, from: _appDocDir.path).replaceAll('\\', '/');
+      // 使用公共路径工具类计算相对路径
+      final relativePath = await PathUtils.convertToRelativePath(filePath);
       
       return ImageFileInfo(
         relativePath: relativePath,
         hash: hash,
+        size: stat.size,
+        lastModified: stat.modified,
+      );
+    } catch (e) {
+      print('获取图片文件信息失败: $filePath, $e');
+      return null;
+    }
+  }
+
+  /// 使用预先计算的MD5值获取图片文件信息，避免重复计算
+  Future<ImageFileInfo?> getImageFileInfoWithMd5(String filePath, String md5Hash) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return null;
+      }
+      
+      final stat = await file.stat();
+      
+      // 使用公共路径工具类计算相对路径
+      final relativePath = await PathUtils.convertToRelativePath(filePath);
+      
+      return ImageFileInfo(
+        relativePath: relativePath,
+        hash: md5Hash, // 直接使用传入的MD5值
         size: stat.size,
         lastModified: stat.modified,
       );

@@ -12,6 +12,7 @@ import '../../shared/models/dictation_session.dart';
 import '../../shared/models/dictation_result.dart';
 import '../../shared/widgets/conflict_resolution_dialog.dart';
 import '../database/database_helper.dart';
+import '../utils/file_hash_utils.dart';
 import 'sync_service.dart';
 import 'dictation_service.dart';
 import 'image_sync_manager.dart';
@@ -230,23 +231,29 @@ class HistorySyncService {
       
       // Note: session_words operations removed as table no longer exists
       
-      // 收集所有图片文件信息
-      final Set<String> allImagePaths = {};
+      // 收集所有图片文件信息，直接使用数据库中存储的MD5值
+      final Map<String, String> imagePathToMd5 = {};
       for (final resultMap in resultMaps) {
         final originalPath = resultMap['original_image_path'] as String?;
+        final originalMd5 = resultMap['original_image_md5'] as String?;
         final annotatedPath = resultMap['annotated_image_path'] as String?;
+        final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
         
-        if (originalPath != null && originalPath.isNotEmpty) {
-          allImagePaths.add(originalPath);
+        if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+          imagePathToMd5[originalPath] = originalMd5;
         }
-        if (annotatedPath != null && annotatedPath.isNotEmpty) {
-          allImagePaths.add(annotatedPath);
+        if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+          imagePathToMd5[annotatedPath] = annotatedMd5;
         }
       }
 
       final List<ImageFileInfo> imageFiles = [];
-      for (final imagePath in allImagePaths) {
-        final imageInfo = await _imageSyncManager.getImageFileInfo(imagePath);
+      for (final entry in imagePathToMd5.entries) {
+        final imagePath = entry.key;
+        final storedMd5 = entry.value;
+        
+        // 使用存储的MD5值构建ImageFileInfo，避免重复计算
+        final imageInfo = await _imageSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5);
         if (imageInfo != null) {
           imageFiles.add(imageInfo);
         }
@@ -396,6 +403,11 @@ class HistorySyncService {
                 await _dictationService.updateSession(sessionToUpdate);
                 print('[HistorySync] - 更新会话，新deleted状态=${sessionToUpdate.deleted}');
                 
+                // 如果会话被标记为删除，需要删除云端的笔迹文件
+                if (sessionToUpdate.deleted) {
+                  await _deleteCloudHandwritingFiles(conflict.localSession.sessionId, provider);
+                }
+                
                 // 更新结果（简单起见，删除旧结果后重新插入）
                 await _deleteSessionResults(sessionSync.sessionId);
                 for (final resultData in sessionSync.results) {
@@ -408,6 +420,10 @@ class HistorySyncService {
               
             case ConflictResolution.useLocal:
               print('[HistorySync] - 保留本地数据，跳过更新');
+              // 如果本地会话被删除，也需要删除云端的笔迹文件
+              if (conflict.localSession.deleted) {
+                await _deleteCloudHandwritingFiles(conflict.localSession.sessionId, provider);
+              }
               break;
               
             case ConflictResolution.requireUserChoice:
@@ -498,6 +514,66 @@ class HistorySyncService {
     }
     
     return await showConflictResolutionDialog(context, conflicts);
+  }
+  
+  /// 删除云端笔迹文件
+  Future<void> _deleteCloudHandwritingFiles(String sessionId, [SyncProvider? provider]) async {
+    // todo::
+    // try {
+    //   print('[HistorySync] - 开始删除会话 $sessionId 的云端笔迹文件');
+      
+    //   // 获取会话的所有结果数据，收集笔迹文件信息
+    //   final results = await _dictationService.getSessionResults(sessionId);
+    //   final imageObjectKeys = <String>{};
+      
+    //   for (final result in results) {
+    //     // 根据本地图片路径和MD5生成云端对象键
+    //     if (result.originalImagePath != null && result.originalImagePath!.isNotEmpty && 
+    //         result.originalImageMd5 != null && result.originalImageMd5!.isNotEmpty) {
+    //       final objectKey = FileHashUtils.generateCloudObjectKey(result.originalImagePath!, result.originalImageMd5!);
+    //       imageObjectKeys.add(objectKey);
+    //     }
+        
+    //     if (result.annotatedImagePath != null && result.annotatedImagePath!.isNotEmpty && 
+    //         result.annotatedImageMd5 != null && result.annotatedImageMd5!.isNotEmpty) {
+    //       final objectKey = FileHashUtils.generateCloudObjectKey(result.annotatedImagePath!, result.annotatedImageMd5!);
+    //       imageObjectKeys.add(objectKey);
+    //     }
+    //   }
+      
+    //   if (imageObjectKeys.isEmpty) {
+    //     print('[HistorySync] - 会话 $sessionId 没有关联的笔迹文件');
+    //     return;
+    //   }
+      
+    //   print('[HistorySync] - 找到 ${imageObjectKeys.length} 个笔迹文件需要删除');
+      
+    //   // 如果提供了同步提供商，删除云端文件
+    //   if (provider != null) {
+    //     int deletedCount = 0;
+    //     for (final objectKey in imageObjectKeys) {
+    //       try {
+    //         // 使用提供商的公共方法删除对象
+    //         final deleteResult = await provider.deleteObjectByKey(objectKey);
+    //         if (deleteResult.success) {
+    //           deletedCount++;
+    //           print('[HistorySync] - 删除云端笔迹文件成功: $objectKey');
+    //         } else {
+    //           print('[HistorySync] - 删除云端笔迹文件失败: $objectKey, ${deleteResult.message}');
+    //         }
+    //       } catch (e) {
+    //         print('[HistorySync] - 删除云端笔迹文件异常: $objectKey, $e');
+    //       }
+    //     }
+        
+    //     print('[HistorySync] - 云端笔迹文件删除完成，成功删除 $deletedCount/${imageObjectKeys.length} 个文件');
+    //   } else {
+    //     print('[HistorySync] - 当前同步提供商不支持删除云端文件');
+    //   }
+    // } catch (e) {
+    //   print('[HistorySync] - 删除云端笔迹文件时发生异常: $e');
+    //   // 不抛出异常，允许同步操作继续进行
+    // }
   }
   
   /// 获取导航器上下文

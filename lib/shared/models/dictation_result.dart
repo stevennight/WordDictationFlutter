@@ -20,6 +20,8 @@ class DictationResult {
   final bool isCorrect;
   final String? originalImagePath;
   final String? annotatedImagePath;
+  final String? originalImageMd5;
+  final String? annotatedImageMd5;
   final int wordIndex;
   final DateTime timestamp;
   final String? userNotes;
@@ -37,6 +39,8 @@ class DictationResult {
     required this.isCorrect,
     this.originalImagePath,
     this.annotatedImagePath,
+    this.originalImageMd5,
+    this.annotatedImageMd5,
     required this.wordIndex,
     required this.timestamp,
     this.userNotes,
@@ -54,6 +58,8 @@ class DictationResult {
     bool? isCorrect,
     String? originalImagePath,
     String? annotatedImagePath,
+    String? originalImageMd5,
+    String? annotatedImageMd5,
     int? wordIndex,
     DateTime? timestamp,
     String? userNotes,
@@ -70,6 +76,8 @@ class DictationResult {
       isCorrect: isCorrect ?? this.isCorrect,
       originalImagePath: originalImagePath ?? this.originalImagePath,
       annotatedImagePath: annotatedImagePath ?? this.annotatedImagePath,
+      originalImageMd5: originalImageMd5 ?? this.originalImageMd5,
+      annotatedImageMd5: annotatedImageMd5 ?? this.annotatedImageMd5,
       wordIndex: wordIndex ?? this.wordIndex,
       timestamp: timestamp ?? this.timestamp,
       userNotes: userNotes ?? this.userNotes,
@@ -93,6 +101,8 @@ class DictationResult {
       'is_correct': isCorrect ? 1 : 0,
       'original_image_path': originalImagePath,
       'annotated_image_path': annotatedImagePath,
+      'original_image_md5': originalImageMd5,
+      'annotated_image_md5': annotatedImageMd5,
       'word_index': wordIndex,
       'timestamp': timestamp.millisecondsSinceEpoch,
       'user_notes': userNotes,
@@ -112,6 +122,8 @@ class DictationResult {
       isCorrect: (map['is_correct'] ?? 0) == 1,
       originalImagePath: map['original_image_path'],
       annotatedImagePath: map['annotated_image_path'],
+      originalImageMd5: map['original_image_md5'],
+      annotatedImageMd5: map['annotated_image_md5'],
       wordIndex: map['word_index']?.toInt() ?? 0,
       timestamp: DateTime.fromMillisecondsSinceEpoch(map['timestamp']),
       userNotes: map['user_notes'],

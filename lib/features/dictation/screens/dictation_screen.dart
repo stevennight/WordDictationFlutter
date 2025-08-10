@@ -2,8 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
+import '../../../shared/utils/path_utils.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/word.dart';
@@ -462,10 +461,10 @@ class _DictationScreenState extends State<DictationScreen> {
       
       if (imagePath != null) {
         // 转换为相对路径
-        final relativePath = await _convertToRelativePath(imagePath);
+        final relativePath = await PathUtils.convertToRelativePath(imagePath);
         
         // 保存原始画板路径（使用相对路径）
-        provider.setOriginalImagePath(relativePath);
+        await provider.setOriginalImagePath(relativePath);
         
         // 提交答案
         await provider.submitAnswer();
@@ -609,8 +608,8 @@ class _DictationScreenState extends State<DictationScreen> {
         final imagePath = await canvas.saveAsImage('annotated_${DateTime.now().millisecondsSinceEpoch}.png');
         if (imagePath != null) {
           // 转换为相对路径
-          final relativePath = await _convertToRelativePath(imagePath);
-          provider.setAnnotatedImagePath(relativePath);
+          final relativePath = await PathUtils.convertToRelativePath(imagePath);
+          await provider.setAnnotatedImagePath(relativePath);
         }
       }
     } catch (e) {
@@ -619,69 +618,9 @@ class _DictationScreenState extends State<DictationScreen> {
     }
   }
 
-  /// 将绝对路径转换为相对于应用文档目录的相对路径
-  /// 返回使用正斜杠的跨平台兼容路径
-  Future<String> _convertToRelativePath(String absolutePath) async {
-    try {
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final appDocDir = await getApplicationDocumentsDirectory();
-        appDir = appDocDir.path;
-      }
-      
-      final relativePath = path.relative(absolutePath, from: appDir);
-      // 转换为使用正斜杠的跨平台兼容路径
-      return relativePath.replaceAll('\\', '/');
-    } catch (e) {
-      debugPrint('转换相对路径失败: $e');
-      // 如果转换失败，返回原路径
-      return absolutePath;
-    }
-  }
 
-  /// 将相对路径转换为绝对路径
-  /// 处理数据库中存储的正斜杠路径，转换为系统适配的绝对路径
-  Future<String> _convertToAbsolutePath(String relativePath) async {
-    try {
-      // 如果已经是绝对路径，直接返回
-      if (path.isAbsolute(relativePath)) {
-        return relativePath;
-      }
-      
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final appDocDir = await getApplicationDocumentsDirectory();
-        appDir = appDocDir.path;
-      }
-      
-      // 将数据库中的正斜杠路径转换为系统路径分隔符
-      // 使用path.joinAll来处理路径片段，确保使用正确的系统分隔符
-      final pathSegments = relativePath.split('/');
-      final absolutePath = path.joinAll([appDir, ...pathSegments]);
-      debugPrint('Path conversion: $relativePath -> $absolutePath (appDir: $appDir)');
-      return absolutePath;
-    } catch (e) {
-      debugPrint('转换绝对路径失败: $e');
-      // 如果转换失败，返回原路径
-      return relativePath;
-    }
-  }
 
-  void _nextWord(DictationProvider provider) {
+  Future<void> _nextWord(DictationProvider provider) async {
     // 清空画板
     final canvas = _canvasKey.currentState as dynamic;
     if (canvas != null) {
@@ -690,8 +629,8 @@ class _DictationScreenState extends State<DictationScreen> {
     
     // 重置批改模式状态
     if (provider.isAnnotationMode) {
-      provider.setOriginalImagePath(null);
-      provider.setAnnotatedImagePath(null);
+      await provider.setOriginalImagePath(null);
+        await provider.setAnnotatedImagePath(null);
     }
     
     // 重置画笔颜色为黑色
@@ -740,7 +679,7 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  void _exitDictation(DictationProvider provider) async {
+  Future<void> _exitDictation(DictationProvider provider) async {
     final appState = context.read<AppStateProvider>();
     await provider.endSession(); // 调用endSession保存进度
     
@@ -754,7 +693,7 @@ class _DictationScreenState extends State<DictationScreen> {
     }
   }
 
-  void _navigateToResultScreen(DictationProvider provider) async {
+  Future<void> _navigateToResultScreen(DictationProvider provider) async {
     final session = provider.currentSession!;
     final results = provider.results;
     
@@ -772,7 +711,7 @@ class _DictationScreenState extends State<DictationScreen> {
     provider.finishSession();
   }
 
-  void _goToPreviousWord(DictationProvider provider) async {
+  Future<void> _goToPreviousWord(DictationProvider provider) async {
     if (provider.currentIndex > 0) {
       // 清除画布
       (_canvasKey.currentState as dynamic)?.clear();
@@ -787,13 +726,13 @@ class _DictationScreenState extends State<DictationScreen> {
       
       if (existingResult != null) {
         // 如果已有结果，进入批改状态并恢复图片，只允许修改批改内容
-        provider.setAnnotatedImagePath(existingResult.annotatedImagePath);
+        await provider.setAnnotatedImagePath(existingResult.annotatedImagePath);
         provider.enterAnnotationMode();
         
         // 恢复画布上的原始图片作为背景
         if (existingResult.originalImagePath != null) {
           // 直接设置原始图片路径，让画布组件自己处理路径转换
-          provider.setOriginalImagePath(existingResult.originalImagePath);
+          await provider.setOriginalImagePath(existingResult.originalImagePath);
         }
         
         // 如果有批改图片，加载批改图片到画布上
@@ -803,8 +742,8 @@ class _DictationScreenState extends State<DictationScreen> {
       } else {
         // 如果没有结果，允许返回到答题状态（只要下一个单词未提交）
         provider.setState(DictationState.inProgress);
-        provider.setAnnotatedImagePath(null);
-        provider.setOriginalImagePath(null);
+        await provider.setAnnotatedImagePath(null);
+        await provider.setOriginalImagePath(null);
       }
     }
   }
