@@ -492,40 +492,6 @@ class HistorySyncService {
     await _deletionService.deleteSessionResults(sessionId, deleteImages: false);
   }
 
-  /// 计算文件哈希值
-  Future<String> calculateFileHash(File file) async {
-    final bytes = await file.readAsBytes();
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
-
-  /// 检查文件是否需要上传
-  Future<bool> needsUpload(String filePath, String? remoteHash) async {
-    if (remoteHash == null) return true;
-    
-    final file = File(filePath);
-    if (!await file.exists()) return false;
-    
-    final localHash = await calculateFileHash(file);
-    return localHash != remoteHash;
-  }
-
-  /// 获取最后同步时间
-  Future<DateTime?> getLastSyncTime(String configId) async {
-    final file = File(path.join(_syncCachePath, 'last_history_sync_$configId.txt'));
-    if (await file.exists()) {
-      final timestamp = await file.readAsString();
-      return DateTime.fromMillisecondsSinceEpoch(int.parse(timestamp));
-    }
-    return null;
-  }
-
-  /// 保存最后同步时间
-  Future<void> saveLastSyncTime(String configId, DateTime time) async {
-    final file = File(path.join(_syncCachePath, 'last_history_sync_$configId.txt'));
-    await file.writeAsString(time.millisecondsSinceEpoch.toString());
-  }
-
   /// 智能同步历史记录数据（双向合并同步）
   Future<SyncResult> smartSyncHistory(String configId, {
     VoidCallback? onImportComplete,
@@ -599,9 +565,6 @@ class HistorySyncService {
 
       
       if (uploadResult.success) {
-        // 更新最后同步时间
-        await saveLastSyncTime(configId, DateTime.now());
-        
         // 更新配置中的同步时间
         final config = syncService.getConfig(configId);
         if (config != null) {

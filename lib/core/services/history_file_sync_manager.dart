@@ -234,32 +234,6 @@ class HistoryFileSyncManager {
     }
   }
 
-  /// 获取图片文件信息
-  Future<ImageFileInfo?> getImageFileInfo(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        return null;
-      }
-      
-      final stat = await file.stat();
-      final hash = _calculateFileHash(file);
-      
-      // 使用公共路径工具类计算相对路径
-      final relativePath = await PathUtils.convertToRelativePath(filePath);
-      
-      return ImageFileInfo(
-        relativePath: relativePath,
-        hash: hash,
-        size: stat.size,
-        lastModified: stat.modified,
-      );
-    } catch (e) {
-      print('获取图片文件信息失败: $filePath, $e');
-      return null;
-    }
-  }
-
   /// 使用预先计算的MD5值获取图片文件信息，避免重复计算
   Future<ImageFileInfo?> getImageFileInfoWithMd5(String filePath, String md5Hash, bool ignoreFileNotExist) async {
     try {
@@ -283,24 +257,6 @@ class HistoryFileSyncManager {
       print('获取图片文件信息失败: $filePath, $e');
       return null;
     }
-  }
-
-  /// 计算文件哈希值
-  String _calculateFileHash(File file) {
-    final bytes = file.readAsBytesSync();
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
-
-  /// 检查文件是否需要上传
-  Future<bool> needsUpload(String filePath, String? remoteHash) async {
-    if (remoteHash == null) return true;
-    
-    final file = File(filePath);
-    if (!await file.exists()) return false;
-    
-    final localHash = _calculateFileHash(file);
-    return localHash != remoteHash;
   }
 
   /// 压缩图片文件（可选功能）
