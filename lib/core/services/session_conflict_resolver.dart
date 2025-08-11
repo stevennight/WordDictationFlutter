@@ -160,7 +160,7 @@ class SessionConflictResolver {
       sessionId: localSession.sessionId,
       localSession: localSession,
       remoteSession: remoteSession,
-      resolution: ConflictResolution.useRemote,
+      resolution: ConflictResolution.requireUserChoice,
       reason: '无法自动判断，暂时使用远端数据',
     );
   }

@@ -281,102 +281,12 @@ class HistorySyncService {
         print('[HistorySync] - 用户已选择 ${result.length} 个冲突的解决方案');
       }
       
-      // 收集所有需要下载的图片文件信息（根据冲突解决结果判断）
-      final Set<ImageFileInfo> allImageFiles = {};
-      final Map<String, String> imagePathToMd5 = {};
-      final Map<String, String> imagePathToObjectKey = {};
-      
-      for (final sessionSync in syncData.sessions) {
-        // 查找对应的冲突
-        final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
-        
-        // 根据冲突解决结果获取最终的session状态
-        DictationSession? finalSession;
-        if (conflict != null) {
-          finalSession = _conflictResolver.getSessionToApply(conflict);
-        } else {
-          // 没有冲突，使用远程session
-          finalSession = DictationSession.fromMap(sessionSync.sessionData);
-        }
-        
-        // 只有当最终session存在且未被删除时，才收集其图片文件
-        if (finalSession != null && !finalSession.deleted) {
-          // 从results中收集图片路径和MD5
-          for (final resultMap in syncData.sessions.where((s) => s.sessionId == sessionSync.sessionId).first.results) {
-            final originalPath = resultMap['original_image_path'] as String?;
-            final originalMd5 = resultMap['original_image_md5'] as String?;
-            final annotatedPath = resultMap['annotated_image_path'] as String?;
-            final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-            
-            if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-              imagePathToMd5[originalPath] = originalMd5;
-              // 生成对象键
-              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(originalPath, originalMd5);
-              imagePathToObjectKey[originalPath] = generatedObjectKey;
-            }
-            if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-              imagePathToMd5[annotatedPath] = annotatedMd5;
-              // 生成对象键
-              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(annotatedPath, annotatedMd5);
-              imagePathToObjectKey[annotatedPath] = generatedObjectKey;
-            }
-          }
-        }
-      }
-      
-      print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToObjectKey.length} 个图片对象键');
-      print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToMd5.length} 个图片MD5');
-      
-      // 检查哪些图片需要下载（本地不存在或MD5不匹配）
-      for (final entry in imagePathToMd5.entries) {
-        final imagePath = entry.key;
-        final storedMd5 = entry.value;
-        
-        print("[HistorySync] 检查图片: $imagePath, storedMd5: $storedMd5");
-        
-        // 检查本地文件是否存在以及MD5是否匹配
-        final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
-        final localFile = File(absolutedImagePath);
-        final expectedMd5 = imagePathToMd5[imagePath]!;
-        
-        bool needDownload = false;
-        if (!localFile.existsSync()) {
-          print('[HistorySync] 本地文件不存在，需要下载: $absolutedImagePath');
-          needDownload = true;
-        } else {
-          // 检查MD5是否匹配
-          needDownload = await FileHashUtils.needsSync(absolutedImagePath, expectedMd5);
-          print('[HistorySync] 根据文件MD5判断是否需要同步: ${needDownload.toString()}');
-        }
-        
-        // 只有需要下载的图片才创建ImageFileInfo
-        if (needDownload) {
-          final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
-          if (imageInfo != null) {
-            allImageFiles.add(imageInfo);
-          }
-        }
-      }
+      // 下载session文件
+      final downloadResult = await _downloadSessionFiles(syncData, conflicts, provider, onProgress);
+      final allImageFiles = downloadResult['imageFiles'] as Set<ImageFileInfo>;
       
       print('[HistorySync] 导入历史记录：找到 ${syncData.sessions.length} 个会话');
-      print('[HistorySync] 导入历史记录：需要下载 ${allImageFiles.length} 个图片文件');
-      
-      // 如果提供了同步提供者，下载图片文件
-      if (provider != null && allImageFiles.isNotEmpty) {
-        try {
-          onProgress?.call('正在下载图片文件...', current: 0, total: allImageFiles.length);
-          print('[HistorySync] 开始下载图片文件...');
-          await _downloadImageFiles(allImageFiles.toList(), provider, imagePathToObjectKey, onProgress);
-          print('[HistorySync] 图片文件下载完成');
-        } catch (e) {
-          print('[HistorySync] 下载图片文件时出错: $e');
-          // 继续导入历史记录数据，不因图片下载失败而中断
-        }
-      } else if (provider == null) {
-        print('[HistorySync] 未提供同步提供者，跳过图片下载');
-      } else {
-        print('[HistorySync] 没有需要下载的图片文件');
-      }
+      print('[HistorySync] 导入历史记录：已经下载 ${allImageFiles.length} 个session文件');
       
       // 注意：删除本地记录的逻辑现在由冲突检测和处理机制决定
       
@@ -991,7 +901,114 @@ class HistorySyncService {
     } catch (e) {
       print('[HistorySync] 下载图片异常: $imagePath, $e');
       rethrow;
-    }
-  }
+   }
+ }
+
+ /// 下载session文件（收集并下载需要的图片文件）
+ Future<Map<String, dynamic>> _downloadSessionFiles(
+   HistorySyncData syncData,
+   List<SessionConflict> conflicts,
+   SyncProvider? provider,
+   void Function(String step, {int? current, int? total})? onProgress,
+ ) async {
+   // 收集所有需要下载的图片文件信息（根据冲突解决结果判断）
+   final Set<ImageFileInfo> allImageFiles = {};
+   final Map<String, String> imagePathToMd5 = {};
+   final Map<String, String> imagePathToObjectKey = {};
+   
+   for (final sessionSync in syncData.sessions) {
+     // 查找对应的冲突
+     final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
+     
+     // 根据冲突解决结果获取最终的session状态
+     DictationSession? finalSession;
+     if (conflict != null) {
+       finalSession = _conflictResolver.getSessionToApply(conflict);
+     } else {
+       // 没有冲突，使用远程session
+       finalSession = DictationSession.fromMap(sessionSync.sessionData);
+     }
+     
+     // 只有当最终session存在且未被删除时，才收集其图片文件
+     if (finalSession != null && !finalSession.deleted) {
+       // 从results中收集图片路径和MD5
+       for (final resultMap in syncData.sessions.where((s) => s.sessionId == sessionSync.sessionId).first.results) {
+         final originalPath = resultMap['original_image_path'] as String?;
+         final originalMd5 = resultMap['original_image_md5'] as String?;
+         final annotatedPath = resultMap['annotated_image_path'] as String?;
+         final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+         
+         if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+           imagePathToMd5[originalPath] = originalMd5;
+           // 生成对象键
+           final generatedObjectKey = FileHashUtils.generateCloudObjectKey(originalPath, originalMd5);
+           imagePathToObjectKey[originalPath] = generatedObjectKey;
+         }
+         if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+           imagePathToMd5[annotatedPath] = annotatedMd5;
+           // 生成对象键
+           final generatedObjectKey = FileHashUtils.generateCloudObjectKey(annotatedPath, annotatedMd5);
+           imagePathToObjectKey[annotatedPath] = generatedObjectKey;
+         }
+       }
+     }
+   }
+   
+   print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToObjectKey.length} 个图片对象键');
+   print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToMd5.length} 个图片MD5');
+   
+   // 检查哪些图片需要下载（本地不存在或MD5不匹配）
+   for (final entry in imagePathToMd5.entries) {
+     final imagePath = entry.key;
+     final storedMd5 = entry.value;
+     
+     print("[HistorySync] 检查图片: $imagePath, storedMd5: $storedMd5");
+     
+     // 检查本地文件是否存在以及MD5是否匹配
+     final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
+     final localFile = File(absolutedImagePath);
+     final expectedMd5 = imagePathToMd5[imagePath]!;
+     
+     bool needDownload = false;
+     if (!localFile.existsSync()) {
+       print('[HistorySync] 本地文件不存在，需要下载: $absolutedImagePath');
+       needDownload = true;
+     } else {
+       // 检查MD5是否匹配
+       needDownload = await FileHashUtils.needsSync(absolutedImagePath, expectedMd5);
+       print('[HistorySync] 根据文件MD5判断是否需要同步: ${needDownload.toString()}');
+     }
+     
+     // 只有需要下载的图片才创建ImageFileInfo
+     if (needDownload) {
+       final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
+       if (imageInfo != null) {
+         allImageFiles.add(imageInfo);
+       }
+     }
+   }
+   
+   // 如果提供了同步提供者，下载图片文件
+   if (provider != null && allImageFiles.isNotEmpty) {
+     try {
+       onProgress?.call('正在下载session文件...', current: 0, total: allImageFiles.length);
+       print('[HistorySync] 开始下载session文件...');
+       await _downloadImageFiles(allImageFiles.toList(), provider, imagePathToObjectKey, onProgress);
+       print('[HistorySync] session文件下载完成');
+     } catch (e) {
+       print('[HistorySync] 下载session文件时出错: $e');
+       // 继续导入历史记录数据，不因图片下载失败而中断
+     }
+   } else if (provider == null) {
+     print('[HistorySync] 未提供同步提供者，跳过session文件下载');
+   } else {
+     print('[HistorySync] 没有需要下载的session文件');
+   }
+   
+   return {
+     'imageFiles': allImageFiles,
+     'imagePathToObjectKey': imagePathToObjectKey,
+   };
+ }
 
 }
