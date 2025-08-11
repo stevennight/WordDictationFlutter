@@ -67,7 +67,6 @@ class SessionSyncData {
   final Map<String, dynamic> sessionData;
   final List<Map<String, dynamic>> results;
   final List<Map<String, dynamic>> sessionWords;
-  final List<ImageFileInfo> imageFiles;
 
   SessionSyncData({
     required this.sessionId,
@@ -75,7 +74,6 @@ class SessionSyncData {
     required this.sessionData,
     required this.results,
     required this.sessionWords,
-    required this.imageFiles,
   });
 
   Map<String, dynamic> toMap() {
@@ -85,7 +83,6 @@ class SessionSyncData {
       'sessionData': sessionData,
       'results': results,
       'sessionWords': sessionWords,
-      'imageFiles': imageFiles.map((f) => f.toMap()).toList(),
     };
   }
 
@@ -96,22 +93,19 @@ class SessionSyncData {
       sessionData: Map<String, dynamic>.from(map['sessionData']),
       results: List<Map<String, dynamic>>.from(map['results']),
       sessionWords: List<Map<String, dynamic>>.from(map['sessionWords'] ?? []),
-      imageFiles: (map['imageFiles'] as List<dynamic>)
-          .map((f) => ImageFileInfo.fromMap(f))
-          .toList(),
     );
   }
 }
 
 /// 图片文件信息
 class ImageFileInfo {
-  final String relativePath;
+  final String filePath;
   final String hash;
   final int size;
   final DateTime lastModified;
 
   ImageFileInfo({
-    required this.relativePath,
+    required this.filePath,
     required this.hash,
     required this.size,
     required this.lastModified,
@@ -119,7 +113,7 @@ class ImageFileInfo {
 
   Map<String, dynamic> toMap() {
     return {
-      'relativePath': relativePath,
+      'filePath': filePath,
       'hash': hash,
       'size': size,
       'lastModified': lastModified.toIso8601String(),
@@ -128,7 +122,7 @@ class ImageFileInfo {
 
   factory ImageFileInfo.fromMap(Map<String, dynamic> map) {
     return ImageFileInfo(
-      relativePath: map['relativePath'],
+      filePath: map['filePath'],
       hash: map['hash'],
       size: map['size'],
       lastModified: DateTime.parse(map['lastModified']),
@@ -227,39 +221,6 @@ class HistorySyncService {
         orderBy: 'word_index ASC',
       );
       
-      // 收集图片文件信息（只有未删除的session才包含图片文件）
-      final List<ImageFileInfo> imageFiles = [];
-      final sessionDeleted = sessionMap['deleted'] == 1;
-      
-      if (!sessionDeleted) {
-        // 只有未删除的session才收集图片文件信息
-        final Map<String, String> imagePathToMd5 = {};
-        for (final resultMap in resultMaps) {
-          final originalPath = resultMap['original_image_path'] as String?;
-          final originalMd5 = resultMap['original_image_md5'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-          
-          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-            imagePathToMd5[originalPath] = originalMd5;
-          }
-          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-            imagePathToMd5[annotatedPath] = annotatedMd5;
-          }
-        }
-
-        for (final entry in imagePathToMd5.entries) {
-          final imagePath = entry.key;
-          final storedMd5 = entry.value;
-          
-          // 使用存储的MD5值构建ImageFileInfo，避免重复计算
-          final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, false);
-          if (imageInfo != null) {
-            imageFiles.add(imageInfo);
-          }
-        }
-      }
-      
       sessions.add(SessionSyncData(
         sessionId: sessionId,
         lastModified: DateTime.fromMillisecondsSinceEpoch(
@@ -268,7 +229,6 @@ class HistorySyncService {
         sessionData: Map<String, dynamic>.from(sessionMap),
         results: resultMaps.map((r) => Map<String, dynamic>.from(r)).toList(),
         sessionWords: [], // Note: session_words operations removed as table no longer exists
-        imageFiles: imageFiles,
       ));
     }
 
@@ -324,6 +284,7 @@ class HistorySyncService {
       // 收集所有需要下载的图片文件信息（根据冲突解决结果判断）
       final Set<ImageFileInfo> allImageFiles = {};
       final Map<String, String> imagePathToMd5 = {};
+      final Map<String, String> imagePathToObjectKey = {};
       
       for (final sessionSync in syncData.sessions) {
         // 查找对应的冲突
@@ -341,7 +302,7 @@ class HistorySyncService {
         // 只有当最终session存在且未被删除时，才收集其图片文件
         if (finalSession != null && !finalSession.deleted) {
           // 从results中收集图片路径和MD5
-          for (final resultMap in sessionSync.results) {
+          for (final resultMap in syncData.sessions.where((s) => s.sessionId == sessionSync.sessionId).first.results) {
             final originalPath = resultMap['original_image_path'] as String?;
             final originalMd5 = resultMap['original_image_md5'] as String?;
             final annotatedPath = resultMap['annotated_image_path'] as String?;
@@ -349,25 +310,51 @@ class HistorySyncService {
             
             if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
               imagePathToMd5[originalPath] = originalMd5;
+              // 生成对象键
+              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(originalPath, originalMd5);
+              imagePathToObjectKey[originalPath] = generatedObjectKey;
             }
             if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
               imagePathToMd5[annotatedPath] = annotatedMd5;
+              // 生成对象键
+              final generatedObjectKey = FileHashUtils.generateCloudObjectKey(annotatedPath, annotatedMd5);
+              imagePathToObjectKey[annotatedPath] = generatedObjectKey;
             }
           }
         }
       }
       
-      // 为每个图片路径创建ImageFileInfo
+      print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToObjectKey.length} 个图片对象键');
+      print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToMd5.length} 个图片MD5');
+      
+      // 检查哪些图片需要下载（本地不存在或MD5不匹配）
       for (final entry in imagePathToMd5.entries) {
         final imagePath = entry.key;
         final storedMd5 = entry.value;
         
-        print("imagePath: $imagePath, storedMd5: $storedMd5");
-
-        // 使用存储的MD5值构建ImageFileInfo
-        final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
-        if (imageInfo != null) {
-          allImageFiles.add(imageInfo);
+        print("[HistorySync] 检查图片: $imagePath, storedMd5: $storedMd5");
+        
+        // 检查本地文件是否存在以及MD5是否匹配
+        final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
+        final localFile = File(absolutedImagePath);
+        final expectedMd5 = imagePathToMd5[imagePath]!;
+        
+        bool needDownload = false;
+        if (!localFile.existsSync()) {
+          print('[HistorySync] 本地文件不存在，需要下载: $absolutedImagePath');
+          needDownload = true;
+        } else {
+          // 检查MD5是否匹配
+          needDownload = await FileHashUtils.needsSync(absolutedImagePath, expectedMd5);
+          print('[HistorySync] 根据文件MD5判断是否需要同步: ${needDownload.toString()}');
+        }
+        
+        // 只有需要下载的图片才创建ImageFileInfo
+        if (needDownload) {
+          final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
+          if (imageInfo != null) {
+            allImageFiles.add(imageInfo);
+          }
         }
       }
       
@@ -379,7 +366,7 @@ class HistorySyncService {
         try {
           onProgress?.call('正在下载图片文件...', current: 0, total: allImageFiles.length);
           print('[HistorySync] 开始下载图片文件...');
-          await _historyFileSyncManager.downloadMissingImages(allImageFiles.toList(), provider, data, onProgress: onProgress);
+          await _downloadImageFiles(allImageFiles.toList(), provider, imagePathToObjectKey, onProgress);
           print('[HistorySync] 图片文件下载完成');
         } catch (e) {
           print('[HistorySync] 下载图片文件时出错: $e');
@@ -652,13 +639,33 @@ class HistorySyncService {
   }
   
   /// 上传历史记录数据（包含图片文件）
-  Future<SyncResult> _uploadHistoryData(SyncProvider provider, List<dynamic> remoteSessions, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
+  Future<SyncResult> _uploadHistoryData(SyncProvider provider, List<dynamic> remoteSessions, Map<String, dynamic> mergeHistoryData, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       print('[HistorySync] 开始上传历史记录数据');
       
-      final sessions = data['sessions'] as List<dynamic>? ?? [];
-      final remoteSessionSessionIdMap = Map.fromIterable(remoteSessions, key: (session) => session['sessionId']);
-      
+      final sessions = mergeHistoryData['sessions'] as List<dynamic>? ?? [];
+
+      // 整理文件路径 => md5的map
+      final filePathMd5Map = <String, String>{};
+      for (final session in remoteSessions) {
+        final sessionMap = session as Map<String, dynamic>;
+        final results = sessionMap['results'] as List<dynamic>? ?? [];
+
+        for (final result in results) {
+          final resultMap = result as Map<String, dynamic>;
+          final originalPath = resultMap['original_image_path'] as String?;
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
+            filePathMd5Map[originalPath] = originalMd5;
+          }
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+            filePathMd5Map[annotatedPath] = annotatedMd5;
+          }
+        }
+      }
+
       // 首先收集所有需要上传的图片文件
       final imagesToUpload = <String>{};
       
@@ -674,38 +681,34 @@ class HistorySyncService {
           }
 
           // 比较原来远端的文件md5和本地文件的md5，不一致则上传
+          final originalPath = resultMap['original_image_path'] as String?;
+          final annotatedPath = resultMap['annotated_image_path'] as String?;
           final originalMd5 = resultMap['original_image_md5'] as String?;
           final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-          final originalMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionId']]?['results']?[resultMap['resultId']]?['original_image_md5'];
-          final annotatedMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionId']]?['results']?[resultMap['resultId']]?['annotated_image_md5'];
-          bool originalUpload = true;
-          bool annotatedUpload = true;
-          if (originalMd5 != null && originalMd5.isNotEmpty) {
-            if (originalMd5InRemote != null && originalMd5InRemote.isNotEmpty) {
+
+          // 判断远端文件是否存在
+          if (originalPath != null && originalPath.isNotEmpty) {
+            final originalMd5InRemote = filePathMd5Map[originalPath];
+            bool originalUpload = true;
+            if (originalMd5 != null && originalMd5.isNotEmpty && originalMd5InRemote != null && originalMd5InRemote.isNotEmpty) {
               if (originalMd5 == originalMd5InRemote) {
                 originalUpload = false;
               }
             }
-          }
-          if (annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-            if (annotatedMd5InRemote != null && annotatedMd5InRemote.isNotEmpty) {
-              if (annotatedMd5 == annotatedMd5InRemote) {
-                annotatedUpload = false;
-              }
-            }
-          }
 
-          final originalPath = resultMap['original_image_path'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-
-          // 判断远端文件是否存在
-
-          if (originalPath != null && originalPath.isNotEmpty) {
             if (originalUpload || !await provider.fileExists(originalPath)) {
               imagesToUpload.add(originalPath);
             }
           }
           if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            final annotatedMd5InRemote = filePathMd5Map[annotatedPath];
+            bool annotatedUpload = true;
+            if (annotatedMd5 != null && annotatedMd5.isNotEmpty && annotatedMd5InRemote != null && annotatedMd5InRemote.isNotEmpty) {
+              if (annotatedMd5 == annotatedMd5InRemote) {
+                annotatedUpload = false;
+              }
+            }
+
             if (annotatedUpload && !await provider.fileExists(annotatedPath)) {
               imagesToUpload.add(annotatedPath);
             }
@@ -738,7 +741,7 @@ class HistorySyncService {
       print('[HistorySync] 成功上传 ${uploadedImages.length} 个图片文件');
       
       // 更新历史记录数据中的图片路径为对象键
-      final updatedData = Map<String, dynamic>.from(data);
+      final updatedData = Map<String, dynamic>.from(mergeHistoryData);
       final updatedSessions = <Map<String, dynamic>>[];
       
       for (final session in sessions) {
@@ -777,7 +780,7 @@ class HistorySyncService {
       final dataTypeName = dataType.toString().split('.').last;
       final objectKey = "$dataTypeName-$timestamp.json";
       final latestKey = "$dataTypeName-latest.json";
-      final jsonData = jsonEncode(data);
+      final jsonData = jsonEncode(mergeHistoryData);
       final bytes = utf8.encode(jsonData);
 
       _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
@@ -913,6 +916,82 @@ class HistorySyncService {
   /// 获取导航器上下文
   BuildContext? _getNavigatorContext() {
     return navigatorKey.currentContext;
+  }
+
+  /// 下载图片文件（使用已过滤的图片列表）
+  Future<void> _downloadImageFiles(
+    List<ImageFileInfo> imagesToDownload,
+    SyncProvider provider,
+    Map<String, String> imagePathToObjectKey,
+    void Function(String step, {int? current, int? total})? onProgress,
+  ) async {
+    try {
+      if (imagesToDownload.isEmpty) {
+        print('[HistorySync] 没有需要下载的图片文件');
+        return;
+      }
+      
+      print('[HistorySync] 需要下载 ${imagesToDownload.length} 个图片文件');
+      
+      // 下载每个需要的图片文件
+      int downloadedCount = 0;
+      for (final imageInfo in imagesToDownload) {
+        try {
+          onProgress?.call('正在下载图片: ${imageInfo.filePath}', current: downloadedCount, total: imagesToDownload.length);
+          print('[HistorySync] 正在下载图片: ${imageInfo.filePath}');
+          
+          final absolutedImagePath = await PathUtils.convertToAbsolutePath(imageInfo.filePath);
+          final objectKey = imagePathToObjectKey[imageInfo.filePath];
+          if (objectKey == null) {
+            throw '未找到图片对象键: ${imageInfo.filePath}';
+          }
+          
+          await _downloadSingleImageFromObjectKey(absolutedImagePath, objectKey, provider);
+          downloadedCount++;
+        } catch (e) {
+          print('[HistorySync] 下载图片失败: ${imageInfo.filePath}, $e');
+          downloadedCount++; // 即使失败也要增加计数
+        }
+      }
+      print('[HistorySync] 图片下载完成');
+    } catch (e) {
+      print('[HistorySync] 下载图片过程中出错: $e');
+    }
+  }
+
+  /// 从对象键下载单个图片文件
+  Future<void> _downloadSingleImageFromObjectKey(
+    String imagePath,
+    String objectKey,
+    SyncProvider provider,
+  ) async {
+    final file = File(imagePath);
+    
+    print('[HistorySync] 开始下载图片: $imagePath, 对象键: $objectKey');
+    
+    try {
+      // 直接从对象存储下载图片
+      final downloadResult = await provider.downloadBytes(objectKey);
+      if (!downloadResult.success || downloadResult.data == null) {
+        print('[HistorySync] 下载图片失败: $objectKey, ${downloadResult.message}');
+        return;
+      }
+      
+      final imageBytes = downloadResult.data!['content'] as List<int>;
+      
+      // 确保目录存在
+      final directory = file.parent;
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      
+      // 写入文件
+      await file.writeAsBytes(imageBytes);
+      print('[HistorySync] 图片下载成功: $imagePath (${imageBytes.length} bytes)');
+    } catch (e) {
+      print('[HistorySync] 下载图片异常: $imagePath, $e');
+      rethrow;
+    }
   }
 
 }
