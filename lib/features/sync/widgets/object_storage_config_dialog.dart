@@ -457,14 +457,14 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
                 if (count == null || count < 1) {
                   return '请输入有效的数量（至少1个）';
                 }
-                if (count > 100) {
-                  return '保留数量不能超过100个';
+                if (count > 1000) {
+                  return '保留数量不能超过1000个';
                 }
                 return null;
               },
               onChanged: (value) {
                 final count = int.tryParse(value);
-                if (count != null && count >= 1 && count <= 100) {
+                if (count != null && count >= 1 && count <= 1000) {
                   setState(() {
                     _retentionCount = count;
                   });
