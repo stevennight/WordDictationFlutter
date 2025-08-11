@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_word_dictation/core/services/wordbook_sync_service.dart';
 import 'package:path/path.dart' as path;
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
@@ -190,13 +189,13 @@ class HistorySyncService {
     final db = await _dbHelper.database;
     
     // 查询会话数据
-    String whereClause = "status != 'inProgress'";
-    List<dynamic> whereArgs = [];
-    
-    if (since != null) {
-      whereClause += " AND start_time > ?";
-      whereArgs.add(since.millisecondsSinceEpoch);
-    }
+    // String whereClause = "status != 'inProgress'";
+    // List<dynamic> whereArgs = [];
+    //
+    // if (since != null) {
+    //   whereClause += " AND start_time > ?";
+    //   whereArgs.add(since.millisecondsSinceEpoch);
+    // }
     
     // 使用getAllSessionsIncludingDeleted获取包括已删除的会话
     final allSessions = await _dictationService.getAllSessionsIncludingDeleted();
@@ -229,8 +228,6 @@ class HistorySyncService {
         whereArgs: [sessionId],
         orderBy: 'word_index ASC',
       );
-      
-      // Note: session_words operations removed as table no longer exists
       
       // 收集图片文件信息（只有未删除的session才包含图片文件）
       final List<ImageFileInfo> imageFiles = [];
@@ -598,7 +595,7 @@ class HistorySyncService {
       print('[HistorySyncService] 第四步：上传合并后的数据到远端');
       final mergedHistoryData = await exportHistoryData();
 
-      final uploadResult = await _uploadHistoryData(provider, mergedHistoryData, onProgress);
+      final uploadResult = await _uploadHistoryData(provider, remoteSessions, mergedHistoryData, onProgress);
 
       
       if (uploadResult.success) {
@@ -694,11 +691,12 @@ class HistorySyncService {
   }
   
   /// 上传历史记录数据（包含图片文件）
-  Future<SyncResult> _uploadHistoryData(SyncProvider provider, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
+  Future<SyncResult> _uploadHistoryData(SyncProvider provider, List<dynamic> remoteSessions, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       print('[HistorySync] 开始上传历史记录数据');
       
       final sessions = data['sessions'] as List<dynamic>? ?? [];
+      final remoteSessionSessionIdMap = Map.fromIterable(remoteSessions, key: (session) => session['sessionData']['sessionId']);
       
       // 首先收集所有需要上传的图片文件
       final imagesToUpload = <String>{};
@@ -714,13 +712,35 @@ class HistorySyncService {
             continue;
           }
 
+          // 比较原来远端的文件md5和本地文件的md5，不一致则上传
+          final originalMd5 = resultMap['original_image_md5'] as String?;
+          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
+          final originalMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionData']['sessionId']]?['results']?[resultMap['resultId']]?['original_image_md5'];
+          final annotatedMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionData']['sessionId']]?['results']?[resultMap['resultId']]?['annotated_image_md5'];
+          bool originalUpload = true;
+          bool annotatedUpload = true;
+          if (originalMd5 != null && originalMd5.isNotEmpty) {
+            if (originalMd5InRemote != null && originalMd5InRemote.isNotEmpty) {
+              if (originalMd5 == originalMd5InRemote) {
+                originalUpload = false;
+              }
+            }
+          }
+          if (annotatedMd5 != null && annotatedMd5.isNotEmpty) {
+            if (annotatedMd5InRemote != null && annotatedMd5InRemote.isNotEmpty) {
+              if (annotatedMd5 == annotatedMd5InRemote) {
+                annotatedUpload = false;
+              }
+            }
+          }
+
           final originalPath = resultMap['original_image_path'] as String?;
           final annotatedPath = resultMap['annotated_image_path'] as String?;
           
-          if (originalPath != null && originalPath.isNotEmpty) {
+          if (originalPath != null && originalPath.isNotEmpty && originalUpload) {
             imagesToUpload.add(originalPath);
           }
-          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedUpload) {
             imagesToUpload.add(annotatedPath);
           }
         }
@@ -824,36 +844,6 @@ class HistorySyncService {
     } catch (e) {
       print('[HistorySync] 上传历史记录数据异常: $e');
       return SyncResult.failure('上传历史记录数据失败: $e');
-    }
-  }
-
-  /// 上传图片数据
-  Future<SyncResult> _uploadImageData(Map<String, dynamic> data, SyncProvider provider) async {
-    try {
-      final images = data['images'] as List<dynamic>? ?? [];
-      final uploadedImages = <Map<String, dynamic>>[];
-      
-      for (final imageData in images) {
-        final imageMap = imageData as Map<String, dynamic>;
-        final imagePath = imageMap['path'] as String?;
-        
-        if (imagePath != null) {
-          final uploadResult = await _uploadSingleImage(imagePath, provider);
-          if (uploadResult != null) {
-            uploadedImages.add({
-              'originalPath': imagePath,
-              'objectKey': uploadResult,
-            });
-          }
-        }
-      }
-      
-      return SyncResult.success(
-        message: '图片上传成功',
-        data: {'uploadedImages': uploadedImages},
-      );
-    } catch (e) {
-      return SyncResult.failure('上传图片数据失败: $e');
     }
   }
 
