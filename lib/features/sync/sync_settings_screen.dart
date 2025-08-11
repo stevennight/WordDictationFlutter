@@ -4,6 +4,7 @@ import '../../core/services/sync_service.dart';
 import '../../core/services/history_sync_service.dart';
 import '../../core/services/wordbook_sync_service.dart';
 import '../../shared/providers/history_provider.dart';
+import '../../shared/providers/app_state_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
 import 'widgets/sync_progress_dialog.dart';
@@ -296,6 +297,11 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             config.id,
             upload: action['action'] == 'upload',
           );
+          
+          // 如果同步成功，通知首页刷新词书列表
+          if (result.success && mounted) {
+            context.read<AppStateProvider>().notifyWordbookUpdated();
+          }
         } else if (action['type'] == 'history') {
           // 使用进度对话框显示同步进度
           result = await showSyncProgressDialog<SyncResult>(

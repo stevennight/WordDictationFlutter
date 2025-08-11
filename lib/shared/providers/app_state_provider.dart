@@ -7,12 +7,16 @@ class AppStateProvider extends ChangeNotifier {
   int _totalWords = 0;
   int _currentWordIndex = 0;
   
+  // 词书状态管理
+  int _wordbookUpdateCounter = 0;
+  
   // Getters
   bool get isDictationMode => _isDictationMode;
   bool get isFullscreen => _isFullscreen;
   String? get currentWordFileName => _currentWordFileName;
   int get totalWords => _totalWords;
   int get currentWordIndex => _currentWordIndex;
+  int get wordbookUpdateCounter => _wordbookUpdateCounter;
   
   // Progress calculation
   double get progress {
@@ -71,6 +75,12 @@ class AppStateProvider extends ChangeNotifier {
   
   void setFullscreen(bool fullscreen) {
     _isFullscreen = fullscreen;
+    notifyListeners();
+  }
+  
+  // 通知词书数据已更新
+  void notifyWordbookUpdated() {
+    _wordbookUpdateCounter++;
     notifyListeners();
   }
   

@@ -31,11 +31,28 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _fileName;
   List<Wordbook> _wordbooks = [];
   bool _isLoadingWordbooks = false;
+  int _lastWordbookUpdateCounter = -1;
 
   @override
   void initState() {
     super.initState();
     _loadWordbooks();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 监听词书更新状态
+    final appState = context.watch<AppStateProvider>();
+    if (appState.wordbookUpdateCounter != _lastWordbookUpdateCounter) {
+      _lastWordbookUpdateCounter = appState.wordbookUpdateCounter;
+      if (_lastWordbookUpdateCounter > 0) {
+        // 延迟刷新，避免在build过程中调用setState
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadWordbooks();
+        });
+      }
+    }
   }
 
   Future<void> _loadWordbooks() async {

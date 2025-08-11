@@ -317,9 +317,6 @@ class AutoSyncManager with WidgetsBindingObserver {
             print(
                 '[AutoSyncManager] 配置 ${config.name} 历史记录同步失败: ${historyResult.message}');
           }
-
-          // 可以在这里添加词书同步
-          // final wordbookResult = await _wordbookSyncService.uploadWordbooks(config.id);
         } catch (e) {
           print('[AutoSyncManager] 配置 ${config.name} 同步失败: $e');
         }
