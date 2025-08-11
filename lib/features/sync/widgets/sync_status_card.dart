@@ -7,6 +7,7 @@ class SyncStatusCard extends StatelessWidget {
   final VoidCallback onDelete;
   final Future<bool> Function() onSync;
   final VoidCallback onTest;
+  final Function(bool)? onToggleEnabled;
 
   const SyncStatusCard({
     super.key,
@@ -15,6 +16,7 @@ class SyncStatusCard extends StatelessWidget {
     required this.onDelete,
     required this.onSync,
     required this.onTest,
+    this.onToggleEnabled,
   });
 
   @override
@@ -103,6 +105,45 @@ class SyncStatusCard extends StatelessWidget {
   Widget _buildStatusChip(BuildContext context) {
     final isEnabled = config.enabled;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    if (onToggleEnabled != null) {
+      return GestureDetector(
+        onTap: () => onToggleEnabled!(!isEnabled),
+        child: Chip(
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isEnabled ? '已启用' : '已禁用',
+                style: TextStyle(
+                  color: isEnabled 
+                      ? (isDark ? Colors.green[300] : Colors.green[700])
+                      : (isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600]),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                isEnabled ? Icons.toggle_on : Icons.toggle_off,
+                size: 16,
+                color: isEnabled 
+                    ? (isDark ? Colors.green[300] : Colors.green[700])
+                    : (isDark ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.grey[600]),
+              ),
+            ],
+          ),
+          backgroundColor: isEnabled 
+              ? (isDark ? Colors.green[900]!.withOpacity(0.3) : Colors.green[50])
+              : (isDark ? Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3) : Colors.grey[100]),
+          side: BorderSide(
+            color: isEnabled 
+                ? (isDark ? Colors.green[700]!.withOpacity(0.5) : Colors.green[200]!)
+                : (isDark ? Theme.of(context).colorScheme.outline.withOpacity(0.3) : Colors.grey[300]!),
+          ),
+        ),
+      );
+    }
+    
     return Chip(
       label: Text(
         isEnabled ? '已启用' : '已禁用',

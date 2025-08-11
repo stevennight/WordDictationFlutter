@@ -34,6 +34,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
   Duration _syncInterval = const Duration(hours: 1);
   bool _obscureSecretKey = true;
   bool _isLoading = false;
+  bool _enabled = true;
 
   @override
   void initState() {
@@ -58,6 +59,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
       _useSSL = storageConfig.useSSL;
       _autoSync = config.autoSync;
       _syncInterval = config.syncInterval;
+      _enabled = config.enabled;
     } else {
       _pathPrefixController.text = 'wordDictationSync';
     }
@@ -364,14 +366,25 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
             ),
             const SizedBox(height: 16),
             SwitchListTile(
+              title: const Text('启用同步'),
+              subtitle: const Text('启用或禁用此同步配置'),
+              value: _enabled,
+              onChanged: (value) {
+                setState(() {
+                  _enabled = value;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
               title: const Text('自动同步'),
               subtitle: const Text('定期自动同步词书数据'),
               value: _autoSync,
-              onChanged: (value) {
+              onChanged: _enabled ? (value) {
                 setState(() {
                   _autoSync = value;
                 });
-              },
+              } : null,
             ),
             if (_autoSync) ...[
               const SizedBox(height: 16),
@@ -518,6 +531,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
         autoSync: _autoSync,
         syncInterval: _syncInterval,
         lastSyncTime: widget.existingConfig?.lastSyncTime,
+        enabled: _enabled,
       );
 
       widget.onSave(syncConfig);

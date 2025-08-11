@@ -76,6 +76,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             return success;
           },
           onTest: () => _testSyncConfig(config),
+          onToggleEnabled: (enabled) => _toggleSyncConfig(config, enabled),
         );
       },
     );
@@ -376,6 +377,42 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
       if (mounted) {
         setState(() {
         });
+      }
+    }
+  }
+
+  Future<void> _toggleSyncConfig(SyncConfig config, bool enabled) async {
+    try {
+      final updatedConfig = SyncConfig(
+        id: config.id,
+        name: config.name,
+        providerType: config.providerType,
+        settings: config.settings,
+        autoSync: config.autoSync,
+        syncInterval: config.syncInterval,
+        lastSyncTime: config.lastSyncTime,
+        enabled: enabled,
+      );
+      
+      await _syncService.addConfig(updatedConfig);
+      
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(enabled ? '同步配置已启用' : '同步配置已禁用'),
+            backgroundColor: enabled ? Colors.green : Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('更新配置失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
