@@ -1,18 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:math' as Math;
-import 'package:uuid/uuid.dart';
-import 'package:excel/excel.dart';
+import 'dart:typed_data';
+
 import 'package:archive/archive.dart';
+import 'package:excel/excel.dart';
 
 import '../../shared/models/word.dart';
-import 'json_data_service.dart';
 import 'import_data_service.dart';
+import 'json_data_service.dart';
 
 class WordImportService {
-  static const Uuid _uuid = Uuid();
-  
   /// WPS compatibility preprocessing for Excel bytes
   Uint8List _preprocessWpsBytes(Uint8List bytes) {
     try {
@@ -29,8 +27,7 @@ class WordImportService {
       
       // For XML-based content, continue with existing logic
       int replacements = 0;
-      String originalContent = content;
-      
+
       // Strategy 1: More comprehensive numFmtId pattern matching
        content = content.replaceAllMapped(
          RegExp(r'numFmtId\s*=\s*["\x27]41["\x27]'),
@@ -301,7 +298,7 @@ class WordImportService {
       }
       
       // Strategy 2: WPS compatibility mode - try to handle numFmtId issues
-      if (excel == null && lastError != null && (lastError!.contains('custom numFmtId') || lastError!.contains('numFmtId'))) {
+      if (excel == null && lastError != null && (lastError.contains('custom numFmtId') || lastError.contains('numFmtId'))) {
         try {
           excel = _decodeWithWpsCompatibility(bytes);
         } catch (e) {
@@ -324,7 +321,6 @@ class WordImportService {
       if (excel == null) {
         try {
           // Try to create a fresh Excel instance and decode
-          final tempExcel = Excel.createExcel();
           excel = Excel.decodeBytes(bytes);
         } catch (e) {
           lastError = e.toString();
@@ -335,7 +331,7 @@ class WordImportService {
       if (excel == null) {
         String errorMessage = '无法解析Excel文件。';
         
-        if (lastError != null && (lastError!.contains('custom numFmtId') || lastError!.contains('numFmtId'))) {
+        if (lastError != null && (lastError.contains('custom numFmtId') || lastError.contains('numFmtId'))) {
           errorMessage += '\n\n检测到WPS Office兼容性问题：\n';
           errorMessage += '• WPS生成的Excel文件使用了非标准的数字格式定义\n';
           errorMessage += '• 这会导致标准Excel解析库无法正确读取文件\n\n';
@@ -378,7 +374,7 @@ class WordImportService {
         for (int i = 0; i < 1000; i++) { // Check up to 1000 rows
           try {
             final row = sheet.rows[i];
-            if (row != null && row.isNotEmpty) {
+            if (row.isNotEmpty) {
               actualRows = i + 1;
             } else {
               break;
@@ -396,7 +392,7 @@ class WordImportService {
                for (int c = 0; c < 10; c++) {
                  try {
                    final cellData = sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r));
-                   if (cellData != null && cellData.value != null && cellData.value.toString().trim().isNotEmpty) {
+                   if (cellData.value != null && cellData.value.toString().trim().isNotEmpty) {
                      actualRows = Math.max(actualRows, r + 1);
                    }
                  } catch (e) {
@@ -419,7 +415,6 @@ class WordImportService {
       final now = DateTime.now();
       
       // Skip header row (index 0) and process data rows with enhanced compatibility
-      int processedRows = 0;
       int skippedRows = 0;
       
       // Determine actual row count to process
@@ -490,7 +485,6 @@ class WordImportService {
             createdAt: now,
             updatedAt: now,
           ));
-          processedRows++;
         } catch (e) {
           // Skip problematic rows and continue processing
           skippedRows++;

@@ -258,64 +258,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showAutoSaveDialog() {
-    int currentInterval = 30; // TODO: Get from settings
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('设置自动保存间隔'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<int>(
-              title: const Text('15秒'),
-              value: 15,
-              groupValue: currentInterval,
-              onChanged: (value) {
-                Navigator.of(context).pop();
-                // TODO: Save to settings
-              },
-            ),
-            RadioListTile<int>(
-              title: const Text('30秒'),
-              value: 30,
-              groupValue: currentInterval,
-              onChanged: (value) {
-                Navigator.of(context).pop();
-                // TODO: Save to settings
-              },
-            ),
-            RadioListTile<int>(
-              title: const Text('60秒'),
-              value: 60,
-              groupValue: currentInterval,
-              onChanged: (value) {
-                Navigator.of(context).pop();
-                // TODO: Save to settings
-              },
-            ),
-            RadioListTile<int>(
-              title: const Text('关闭自动保存'),
-              value: 0,
-              groupValue: currentInterval,
-              onChanged: (value) {
-                Navigator.of(context).pop();
-                // TODO: Save to settings
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showTutorial() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(

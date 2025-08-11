@@ -59,7 +59,6 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   double _strokeWidth = 2.0;
   Color _strokeColor = Colors.black;
   Color _annotationColor = Colors.red;
-  bool _isErasing = false;
   ui.Image? _backgroundImage;
   
   @override

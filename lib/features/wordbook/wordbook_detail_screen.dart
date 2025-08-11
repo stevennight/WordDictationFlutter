@@ -1,22 +1,21 @@
-import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../../core/database/database_helper.dart';
+import '../../core/services/unit_service.dart';
+import '../../core/services/wordbook_service.dart';
+import '../../shared/models/unit.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
-import '../../shared/models/unit.dart';
-import '../../shared/models/dictation_session.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
-import '../../core/services/wordbook_service.dart';
-import '../../core/services/unit_service.dart';
-import '../../core/database/database_helper.dart';
-import 'wordbook_import_screen.dart';
-import '../dictation/screens/dictation_screen.dart';
 import '../dictation/screens/copying_screen.dart';
-import 'widgets/wordbook_quantity_selection_dialog.dart';
-import 'widgets/dictation_mode_selection_dialog.dart';
+import '../dictation/screens/dictation_screen.dart';
+import 'wordbook_import_screen.dart';
 
 enum UnitSortType {
   nameAsc,
@@ -126,7 +125,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         unitsToFilter = _units.where((unit) => !unit.isLearned).toList();
         break;
       case UnitLearningFilter.all:
-      default:
         unitsToFilter = _units;
         break;
     }
@@ -163,15 +161,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     _filteredUnits = unitsToFilter;
   }
 
-  int _getUnlearnedWordsCount() {
-    final unlearnedUnits = _units.where((unit) => !unit.isLearned);
-    int count = 0;
-    for (final unit in unlearnedUnits) {
-      count += _unitWords[unit.name]?.length ?? 0;
-    }
-    return count;
-  }
-
   int _getLearnedWordsCount() {
     final learnedUnits = _units.where((unit) => unit.isLearned);
     int count = 0;
@@ -179,19 +168,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       count += _unitWords[unit.name]?.length ?? 0;
     }
     return count;
-  }
-
-  Future<List<Word>> _getUnlearnedWords() async {
-    try {
-      return await _wordbookService.getWordbookUnlearnedWords(widget.wordbook.id!);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取未学习单词失败: $e')),
-        );
-      }
-      return [];
-    }
   }
 
   Future<List<Word>> _getLearnedWords() async {

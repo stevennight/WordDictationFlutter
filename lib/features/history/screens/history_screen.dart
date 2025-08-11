@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/word.dart';
-import '../../../shared/providers/history_provider.dart';
-import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
-import '../widgets/history_filter_dialog.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/providers/history_provider.dart';
+import '../../dictation/screens/dictation_result_screen.dart';
 import '../widgets/history_card.dart';
+import '../widgets/history_filter_dialog.dart';
 import '../widgets/history_stats_card.dart';
 import 'history_detail_screen.dart';
-import '../../dictation/screens/dictation_result_screen.dart';
 
 
 class HistoryScreen extends StatefulWidget {
@@ -218,7 +217,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         case HistoryFilter.incomplete:
           return !session.isCompleted;
         case HistoryFilter.all:
-        default:
           return true;
       }
     }).toList();
@@ -248,7 +246,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case HistoryFilter.incomplete:
         return '未完成';
       case HistoryFilter.all:
-      default:
         return '全部';
     }
   }

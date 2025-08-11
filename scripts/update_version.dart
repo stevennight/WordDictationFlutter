@@ -5,7 +5,6 @@
 /// 例如: dart scripts/update_version.dart 1.1.0-pre 1
 
 import 'dart:io';
-import 'dart:convert';
 
 void main(List<String> args) {
   if (args.isEmpty) {

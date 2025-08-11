@@ -1,13 +1,13 @@
 import 'dart:io';
-import 'package:crypto/crypto.dart';
+
 import 'package:path/path.dart' as path;
-import '../../shared/utils/path_utils.dart';
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
 
-import 'sync_service.dart';
-import 'history_sync_service.dart';
+import '../../shared/utils/path_utils.dart';
 import '../utils/file_hash_utils.dart';
+import 'history_sync_service.dart';
+import 'sync_service.dart';
 
 /// 图片同步管理器
 /// 负责处理历史记录中的笔迹图片文件的上传下载和去重

@@ -127,7 +127,7 @@ Future<T?> showSyncProgressDialog<T>({
   bool isCancelled = false;
 
   // 显示对话框
-  final dialogFuture = showDialog<T>(
+  showDialog<T>(
     context: context,
     barrierDismissible: false,
     builder: (context) {

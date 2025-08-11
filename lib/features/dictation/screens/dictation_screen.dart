@@ -1,18 +1,12 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../shared/utils/path_utils.dart';
 
-import '../../../shared/models/dictation_session.dart';
-import '../../../shared/models/word.dart';
-import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/utils/path_utils.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
 import '../../../shared/widgets/unified_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
-import '../widgets/answer_review_dialog.dart';
-import '../widgets/completion_dialog.dart';
 import 'dictation_result_screen.dart';
 
 class DictationScreen extends StatefulWidget {
@@ -763,28 +757,6 @@ class _DictationScreenState extends State<DictationScreen> {
     } catch (e) {
       debugPrint('加载批改图片到画布失败: $e');
     }
-  }
-
-  void _showCompletionDialog(DictationProvider provider) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => CompletionDialog(
-        session: provider.currentSession!,
-        onRetryIncorrect: () {
-          Navigator.of(context).pop();
-          _retryIncorrectWords(provider);
-        },
-        onFinish: () {
-          Navigator.of(context).pop();
-          _exitDictation(provider);
-        },
-      ),
-    );
-  }
-
-  void _retryIncorrectWords(DictationProvider provider) {
-    provider.retryIncorrectWords();
   }
 
   void _showAnswerFullscreen(String answerText, int dictationDirection) {

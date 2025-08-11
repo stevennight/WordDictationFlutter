@@ -1,18 +1,12 @@
-import 'dart:convert';
-
 import 'package:sqflite/sqflite.dart';
 
-import '../../shared/models/wordbook.dart';
 import '../../shared/models/word.dart';
+import '../../shared/models/wordbook.dart';
 import '../database/database_helper.dart';
-import 'word_service.dart';
-import 'unit_service.dart';
 import 'json_data_service.dart';
 
 class WordbookService {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
-  final WordService _wordService = WordService();
-  final UnitService _unitService = UnitService();
 
   /// Create a new wordbook
   Future<int> createWordbook(Wordbook wordbook) async {

@@ -1,13 +1,10 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
-import '../models/dictation_session.dart';
-import '../models/dictation_result.dart';
 import '../../core/database/database_helper.dart';
 import '../../core/services/config_service.dart';
 import '../../core/services/history_deletion_service.dart';
+import '../models/dictation_result.dart';
+import '../models/dictation_session.dart';
 
 class HistoryProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;

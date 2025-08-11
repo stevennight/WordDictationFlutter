@@ -17,7 +17,6 @@ class SyncSettingsScreen extends StatefulWidget {
 
 class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
   final SyncService _syncService = SyncService();
-  bool _isLoading = false;
   bool _initialized = false;
 
   @override
@@ -224,7 +223,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
 
   Future<bool> _performSync(SyncConfig config) async {
     setState(() {
-      _isLoading = true;
     });
 
     try {
@@ -345,7 +343,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
         });
       }
     }
@@ -353,7 +350,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
 
   Future<void> _testSyncConfig(SyncConfig config) async {
     setState(() {
-      _isLoading = true;
     });
 
     try {
@@ -379,7 +375,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
         });
       }
     }
