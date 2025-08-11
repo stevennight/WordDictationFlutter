@@ -134,9 +134,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
 
   String _getLatestObjectKey(SyncDataType dataType) {
     final dataTypeName = dataType.toString().split('.').last;
-    if (dataType == SyncDataType.historyImages) {
-      return '${_storageConfig.pathPrefix}/handwriting_cache/index.json';
-    }
     return '${_storageConfig.pathPrefix}/$dataTypeName-latest.json';
   }
 
@@ -170,68 +167,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     } catch (e) {
       _logDebug('连接测试异常: $e');
       return SyncResult.failure('连接测试失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> downloadData(SyncDataType dataType) async {
-    try {
-      // 特殊处理历史记录图片下载
-      if (dataType == SyncDataType.historyImages) {
-        return await _downloadImageData();
-      }
-
-      final latestKey = _getLatestObjectKey(dataType);
-      final result = await _getObject(latestKey);
-      
-      if (result.success && result.data != null) {
-        final contentBytes = result.data!['content'] as List<int>;
-        _logDebug('下载的数据长度: ${contentBytes.length} bytes');
-        _logDebug('Content-Type: ${result.data!['contentType']}');
-        
-        try {
-          final jsonString = utf8.decode(contentBytes);
-          _logDebug('解码后的JSON字符串长度: ${jsonString.length}');
-          final data = jsonDecode(jsonString) as Map<String, dynamic>;
-          
-          return SyncResult.success(
-            message: '数据下载成功',
-            data: data,
-          );
-        } catch (decodeError) {
-          _logDebug('数据解码失败: $decodeError');
-          _logDebug('原始数据前100字节: ${contentBytes.take(100).toList()}');
-          return SyncResult.failure('数据解码失败: $decodeError');
-        }
-      } else {
-        return SyncResult.failure('下载数据失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('下载数据失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> deleteData(SyncDataType dataType) async {
-    try {
-      final latestKey = _getLatestObjectKey(dataType);
-      
-      // 如果是历史记录数据，需要先删除关联的图片文件
-      if (dataType == SyncDataType.history) {
-        await _deleteAssociatedImageFiles(latestKey);
-        // 同时清空本地历史记录（使用统一的删除服务）
-        await _deletionService.clearAllHistory(deleteImages: true);
-      }
-      
-      final result = await _deleteObject(latestKey);
-      
-      if (result.success) {
-        return SyncResult.success(message: '数据删除成功');
-      } else {
-        return SyncResult.failure('删除数据失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('删除数据失败: $e');
     }
   }
 
@@ -615,118 +550,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     return hmac.convert(messageBytes).toString();
   }
 
-  // 上传历史记录数据（包含图片文件）
-
-
-  // 图片下载的特殊处理方法
-  Future<SyncResult> _downloadImageData() async {
-    try {
-      // 首先下载索引文件
-      final indexKey = _getLatestObjectKey(SyncDataType.historyImages);
-      final indexResult = await _getObject(indexKey);
-      
-      if (!indexResult.success) {
-        return SyncResult.failure('下载图片索引失败: ${indexResult.message}');
-      }
-      
-      final indexBytes = indexResult.data!['content'] as List<int>;
-      final indexJson = jsonDecode(utf8.decode(indexBytes)) as Map<String, dynamic>;
-      final imageList = indexJson['images'] as List<dynamic>? ?? [];
-      
-      final downloadedImages = <Map<String, dynamic>>[];
-      
-      // 下载每个图片文件
-      for (final imageInfo in imageList) {
-        final imageMap = imageInfo as Map<String, dynamic>;
-        final objectKey = imageMap['objectKey'] as String;
-        final hash = imageMap['hash'] as String;
-        final extension = imageMap['extension'] as String;
-        
-        final imageResult = await _getObject(objectKey);
-        if (imageResult.success) {
-          final imageBytes = imageResult.data!['content'] as List<int>;
-          downloadedImages.add({
-            'hash': hash,
-            'extension': extension,
-            'bytes': imageBytes,
-            'size': imageBytes.length,
-          });
-        } else {
-          _logDebug('下载图片失败: $objectKey, ${imageResult.message}');
-          // 继续下载其他图片，不因单个图片失败而中断
-        }
-      }
-      
-      return SyncResult.success(
-        message: '图片数据下载成功',
-        data: {
-          'images': downloadedImages,
-          'totalCount': downloadedImages.length,
-          'indexInfo': indexJson,
-        },
-      );
-    } catch (e) {
-      return SyncResult.failure('下载图片数据失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> deleteFileByPath(String objectKey) async {
-    try {
-      // 如果是相对路径，转换为完整路径
-      final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
-          ? objectKey 
-          : '${_storageConfig.pathPrefix}/$objectKey';
-      
-      _logDebug('开始删除对象: $objectKey -> $fullObjectKey');
-      
-      final result = await _deleteObject(fullObjectKey);
-      if (result.success) {
-        _logDebug('删除对象成功: $objectKey');
-        return SyncResult.success(message: '删除对象成功');
-      } else {
-        _logDebug('删除对象失败: $objectKey, ${result.message}');
-        return SyncResult.failure('删除对象失败: ${result.message}');
-      }
-    } catch (e) {
-      _logDebug('删除对象异常: $objectKey, $e');
-      return SyncResult.failure('删除对象失败: $e');
-    }
-  }
-
-  /// 通过对象键直接下载图片文件
-  Future<SyncResult> downloadImageByObjectKey(String objectKey) async {
-    try {
-      // 如果是相对路径，转换为完整路径
-      final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
-          ? objectKey 
-          : '${_storageConfig.pathPrefix}/$objectKey';
-      
-      _logDebug('开始下载图片: $objectKey -> $fullObjectKey');
-      
-      final result = await _getObject(fullObjectKey);
-      if (!result.success) {
-        _logDebug('下载图片失败: $objectKey, ${result.message}');
-        return SyncResult.failure('下载图片失败: ${result.message}');
-      }
-      
-      final imageBytes = result.data!['content'] as List<int>;
-      _logDebug('图片下载成功: $objectKey (${imageBytes.length} bytes)');
-      
-      return SyncResult.success(
-        message: '图片下载成功',
-        data: {
-          'content': imageBytes,
-          'objectKey': objectKey,
-          'size': imageBytes.length,
-        },
-      );
-    } catch (e) {
-      _logDebug('下载图片异常: $objectKey, $e');
-      return SyncResult.failure('下载图片失败: $e');
-    }
-  }
-
   /// 删除历史记录关联的图片文件
   Future<void> _deleteAssociatedImageFiles(String historyDataKey) async {
     try {
@@ -902,11 +725,12 @@ class ObjectStorageSyncProvider extends SyncProvider {
       _logDebug('下载字节数据: $objectKey');
       
       final result = await _getObject(objectKey, onProgress: onProgress);
+      print('result:$result');
       if (result.success && result.data != null) {
         final bytes = result.data!['data'] as List<int>;
         
         _logDebug('字节数据下载成功: $objectKey (${bytes.length} bytes)');
-        return SyncResult.success(message: '数据下载成功', data: {'data': bytes, 'size': bytes.length});
+        return SyncResult.success(message: '数据下载成功', data: result.data);
       } else {
         return SyncResult.failure('数据下载失败: ${result.message}');
       }

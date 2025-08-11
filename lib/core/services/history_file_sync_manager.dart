@@ -172,7 +172,7 @@ class HistoryFileSyncManager {
     
     try {
       // 直接从对象存储下载图片
-      final downloadResult = await provider.downloadImageByObjectKey(objectKey);
+      final downloadResult = await provider.downloadBytes(objectKey);
       if (!downloadResult.success || downloadResult.data == null) {
         print('[ImageSync] 下载图片失败: $objectKey, ${downloadResult.message}');
         return;

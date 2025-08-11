@@ -11,7 +11,6 @@ enum SyncDataType {
   wordbooks,
   settings,
   history,
-  historyImages, // 历史记录图片文件
   // 预留其他数据类型
 }
 
@@ -109,26 +108,11 @@ abstract class SyncProvider {
   /// 测试连接
   Future<SyncResult> testConnection();
 
-  /// 下载远程数据
-  /// deprecated
-  Future<SyncResult> downloadData(SyncDataType dataType);
-
-  /// 删除远程数据
-  /// deprecated
-  Future<SyncResult> deleteData(SyncDataType dataType);
-
   /// 获取远程数据信息（如最后修改时间等）
   Future<SyncResult> getDataInfo(SyncDataType dataType);
 
   /// 列出所有可用的数据文件
   Future<SyncResult> listDataFiles();
-
-  /// 通过对象键直接下载图片文件
-  Future<SyncResult> downloadImageByObjectKey(String objectKey);
-
-  /// 根据相对路径删除指定文件
-  /// [relativePath] 不包含目录前缀的相对路径
-  Future<SyncResult> deleteFileByPath(String relativePath);
 
   // ========== 纯文件存储操作方法 ==========
   
@@ -145,7 +129,7 @@ abstract class SyncProvider {
   Future<SyncResult> downloadFile(String remotePath, String localPath, {void Function(int current, int total)? onProgress});
 
   /// 删除指定路径的文件
-  /// [remotePath] 远程存储路径
+  /// [remotePath] 远程存储路径（不含存储配置的前缀）
   Future<SyncResult> deleteFile(String remotePath);
 
   /// 上传字节数据到指定路径

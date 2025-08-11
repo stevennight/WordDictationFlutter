@@ -554,7 +554,7 @@ class HistorySyncService {
       // 2. 尝试下载远端记录
       onProgress?.call('正在下载云端历史记录...');
       print('[HistorySyncService] 第二步：下载远端记录');
-      final downloadResult = await provider.downloadData(SyncDataType.history);
+      final downloadResult = await downloadData(provider, SyncDataType.history);
       
       Map<String, dynamic> remoteHistoryData;
       List<dynamic> remoteSessions;
@@ -597,10 +597,8 @@ class HistorySyncService {
       onProgress?.call('正在上传合并后的数据到云端...');
       print('[HistorySyncService] 第四步：上传合并后的数据到远端');
       final mergedHistoryData = await exportHistoryData();
-      final wordbookSync = WordbookSyncService.instance;
 
-      // todo::专属方法。
-      final uploadResult = await uploadData(provider, SyncDataType.history, mergedHistoryData, onProgress);
+      final uploadResult = await _uploadHistoryData(provider, mergedHistoryData, onProgress);
 
       
       if (uploadResult.success) {
@@ -658,7 +656,7 @@ class HistorySyncService {
   /// 删除云端笔迹文件
   /// [objectKey] 要删除的对象键
   /// [provider] 同步提供者，如果未提供则使用默认提供者
-  Future<void> _deleteCloudHandwritingFiles(String objectKey, [SyncProvider? provider]) async {
+  Future<void> _deleteCloudHandwritingFile(String objectKey, [SyncProvider? provider]) async {
     try {
       final syncProvider = provider;
       if (syncProvider == null) {
@@ -667,7 +665,7 @@ class HistorySyncService {
       }
       
       // 使用对象存储同步提供者删除文件
-      final result = await syncProvider.deleteFileByPath(objectKey);
+      final result = await syncProvider.deleteFile(objectKey);
       if (result.success) {
         debugPrint('成功删除云端文件: $objectKey');
       } else {
@@ -684,72 +682,19 @@ class HistorySyncService {
       // 删除原始图片文件
       final originalPath = resultMap['original_image_path'] as String?;
       if (originalPath != null && originalPath.isNotEmpty) {
-        await _deleteCloudHandwritingFiles(originalPath, provider);
+        await _deleteCloudHandwritingFile(originalPath, provider);
       }
       
       // 删除标注图片文件
       final annotatedPath = resultMap['annotated_image_path'] as String?;
       if (annotatedPath != null && annotatedPath.isNotEmpty) {
-        await _deleteCloudHandwritingFiles(annotatedPath, provider);
+        await _deleteCloudHandwritingFile(annotatedPath, provider);
       }
     }
   }
   
-  /// 上传数据方法（从 ObjectStorageSyncProvider 移动过来）
-  Future<SyncResult> uploadData(SyncProvider provider, SyncDataType dataType, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
-    try {
-      print('[HistorySync] 开始上传数据，类型: $dataType');
-      
-      // 特殊处理历史记录图片上传
-      if (dataType == SyncDataType.historyImages) {
-        return await _uploadImageData(data, provider);
-      }
-      
-      // 特殊处理历史记录数据上传（包含图片文件）
-      if (dataType == SyncDataType.history) {
-        return await _uploadHistoryData(data, onProgress, provider);
-      }
-
-      // 对于其他数据类型，委托给 provider 处理
-      _logDebug('开始上传数据，类型: $dataType');
-      
-      final pathPrefix = await provider.getPathPrefix();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final dataTypeName = dataType.toString().split('.').last;
-      final objectKey = "$pathPrefix$dataTypeName-$timestamp.json";
-      final latestKey = "$pathPrefix$dataTypeName-latest.json";
-      final jsonData = jsonEncode(data);
-      final bytes = utf8.encode(jsonData);
-      
-      _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
-
-      // 上传带时间戳的文件
-      final uploadResult = await provider.uploadBytes(bytes, objectKey);
-      if (!uploadResult.success) {
-        _logDebug('上传主文件失败: ${uploadResult.message}');
-        return uploadResult;
-      }
-
-      // 同时上传latest文件作为最新版本的快速访问
-      final latestResult = await provider.uploadBytes(bytes, latestKey);
-      if (!latestResult.success) {
-        _logDebug('上传latest文件失败: ${latestResult.message}');
-        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
-      }
-      
-      _logDebug('数据上传成功');
-      return SyncResult.success(
-        message: '数据上传成功',
-        data: {'objectKey': objectKey, 'latestKey': latestKey},
-      );
-    } catch (e) {
-      print('[HistorySync] 上传数据异常: $e');
-      return SyncResult.failure('上传数据失败: $e');
-    }
-  }
-
   /// 上传历史记录数据（包含图片文件）
-  Future<SyncResult> _uploadHistoryData(Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress, SyncProvider provider) async {
+  Future<SyncResult> _uploadHistoryData(SyncProvider provider, Map<String, dynamic> data, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       print('[HistorySync] 开始上传历史记录数据');
       
@@ -836,10 +781,46 @@ class HistorySyncService {
       }
       
       updatedData['sessions'] = updatedSessions;
-      
-      // 使用 provider 上传 JSON 数据
-      return await uploadData(provider, SyncDataType.history, updatedData, onProgress);
 
+      // 对于其他数据类型，委托给 provider 处理
+      const dataType = SyncDataType.history;
+      _logDebug('开始上传数据，类型: $dataType');
+
+      final pathPrefix = await provider.getPathPrefix();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final dataTypeName = dataType.toString().split('.').last;
+      final objectKey = "$pathPrefix$dataTypeName-$timestamp.json";
+      final latestKey = "$pathPrefix$dataTypeName-latest.json";
+      final jsonData = jsonEncode(data);
+      final bytes = utf8.encode(jsonData);
+
+      _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
+
+      // 上传带时间戳的文件
+      final uploadResult = await provider.uploadBytes(bytes, objectKey);
+      if (!uploadResult.success) {
+        _logDebug('上传主文件失败: ${uploadResult.message}');
+        return uploadResult;
+      }
+
+      // 同时上传latest文件作为最新版本的快速访问
+      final latestResult = await provider.uploadBytes(bytes, latestKey);
+      if (!latestResult.success) {
+        _logDebug('上传latest文件失败: ${latestResult.message}');
+        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
+      }
+
+      _logDebug('历史记录数据上传完成');
+
+      return SyncResult.success(
+        message: '历史记录上传成功',
+        data: {
+          'objectKey': objectKey,
+          'latestKey': latestKey,
+          'uploadedImages': uploadedImages.length,
+          'totalImages': imagesToUpload.length,
+        },
+      );
     } catch (e) {
       print('[HistorySync] 上传历史记录数据异常: $e');
       return SyncResult.failure('上传历史记录数据失败: $e');
@@ -931,6 +912,39 @@ class HistorySyncService {
     } catch (e) {
       print('[HistorySync] 上传图片异常: $imagePath, 错误: $e');
       return null;
+    }
+  }
+
+  Future<SyncResult> downloadData(SyncProvider provider, SyncDataType dataType) async {
+    try {
+      final dataTypeName = dataType.toString().split('.').last;
+      final latestKey = '$dataTypeName-latest.json';
+      final result = await provider.downloadBytes(latestKey);
+      
+      if (result.success && result.data != null) {
+        final contentBytes = result.data!['content'] as List<int>;
+        _logDebug('下载的数据长度: ${contentBytes.length} bytes');
+        _logDebug('Content-Type: ${result.data!['contentType']}');
+        
+        try {
+          final jsonString = utf8.decode(contentBytes);
+          _logDebug('解码后的JSON字符串长度: ${jsonString.length}');
+          final data = jsonDecode(jsonString) as Map<String, dynamic>;
+          
+          return SyncResult.success(
+            message: '数据下载成功',
+            data: data,
+          );
+        } catch (decodeError) {
+          _logDebug('数据解码失败: $decodeError');
+          _logDebug('原始数据前100字节: ${contentBytes.take(100).toList()}');
+          return SyncResult.failure('数据解码失败: $decodeError');
+        }
+      } else {
+        return SyncResult.failure('下载数据失败: ${result.message}');
+      }
+    } catch (e) {
+      return SyncResult.failure('下载数据失败: $e');
     }
   }
 
