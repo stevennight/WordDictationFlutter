@@ -174,6 +174,7 @@ class SyncStatusCard extends StatelessWidget {
         _buildInfoItem('存储桶', settings['bucket'] ?? 'N/A'),
         _buildInfoItem('区域', settings['region'] ?? 'N/A'),
         _buildInfoItem('端点', settings['endpoint'] ?? 'N/A'),
+        _buildInfoItem('备份保留', '${config.retentionCount}个'),
       ];
     }
     

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
 
 import 'sync_service.dart';
 
@@ -669,35 +670,8 @@ class ObjectStorageSyncProvider extends SyncProvider {
       
       final result = await _listObjects(prefix: prefix);
       if (result.success && result.data != null) {
-        final objects = result.data!['objects'] as List<Map<String, dynamic>>;
-        
-        // 过滤文件：如果不是递归模式，只返回直接子文件
-        List<Map<String, dynamic>> filteredObjects = objects;
-        if (!recursive) {
-          filteredObjects = objects.where((obj) {
-            final key = obj['key'] as String;
-            final relativePath = key.startsWith('${_storageConfig.pathPrefix}/') 
-                ? key.substring('${_storageConfig.pathPrefix}/'.length)
-                : key;
-            // 检查是否为直接子文件（不包含额外的斜杠）
-            final pathAfterRemote = relativePath.startsWith('$remotePath/') 
-                ? relativePath.substring('$remotePath/'.length)
-                : relativePath;
-            return !pathAfterRemote.contains('/');
-          }).toList();
-        }
-        
-        // 移除路径前缀，返回相对路径
-        final files = filteredObjects.map((obj) {
-          final key = obj['key'] as String;
-          final relativePath = key.startsWith('${_storageConfig.pathPrefix}/') 
-              ? key.substring('${_storageConfig.pathPrefix}/'.length)
-              : key;
-          return {
-            ...obj,
-            'relativePath': relativePath,
-          };
-        }).toList();
+        final xmlResponse = result.data!['response'] as String;
+        final files = _parseListObjectsResponse(xmlResponse, remotePath, recursive);
         
         _logDebug('列出文件成功: ${files.length} 个文件');
         return SyncResult.success(message: '列出文件成功', data: {'files': files});
@@ -713,5 +687,99 @@ class ObjectStorageSyncProvider extends SyncProvider {
   @override
   Future<String> getPathPrefix() async {
     return '${_storageConfig.pathPrefix}/';
+  }
+
+  /// 解析ListObjects的XML响应
+  /// [xmlResponse] XML响应字符串
+  /// [remotePath] 远程路径
+  /// [recursive] 是否递归列出子目录文件
+  /// 返回文件信息列表，每个文件包含: relativePath, size, lastModified, etag
+  List<Map<String, dynamic>> _parseListObjectsResponse(String xmlResponse, String remotePath, bool recursive) {
+    try {
+      final document = XmlDocument.parse(xmlResponse);
+      final files = <Map<String, dynamic>>[];
+      
+      // 查找所有Contents元素（文件）
+      final contents = document.findAllElements('Contents');
+      
+      for (final content in contents) {
+        final keyElement = content.findElements('Key').firstOrNull;
+        final sizeElement = content.findElements('Size').firstOrNull;
+        final lastModifiedElement = content.findElements('LastModified').firstOrNull;
+        final etagElement = content.findElements('ETag').firstOrNull;
+        
+        if (keyElement != null) {
+          final fullKey = keyElement.innerText;
+          
+          // 移除路径前缀，获取相对路径
+          String relativePath = fullKey;
+          final pathPrefix = '${_storageConfig.pathPrefix}/';
+          if (relativePath.startsWith(pathPrefix)) {
+            relativePath = relativePath.substring(pathPrefix.length);
+          }
+          
+          // 如果指定了remotePath，进一步处理路径
+          if (remotePath.isNotEmpty) {
+            final remotePrefix = remotePath.endsWith('/') ? remotePath : '$remotePath/';
+            if (relativePath.startsWith(remotePrefix)) {
+              relativePath = relativePath.substring(remotePrefix.length);
+            } else if (!relativePath.startsWith(remotePath)) {
+              // 如果文件不在指定的远程路径下，跳过
+              continue;
+            }
+          }
+          
+          // 如果不是递归模式，跳过子目录中的文件
+          if (!recursive && relativePath.contains('/')) {
+            continue;
+          }
+          
+          // 跳过空的相对路径（通常是目录本身）
+          if (relativePath.isEmpty || relativePath.endsWith('/')) {
+            continue;
+          }
+          
+          final fileInfo = <String, dynamic>{
+            'relativePath': relativePath,
+            'fullPath': fullKey,
+          };
+          
+          // 添加文件大小
+          if (sizeElement != null) {
+            final sizeStr = sizeElement.innerText;
+            fileInfo['size'] = int.tryParse(sizeStr) ?? 0;
+          }
+          
+          // 添加最后修改时间
+          if (lastModifiedElement != null) {
+            final lastModifiedStr = lastModifiedElement.innerText;
+            try {
+              fileInfo['lastModified'] = DateTime.parse(lastModifiedStr);
+            } catch (e) {
+              _logDebug('解析最后修改时间失败: $lastModifiedStr, 错误: $e');
+            }
+          }
+          
+          // 添加ETag
+          if (etagElement != null) {
+            String etag = etagElement.innerText;
+            // 移除ETag两端的引号
+            if (etag.startsWith('"') && etag.endsWith('"')) {
+              etag = etag.substring(1, etag.length - 1);
+            }
+            fileInfo['etag'] = etag;
+          }
+          
+          files.add(fileInfo);
+        }
+      }
+      
+      _logDebug('解析XML响应成功，找到 ${files.length} 个文件');
+      return files;
+    } catch (e) {
+      _logDebug('解析XML响应失败: $e');
+      // 如果XML解析失败，返回空列表而不是抛出异常
+      return <Map<String, dynamic>>[];
+    }
   }
 }

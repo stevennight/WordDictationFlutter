@@ -35,6 +35,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
   bool _obscureSecretKey = true;
   bool _isLoading = false;
   bool _enabled = true;
+  int _retentionCount = 10;
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
       _autoSync = config.autoSync;
       _syncInterval = config.syncInterval;
       _enabled = config.enabled;
+      _retentionCount = config.retentionCount;
     } else {
       _pathPrefixController.text = 'wordDictationSync';
     }
@@ -437,6 +439,38 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
                 },
               ),
             ],
+            const SizedBox(height: 16),
+            TextFormField(
+              initialValue: _retentionCount.toString(),
+              decoration: const InputDecoration(
+                labelText: '备份文件保留数量',
+                hintText: '保留最新的备份文件数量（默认10个）',
+                border: OutlineInputBorder(),
+                suffixText: '个',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return '请输入保留数量';
+                }
+                final count = int.tryParse(value);
+                if (count == null || count < 1) {
+                  return '请输入有效的数量（至少1个）';
+                }
+                if (count > 100) {
+                  return '保留数量不能超过100个';
+                }
+                return null;
+              },
+              onChanged: (value) {
+                final count = int.tryParse(value);
+                if (count != null && count >= 1 && count <= 100) {
+                  setState(() {
+                    _retentionCount = count;
+                  });
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -544,6 +578,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
         syncInterval: _syncInterval,
         lastSyncTime: widget.existingConfig?.lastSyncTime,
         enabled: _enabled,
+        retentionCount: _retentionCount,
       );
 
       widget.onSave(syncConfig);

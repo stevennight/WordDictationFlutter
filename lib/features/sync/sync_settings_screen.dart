@@ -392,6 +392,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         syncInterval: config.syncInterval,
         lastSyncTime: config.lastSyncTime,
         enabled: enabled,
+        retentionCount: config.retentionCount,
       );
       
       await _syncService.addConfig(updatedConfig);

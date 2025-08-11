@@ -42,6 +42,7 @@ class SyncConfig {
   final Duration syncInterval;
   final DateTime? lastSyncTime;
   final bool enabled;
+  final int retentionCount;
 
   SyncConfig({
     required this.id,
@@ -52,6 +53,7 @@ class SyncConfig {
     this.syncInterval = const Duration(hours: 1),
     this.lastSyncTime,
     this.enabled = true,
+    this.retentionCount = 100,
   });
 
   Map<String, dynamic> toMap() {
@@ -64,6 +66,7 @@ class SyncConfig {
       'syncInterval': syncInterval.inMilliseconds,
       'lastSyncTime': lastSyncTime?.millisecondsSinceEpoch,
       'enabled': enabled,
+      'retentionCount': retentionCount,
     };
   }
 
@@ -81,6 +84,7 @@ class SyncConfig {
           ? DateTime.fromMillisecondsSinceEpoch(map['lastSyncTime'])
           : null,
       enabled: map['enabled'] ?? true,
+      retentionCount: map['retentionCount'] ?? 10,
     );
   }
 }
@@ -282,5 +286,29 @@ class SyncService {
     if (!_initialized) {
       await _loadConfigs();
     }
+  }
+
+  /// 更新配置的最后同步时间
+  Future<void> updateConfigLastSyncTime(String configId) async {
+    final configIndex = _configs.indexWhere((c) => c.id == configId);
+    if (configIndex == -1) {
+      throw Exception('配置不存在: $configId');
+    }
+
+    final config = _configs[configIndex];
+    final updatedConfig = SyncConfig(
+      id: config.id,
+      name: config.name,
+      providerType: config.providerType,
+      settings: config.settings,
+      autoSync: config.autoSync,
+      syncInterval: config.syncInterval,
+      lastSyncTime: DateTime.now(),
+      enabled: config.enabled,
+      retentionCount: config.retentionCount,
+    );
+    
+    _configs[configIndex] = updatedConfig;
+    await _saveConfigs();
   }
 }

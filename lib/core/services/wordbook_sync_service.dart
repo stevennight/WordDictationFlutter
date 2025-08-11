@@ -47,22 +47,8 @@ class WordbookSyncService {
       }
 
       if (result.success && result.data != null) {
-        // todo::这个是不是干掉？
         // 更新最后同步时间
-        final config = syncService.getConfig(configId);
-        if (config != null) {
-          final updatedConfig = SyncConfig(
-            id: config.id,
-            name: config.name,
-            providerType: config.providerType,
-            settings: config.settings,
-            autoSync: config.autoSync,
-            syncInterval: config.syncInterval,
-            lastSyncTime: DateTime.now(),
-            enabled: config.enabled,
-          );
-          await syncService.addConfig(updatedConfig);
-        }
+        await syncService.updateConfigLastSyncTime(configId);
       }
 
       return result;
@@ -115,11 +101,10 @@ class WordbookSyncService {
     try {
       _logDebug('开始上传数据，类型: $dataType');
       
-      final pathPrefix = await provider.getPathPrefix();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final dataTypeName = dataType.toString().split('.').last;
-      final objectKey = "$pathPrefix$dataTypeName-$timestamp.json";
-      final latestKey = "$pathPrefix$dataTypeName-latest.json";
+      final objectKey = "backup/$dataTypeName-$timestamp.json";
+      final latestKey = "$dataTypeName-latest.json";
       final jsonData = jsonEncode(data);
       final bytes = utf8.encode(jsonData);
       
@@ -137,6 +122,19 @@ class WordbookSyncService {
       if (!latestResult.success) {
         _logDebug('上传latest文件失败: ${latestResult.message}');
         return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
+      }
+      
+      // 清理旧的备份文件
+      _logDebug('开始清理旧的备份文件');
+      // 获取配置中的保留数量
+      final syncService = SyncService();
+      final config = syncService.configs.firstWhere((c) => c.settings == provider.config.settings, orElse: () => provider.config);
+      final retentionCount = config.retentionCount;
+      final cleanupResult = await cleanupOldBackups(provider, dataType, retentionCount);
+      if (cleanupResult.success) {
+        _logDebug('备份文件清理成功: ${cleanupResult.message}');
+      } else {
+        _logDebug('备份文件清理失败: ${cleanupResult.message}');
       }
       
       _logDebug('数据上传成功');
@@ -219,6 +217,76 @@ class WordbookSyncService {
     final result = await importDataService.importFromJsonData(data);
     if (!result.success) {
       throw Exception(result.message);
+    }
+  }
+
+  /// 清理旧的备份文件，保留指定数量的最新备份
+  /// [provider] 同步提供者
+  /// [dataType] 数据类型
+  /// [retentionCount] 保留的备份数量
+  Future<SyncResult> cleanupOldBackups(SyncProvider provider, SyncDataType dataType, int retentionCount) async {
+    try {
+      final dataTypeName = dataType.toString().split('.').last;
+      _logDebug('开始清理旧的 $dataTypeName 备份文件，保留 $retentionCount 份');
+      
+      // 列出backup目录下的所有备份文件
+      final listResult = await provider.listFiles('backup', recursive: false);
+      if (!listResult.success) {
+        return SyncResult.failure('获取文件列表失败: ${listResult.message}');
+      }
+      
+      final files = listResult.data!['files'] as List<Map<String, dynamic>>;
+      
+      // 过滤出指定类型的带时间戳的备份文件
+      final backupFiles = files.where((file) {
+        final relativePath = file['relativePath'] as String;
+        final regex = RegExp(r'^' + dataTypeName + r'-(\d+)\.json$');
+        return regex.hasMatch(relativePath);
+      }).toList();
+      
+      _logDebug('找到 ${backupFiles.length} 个 $dataTypeName 备份文件');
+      
+      if (backupFiles.length <= retentionCount) {
+        _logDebug('备份文件数量不超过保留数量，无需清理');
+        return SyncResult.success(message: '无需清理备份文件');
+      }
+      
+      // 按时间戳排序（从新到旧）
+      backupFiles.sort((a, b) {
+        final aPath = a['relativePath'] as String;
+        final bPath = b['relativePath'] as String;
+        final aTimestamp = int.parse(RegExp(r'\w+-(\d+)\.json$').firstMatch(aPath)!.group(1)!);
+        final bTimestamp = int.parse(RegExp(r'\w+-(\d+)\.json$').firstMatch(bPath)!.group(1)!);
+        return bTimestamp.compareTo(aTimestamp); // 降序排列
+      });
+      
+      // 删除多余的旧备份文件
+      final filesToDelete = backupFiles.skip(retentionCount).toList();
+      _logDebug('需要删除 ${filesToDelete.length} 个旧备份文件');
+      
+      int deletedCount = 0;
+      for (final file in filesToDelete) {
+        final relativePath = file['relativePath'] as String;
+        try {
+          // 构建完整的备份文件路径
+          final backupFilePath = 'backup/$relativePath';
+          final deleteResult = await provider.deleteFile(backupFilePath);
+          if (deleteResult.success) {
+            deletedCount++;
+            _logDebug('已删除旧备份文件: $relativePath');
+          } else {
+            _logDebug('删除备份文件失败: $relativePath, ${deleteResult.message}');
+          }
+        } catch (e) {
+          _logDebug('删除备份文件异常: $relativePath, $e');
+        }
+      }
+      
+      _logDebug('备份文件清理完成，删除了 $deletedCount 个文件');
+      return SyncResult.success(message: '清理完成，删除了 $deletedCount 个旧备份文件');
+    } catch (e) {
+      _logDebug('清理备份文件时发生错误: $e');
+      return SyncResult.failure('清理备份文件失败: $e');
     }
   }
 }

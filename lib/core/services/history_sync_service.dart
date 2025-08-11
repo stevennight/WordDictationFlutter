@@ -460,21 +460,20 @@ class HistorySyncService {
 
       
       if (uploadResult.success) {
-        // 更新配置中的同步时间
+        // 清理旧的备份文件
+        onProgress?.call('正在清理旧的备份文件...');
+        print('[HistorySyncService] 第五步：清理旧的备份文件');
         final config = syncService.getConfig(configId);
-        if (config != null) {
-          final updatedConfig = SyncConfig(
-            id: config.id,
-            name: config.name,
-            providerType: config.providerType,
-            settings: config.settings,
-            autoSync: config.autoSync,
-            syncInterval: config.syncInterval,
-            lastSyncTime: DateTime.now(),
-            enabled: config.enabled,
-          );
-          await syncService.addConfig(updatedConfig);
+        final retentionCount = config?.retentionCount ?? 10;
+        final cleanupResult = await cleanupOldBackups(provider, SyncDataType.history, retentionCount);
+        if (cleanupResult.success) {
+          print('[HistorySyncService] 备份文件清理成功: ${cleanupResult.message}');
+        } else {
+          print('[HistorySyncService] 备份文件清理失败: ${cleanupResult.message}');
         }
+        
+        // 更新配置中的同步时间
+        await syncService.updateConfigLastSyncTime(configId);
         
         print('[HistorySyncService] 智能同步完成');
         return SyncResult.success(message: '智能同步完成');
@@ -688,7 +687,7 @@ class HistorySyncService {
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final dataTypeName = dataType.toString().split('.').last;
-      final objectKey = "$dataTypeName-$timestamp.json";
+      final objectKey = "backup/$dataTypeName-$timestamp.json";
       final latestKey = "$dataTypeName-latest.json";
       final jsonData = jsonEncode(mergeHistoryData);
       final bytes = utf8.encode(jsonData);
@@ -820,7 +819,7 @@ class HistorySyncService {
 
   /// 日志输出
   void _logDebug(String message) {
-    print('[historySync] $message');
+    print('[HistorySync] $message');
   }
 
   /// 获取导航器上下文
@@ -1010,5 +1009,75 @@ class HistorySyncService {
      'imagePathToObjectKey': imagePathToObjectKey,
    };
  }
+
+  /// 清理旧的备份文件，保留指定数量的最新备份
+  /// [provider] 同步提供者
+  /// [dataType] 数据类型
+  /// [retentionCount] 保留的备份数量
+  Future<SyncResult> cleanupOldBackups(SyncProvider provider, SyncDataType dataType, int retentionCount) async {
+    try {
+      final dataTypeName = dataType.toString().split('.').last;
+      print('[HistorySync] 开始清理旧的 $dataTypeName 备份文件，保留 $retentionCount 份');
+      
+      // 列出backup目录下的所有备份文件
+      final listResult = await provider.listFiles('backup', recursive: false);
+      if (!listResult.success) {
+        return SyncResult.failure('获取文件列表失败: ${listResult.message}');
+      }
+      
+      final files = listResult.data!['files'] as List<Map<String, dynamic>>;
+      
+      // 过滤出指定类型的带时间戳的备份文件
+      final regex = RegExp(r'^' + dataTypeName + r'-(\d+)\.json$');
+      final backupFiles = files.where((file) {
+        final relativePath = file['relativePath'] as String;
+        return regex.hasMatch(relativePath);
+      }).toList();
+      
+      print('[HistorySync] 找到 ${backupFiles.length} 个 $dataTypeName 备份文件');
+      
+      if (backupFiles.length <= retentionCount) {
+        print('[HistorySync] 备份文件数量不超过保留数量，无需清理');
+        return SyncResult.success(message: '无需清理备份文件');
+      }
+      
+      // 按时间戳排序（从新到旧）
+      backupFiles.sort((a, b) {
+        final aPath = a['relativePath'] as String;
+        final bPath = b['relativePath'] as String;
+        final aTimestamp = int.parse(RegExp(r'\w+-(\d+)\.json$').firstMatch(aPath)!.group(1)!);
+        final bTimestamp = int.parse(RegExp(r'\w+-(\d+)\.json$').firstMatch(bPath)!.group(1)!);
+        return bTimestamp.compareTo(aTimestamp); // 降序排列
+      });
+      
+      // 删除多余的旧备份文件
+      final filesToDelete = backupFiles.skip(retentionCount).toList();
+      print('[HistorySync] 需要删除 ${filesToDelete.length} 个旧备份文件');
+      
+      int deletedCount = 0;
+      for (final file in filesToDelete) {
+        final relativePath = file['relativePath'] as String;
+        try {
+          // 构建完整的备份文件路径
+          final backupFilePath = 'backup/$relativePath';
+          final deleteResult = await provider.deleteFile(backupFilePath);
+          if (deleteResult.success) {
+            deletedCount++;
+            print('[HistorySync] 已删除旧备份文件: $relativePath');
+          } else {
+            print('[HistorySync] 删除备份文件失败: $relativePath, ${deleteResult.message}');
+          }
+        } catch (e) {
+          print('[HistorySync] 删除备份文件异常: $relativePath, $e');
+        }
+      }
+      
+      print('[HistorySync] 备份文件清理完成，删除了 $deletedCount 个文件');
+      return SyncResult.success(message: '清理完成，删除了 $deletedCount 个旧备份文件');
+    } catch (e) {
+      print('[HistorySync] 清理备份文件时发生错误: $e');
+      return SyncResult.failure('清理备份文件失败: $e');
+    }
+  }
 
 }
