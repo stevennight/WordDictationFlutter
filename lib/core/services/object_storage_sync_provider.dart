@@ -1,15 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:http/http.dart' as http;
+
 import 'package:crypto/crypto.dart';
-import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
+
 import 'sync_service.dart';
-import 'history_deletion_service.dart';
-import 'wordbook_sync_service.dart';
-import '../utils/file_hash_utils.dart';
-import '../../shared/utils/path_utils.dart';
 
 /// 对象存储类型
 enum ObjectStorageType {
@@ -93,7 +88,6 @@ class ObjectStorageConfig {
 class ObjectStorageSyncProvider extends SyncProvider {
   late final ObjectStorageConfig _storageConfig;
   late final String _baseUrl;
-  final HistoryDeletionService _deletionService = HistoryDeletionService.instance;
 
   ObjectStorageSyncProvider(SyncConfig config) : super(config) {
     _storageConfig = ObjectStorageConfig.fromMap(config.settings);
@@ -126,25 +120,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     print('[ObjectStorageSync] $message');
   }
 
-  String _getObjectKey(SyncDataType dataType) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final dataTypeName = dataType.toString().split('.').last;
-    return '${_storageConfig.pathPrefix}/$dataTypeName-$timestamp.json';
-  }
-
-  String _getLatestObjectKey(SyncDataType dataType) {
-    final dataTypeName = dataType.toString().split('.').last;
-    return '${_storageConfig.pathPrefix}/$dataTypeName-latest.json';
-  }
-
-  String _getImageObjectKey(String hash, String extension) {
-    return 'handwriting_cache/$hash$extension';
-  }
-  
-  String _getFullImageObjectKey(String hash, String extension) {
-    return '${_storageConfig.pathPrefix}/handwriting_cache/$hash$extension';
-  }
-
   @override
   Future<SyncResult> testConnection() async {
     try {
@@ -167,25 +142,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     } catch (e) {
       _logDebug('连接测试异常: $e');
       return SyncResult.failure('连接测试失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> getDataInfo(SyncDataType dataType) async {
-    try {
-      final latestKey = _getLatestObjectKey(dataType);
-      final result = await _headObject(latestKey);
-      
-      if (result.success) {
-        return SyncResult.success(
-          message: '获取数据信息成功',
-          data: result.data,
-        );
-      } else {
-        return SyncResult.failure('获取数据信息失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('获取数据信息失败: $e');
     }
   }
 
@@ -336,12 +292,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
       _logDebug('HEAD请求异常: $e');
       return SyncResult.failure('HEAD请求失败: $e');
     }
-  }
-
-  /// 检查对象是否存在
-  Future<bool> _checkObjectExists(String objectKey) async {
-    final result = await _headObject(objectKey);
-    return result.success;
   }
 
   Future<SyncResult> _listObjects({String? prefix, int maxKeys = 1000}) async {
@@ -550,77 +500,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     return hmac.convert(messageBytes).toString();
   }
 
-  /// 删除历史记录关联的图片文件
-  Future<void> _deleteAssociatedImageFiles(String historyDataKey) async {
-    try {
-      _logDebug('开始删除历史记录关联的图片文件: $historyDataKey');
-      
-      // 先下载历史记录数据以获取图片文件列表
-      final downloadResult = await _getObject(historyDataKey);
-      if (!downloadResult.success || downloadResult.data == null) {
-        _logDebug('无法下载历史记录数据，跳过图片文件删除');
-        return;
-      }
-      
-      final contentBytes = downloadResult.data!['content'] as List<int>;
-      final jsonString = utf8.decode(contentBytes);
-      final historyData = jsonDecode(jsonString) as Map<String, dynamic>;
-      
-      // 收集所有图片文件的对象键
-      final imageObjectKeys = <String>{};
-      final sessions = historyData['sessions'] as List<dynamic>? ?? [];
-      
-      for (final session in sessions) {
-        final sessionMap = session as Map<String, dynamic>;
-        final results = sessionMap['results'] as List<dynamic>? ?? [];
-        
-        for (final result in results) {
-          final resultMap = result as Map<String, dynamic>;
-          
-          // 收集原始图片对象键
-          final originalObjectKey = resultMap['original_image_object_key'] as String?;
-          if (originalObjectKey != null && originalObjectKey.isNotEmpty) {
-            imageObjectKeys.add(originalObjectKey);
-          }
-          
-          // 收集批改图片对象键
-          final annotatedObjectKey = resultMap['annotated_image_object_key'] as String?;
-          if (annotatedObjectKey != null && annotatedObjectKey.isNotEmpty) {
-            imageObjectKeys.add(annotatedObjectKey);
-          }
-        }
-      }
-      
-      _logDebug('找到 ${imageObjectKeys.length} 个图片文件需要删除');
-      
-      // 删除所有图片文件
-      int deletedCount = 0;
-      for (final objectKey in imageObjectKeys) {
-        try {
-          // 如果是相对路径，转换为完整路径
-          final fullObjectKey = objectKey.startsWith(_storageConfig.pathPrefix) 
-              ? objectKey 
-              : '${_storageConfig.pathPrefix}/$objectKey';
-          
-          final deleteResult = await _deleteObject(fullObjectKey);
-          if (deleteResult.success) {
-            deletedCount++;
-            _logDebug('删除图片文件成功: $objectKey');
-          } else {
-            _logDebug('删除图片文件失败: $objectKey, ${deleteResult.message}');
-          }
-        } catch (e) {
-          _logDebug('删除图片文件异常: $objectKey, $e');
-        }
-      }
-      
-      _logDebug('图片文件删除完成，成功删除 $deletedCount/${imageObjectKeys.length} 个文件');
-    } catch (e) {
-      _logDebug('删除关联图片文件时发生异常: $e');
-      // 不抛出异常，允许继续删除历史记录数据
-    }
-  }
-
   // ========== 纯文件存储操作方法实现 ==========
 
   @override
@@ -741,7 +620,7 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   @override
-  Future<SyncResult> fileExists(String remotePath) async {
+  Future<bool> fileExists(String remotePath) async {
     try {
       final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
       
@@ -750,14 +629,14 @@ class ObjectStorageSyncProvider extends SyncProvider {
       final result = await _headObject(objectKey);
       if (result.success) {
         _logDebug('文件存在: $objectKey');
-        return SyncResult.success(message: '文件存在', data: {'exists': true, 'objectKey': objectKey});
+        return true;
       } else {
         _logDebug('文件不存在: $objectKey');
-        return SyncResult.success(message: '文件不存在', data: {'exists': false, 'objectKey': objectKey});
+        return false;
       }
     } catch (e) {
       _logDebug('检查文件存在异常: $e');
-      return SyncResult.failure('检查文件失败: $e');
+      return false;
     }
   }
 

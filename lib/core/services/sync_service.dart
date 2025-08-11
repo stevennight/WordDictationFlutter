@@ -1,9 +1,6 @@
 import 'dart:convert';
-import 'package:provider/provider.dart';
 
 import 'local_config_service.dart';
-import 'json_data_service.dart';
-import 'import_data_service.dart';
 import 'object_storage_sync_provider.dart';
 
 /// 同步数据类型枚举
@@ -108,9 +105,6 @@ abstract class SyncProvider {
   /// 测试连接
   Future<SyncResult> testConnection();
 
-  /// 获取远程数据信息（如最后修改时间等）
-  Future<SyncResult> getDataInfo(SyncDataType dataType);
-
   /// 列出所有可用的数据文件
   Future<SyncResult> listDataFiles();
 
@@ -146,7 +140,7 @@ abstract class SyncProvider {
 
   /// 检查文件是否存在
   /// [remotePath] 远程存储路径
-  Future<SyncResult> fileExists(String remotePath);
+  Future<bool> fileExists(String remotePath);
 
   /// 获取文件信息（大小、修改时间等）
   /// [remotePath] 远程存储路径

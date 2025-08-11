@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_word_dictation/shared/utils/path_utils.dart';
 import 'package:path/path.dart' as path;
 import 'package:path/path.dart' show dirname;
 import 'package:path_provider/path_provider.dart';
@@ -177,9 +178,6 @@ class HistorySyncService {
     _historyFileSyncManager = HistoryFileSyncManager();
     await _historyFileSyncManager.initialize();
   }
-
-  /// 获取sync_cache目录路径
-  String get _syncCachePath => _syncCacheDir.path;
 
   /// 获取设备ID
   String get deviceId => _deviceId;
@@ -659,7 +657,7 @@ class HistorySyncService {
       print('[HistorySync] 开始上传历史记录数据');
       
       final sessions = data['sessions'] as List<dynamic>? ?? [];
-      final remoteSessionSessionIdMap = Map.fromIterable(remoteSessions, key: (session) => session['sessionData']['sessionId']);
+      final remoteSessionSessionIdMap = Map.fromIterable(remoteSessions, key: (session) => session['sessionId']);
       
       // 首先收集所有需要上传的图片文件
       final imagesToUpload = <String>{};
@@ -678,8 +676,8 @@ class HistorySyncService {
           // 比较原来远端的文件md5和本地文件的md5，不一致则上传
           final originalMd5 = resultMap['original_image_md5'] as String?;
           final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-          final originalMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionData']['sessionId']]?['results']?[resultMap['resultId']]?['original_image_md5'];
-          final annotatedMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionData']['sessionId']]?['results']?[resultMap['resultId']]?['annotated_image_md5'];
+          final originalMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionId']]?['results']?[resultMap['resultId']]?['original_image_md5'];
+          final annotatedMd5InRemote = remoteSessionSessionIdMap[sessionMap['sessionId']]?['results']?[resultMap['resultId']]?['annotated_image_md5'];
           bool originalUpload = true;
           bool annotatedUpload = true;
           if (originalMd5 != null && originalMd5.isNotEmpty) {
@@ -699,12 +697,18 @@ class HistorySyncService {
 
           final originalPath = resultMap['original_image_path'] as String?;
           final annotatedPath = resultMap['annotated_image_path'] as String?;
-          
-          if (originalPath != null && originalPath.isNotEmpty && originalUpload) {
-            imagesToUpload.add(originalPath);
+
+          // 判断远端文件是否存在
+
+          if (originalPath != null && originalPath.isNotEmpty) {
+            if (originalUpload || !await provider.fileExists(originalPath)) {
+              imagesToUpload.add(originalPath);
+            }
           }
-          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedUpload) {
-            imagesToUpload.add(annotatedPath);
+          if (annotatedPath != null && annotatedPath.isNotEmpty) {
+            if (annotatedUpload && !await provider.fileExists(annotatedPath)) {
+              imagesToUpload.add(annotatedPath);
+            }
           }
         }
       }
@@ -769,11 +773,10 @@ class HistorySyncService {
       const dataType = SyncDataType.history;
       _logDebug('开始上传数据，类型: $dataType');
 
-      final pathPrefix = await provider.getPathPrefix();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final dataTypeName = dataType.toString().split('.').last;
-      final objectKey = "$pathPrefix$dataTypeName-$timestamp.json";
-      final latestKey = "$pathPrefix$dataTypeName-latest.json";
+      final objectKey = "$dataTypeName-$timestamp.json";
+      final latestKey = "$dataTypeName-latest.json";
       final jsonData = jsonEncode(data);
       final bytes = utf8.encode(jsonData);
 
@@ -813,7 +816,8 @@ class HistorySyncService {
   /// 上传单个图片文件
   Future<String?> _uploadSingleImage(String imagePath, SyncProvider provider) async {
     try {
-      final file = File(imagePath);
+      final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
+      final file = File(absolutePath);
       if (!await file.exists()) {
         print('[HistorySync] 图片文件不存在: $imagePath');
         return null;
@@ -830,34 +834,34 @@ class HistorySyncService {
 
       // 上传图片文件
        final uploadResult = await provider.uploadFile(
-         imagePath,
+         absolutePath,
          objectKey,
        );
 
       if (uploadResult.success) {
-        // 创建图片索引信息
-        final indexData = {
-          'originalPath': imagePath,
-          'hash': hash,
-          'uploadTime': DateTime.now().toIso8601String(),
-          'size': bytes.length,
-        };
+        // // 创建图片索引信息
+        // final indexData = {
+        //   'originalPath': imagePath,
+        //   'hash': hash,
+        //   'uploadTime': DateTime.now().toIso8601String(),
+        //   'size': bytes.length,
+        // };
 
-        // 上传索引文件
-         final indexKey = '$objectKey.index';
-         final indexResult = await provider.uploadBytes(
-           utf8.encode(jsonEncode(indexData)),
-           indexKey,
-           contentType: 'application/json',
-         );
+        // // 上传索引文件
+        //  final indexKey = '$objectKey.index';
+        //  final indexResult = await provider.uploadBytes(
+        //    utf8.encode(jsonEncode(indexData)),
+        //    indexKey,
+        //    contentType: 'application/json',
+        //  );
+        //
+        // if (indexResult.success) {
+        //   print('[HistorySync] 图片及索引上传成功: $objectKey');
+        // } else {
+        //   print('[HistorySync] 图片索引上传失败: $indexKey');
+        // }
 
-        if (indexResult.success) {
-          print('[HistorySync] 图片及索引上传成功: $objectKey');
-          return objectKey;
-        } else {
-          print('[HistorySync] 图片索引上传失败: $indexKey');
-          return objectKey; // 即使索引上传失败，图片已上传成功
-        }
+        return objectKey;
       } else {
         print('[HistorySync] 图片上传失败: $objectKey, ${uploadResult.message}');
         return null;
