@@ -378,7 +378,7 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
             const SizedBox(height: 8),
             SwitchListTile(
               title: const Text('自动同步'),
-              subtitle: const Text('定期自动同步词书数据'),
+              subtitle: const Text('在应用启动和定时间隔时自动同步历史记录数据'),
               value: _autoSync,
               onChanged: _enabled ? (value) {
                 setState(() {
@@ -395,6 +395,18 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 5),
+                    child: Text('5分钟'),
+                  ),
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 10),
+                    child: Text('10分钟'),
+                  ),
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 15),
+                    child: Text('15分钟'),
+                  ),
                   const DropdownMenuItem(
                     value: Duration(minutes: 30),
                     child: Text('30分钟'),

@@ -9,6 +9,7 @@ import 'dart:io';
 import 'core/database/database_helper.dart';
 import 'core/services/config_service.dart';
 import 'core/services/history_sync_service.dart';
+import 'core/services/auto_sync_manager.dart';
 import 'shared/providers/app_state_provider.dart';
 import 'shared/providers/dictation_provider.dart';
 import 'shared/providers/history_provider.dart';
@@ -46,6 +47,10 @@ void main() async {
   // Clear inProgress sessions on app startup
   final historyProvider = HistoryProvider();
   await historyProvider.clearInProgressSessions();
+  
+  // Initialize auto sync manager
+  final autoSyncManager = AutoSyncManager();
+  await autoSyncManager.initialize();
   
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
