@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'dart:convert';
-import 'package:path/path.dart';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart';
+import '../../shared/utils/path_utils.dart';
 
 class LocalConfigService {
   static LocalConfigService? _instance;
@@ -46,14 +46,10 @@ class LocalConfigService {
       String appDir;
       if (kIsWeb) {
         appDir = '.';
-      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = dirname(executablePath);
       } else {
-        // For mobile platforms (Android/iOS), use application documents directory
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
+        // 统一使用PathUtils获取应用根目录
+        final appDirectory = await PathUtils.getAppDirectory();
+        appDir = appDirectory.path;
       }
       _configPath = join(appDir, 'app_config.json');
     }

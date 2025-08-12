@@ -9,7 +9,7 @@ class PathUtils {
   static Directory? _cachedAppDir;
   
   /// 获取应用程序根目录
-  /// 桌面平台使用可执行文件目录，移动平台使用文档目录
+  /// 桌面平台使用可执行文件目录，移动平台使用外部存储目录
   static Future<Directory> getAppDirectory() async {
     if (_cachedAppDir != null) {
       return _cachedAppDir!;
@@ -20,8 +20,18 @@ class PathUtils {
       // 桌面平台：使用可执行文件目录
       final executablePath = Platform.resolvedExecutable;
       appDirPath = path.dirname(executablePath);
+    } else if (Platform.isAndroid) {
+      // 安卓平台：使用外部存储的应用专用目录 (/Android/data/包名/files/)
+      final externalDir = await getExternalStorageDirectory();
+      if (externalDir != null) {
+        appDirPath = externalDir.path;
+      } else {
+        // 如果外部存储不可用，回退到内部存储
+        final appDocDir = await getApplicationDocumentsDirectory();
+        appDirPath = appDocDir.path;
+      }
     } else {
-      // 移动平台：使用文档目录
+      // iOS等其他移动平台：使用文档目录
       final appDocDir = await getApplicationDocumentsDirectory();
       appDirPath = appDocDir.path;
     }

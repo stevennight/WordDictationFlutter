@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
-import 'package:path/path.dart' show dirname;
-import 'package:path_provider/path_provider.dart';
+import '../../shared/utils/path_utils.dart';
 
 /// 设备ID管理服务
 /// 负责生成和管理全局唯一的设备ID
@@ -18,15 +18,8 @@ class DeviceIdService {
 
   /// 初始化服务
   Future<void> initialize() async {
-    // 获取应用根目录
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      // 桌面平台使用可执行文件目录
-      final executablePath = Platform.resolvedExecutable;
-      _appRootDir = Directory(dirname(executablePath));
-    } else {
-      // 移动平台使用应用文档目录
-      _appRootDir = await getApplicationDocumentsDirectory();
-    }
+    // 统一使用PathUtils获取应用根目录
+    _appRootDir = await PathUtils.getAppDirectory();
   }
 
   /// 获取设备ID文件路径

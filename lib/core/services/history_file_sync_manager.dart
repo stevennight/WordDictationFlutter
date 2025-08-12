@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as path;
-import 'package:path/path.dart' show dirname;
-import 'package:path_provider/path_provider.dart';
 
 import '../../shared/utils/path_utils.dart';
 import '../utils/file_hash_utils.dart';
@@ -22,16 +20,8 @@ class HistoryFileSyncManager {
 
   /// 初始化管理器
   Future<void> initialize() async {
-    // For desktop platforms, use executable directory
-    // For mobile platforms, fallback to documents directory
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      // Get executable directory for desktop platforms
-      final executablePath = Platform.resolvedExecutable;
-      _appDocDir = Directory(dirname(executablePath));
-    } else {
-      // Fallback to documents directory for mobile platforms
-      _appDocDir = await getApplicationDocumentsDirectory();
-    }
+    // 统一使用PathUtils获取应用根目录
+    _appDocDir = await PathUtils.getAppDirectory();
     
     // 初始化sync_cache目录
     _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
