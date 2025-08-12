@@ -4,6 +4,7 @@ import '../../shared/utils/path_utils.dart';
 
 import '../database/database_helper.dart';
 import '../../shared/models/dictation_session.dart';
+import 'config_service.dart';
 
 /// 历史记录删除服务
 /// 统一处理所有历史记录删除操作，包括：
@@ -319,6 +320,45 @@ class HistoryDeletionService {
     } catch (e) {
       debugPrint('[HistoryDeletion] 软删除本地多余记录时出错: $e');
       // 不抛出异常，避免影响整个同步过程
+    }
+  }
+
+  /// 硬删除超过保留期限的软删除记录
+  /// 这个方法会被自动同步管理器和同步服务调用
+  Future<void> hardDeleteExpiredSoftDeletedRecords() async {
+    try {
+      final configService = await ConfigService.getInstance();
+      final retentionDays = configService.getDeletedRecordsRetentionDays();
+      final cutoffTime = DateTime.now().subtract(Duration(days: retentionDays)).millisecondsSinceEpoch;
+      
+      debugPrint('[HistoryDeletion] 开始硬删除超过 $retentionDays 天的软删除记录');
+      debugPrint('[HistoryDeletion] 截止时间: ${DateTime.fromMillisecondsSinceEpoch(cutoffTime)}');
+      
+      final db = await _dbHelper.database;
+      
+      // 查找需要硬删除的会话
+      final expiredSessionMaps = await db.query(
+        'dictation_sessions',
+        columns: ['session_id'],
+        where: 'deleted = 1 AND deleted_at IS NOT NULL AND deleted_at < ?',
+        whereArgs: [cutoffTime],
+      );
+      
+      final expiredSessionIds = expiredSessionMaps.map((m) => m['session_id'] as String).toList();
+      debugPrint('[HistoryDeletion] 找到 ${expiredSessionIds.length} 个需要硬删除的过期软删除记录');
+      
+      if (expiredSessionIds.isEmpty) {
+        debugPrint('[HistoryDeletion] 没有需要硬删除的过期软删除记录');
+        return;
+      }
+      
+      // 批量硬删除过期的软删除记录
+      await batchHardDeleteSessions(expiredSessionIds, deleteImages: true);
+      
+      debugPrint('[HistoryDeletion] 成功硬删除 ${expiredSessionIds.length} 个过期的软删除记录');
+    } catch (e) {
+      debugPrint('[HistoryDeletion] 硬删除过期软删除记录时出错: $e');
+      // 不抛出异常，避免影响调用方
     }
   }
 

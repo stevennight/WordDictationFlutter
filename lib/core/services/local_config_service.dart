@@ -218,6 +218,16 @@ class LocalConfigService {
     await _saveConfig();
   }
 
+  // Deleted records retention settings
+  int getDeletedRecordsRetentionDays() {
+    return _config?['deleted_records_retention_days'] ?? 30;
+  }
+
+  Future<void> setDeletedRecordsRetentionDays(int days) async {
+    _config!['deleted_records_retention_days'] = days;
+    await _saveConfig();
+  }
+
   // Utility methods
   Future<void> clearAllSettings() async {
     _config!.clear();

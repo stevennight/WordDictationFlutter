@@ -18,6 +18,7 @@ import 'dictation_service.dart';
 import 'history_file_sync_manager.dart';
 import 'history_deletion_service.dart';
 import 'device_id_service.dart';
+import 'config_service.dart';
 import 'session_conflict_resolver.dart';
 
 /// 历史记录同步数据结构
@@ -140,6 +141,7 @@ class HistorySyncService {
   final HistoryDeletionService _deletionService = HistoryDeletionService();
   final DeviceIdService _deviceIdService = DeviceIdService();
   final SessionConflictResolver _conflictResolver = SessionConflictResolver();
+  ConfigService? _configService;
   late HistoryFileSyncManager _historyFileSyncManager;
   late String _deviceId;
   late Directory _appDocDir;
@@ -150,6 +152,9 @@ class HistorySyncService {
     // 初始化设备ID服务
     await _deviceIdService.initialize();
     _deviceId = await _deviceIdService.getDeviceId();
+    
+    // 初始化配置服务
+    _configService = await ConfigService.getInstance();
     
     // Use unified path management
     _appDocDir = await PathUtils.getAppDirectory();
@@ -240,6 +245,51 @@ class HistorySyncService {
   Future<SyncResult> importHistoryData(Map<String, dynamic> data, [SyncProvider? provider, VoidCallback? onImportComplete, void Function(String step, {int? current, int? total})? onProgress]) async {
     try {
       final syncData = HistorySyncData.fromMap(data);
+      
+      // 清理远端数据中超过配置天数的软删除记录
+      print('[HistorySync] 开始清理远端数据中的过期软删除记录');
+      final retentionDays = await _configService!.getDeletedRecordsRetentionDays();
+      final cutoffDate = DateTime.now().subtract(Duration(days: retentionDays));
+      
+      final filteredSessions = <SessionSyncData>[];
+      int removedCount = 0;
+      
+      for (final session in syncData.sessions) {
+        final sessionData = session.sessionData;
+        final isDeleted = sessionData['deleted'] == 1;
+        
+        if (isDeleted) {
+          // 检查删除时间
+          final deletedAtStr = sessionData['deleted_at'] as String?;
+          if (deletedAtStr != null) {
+            final deletedAt = DateTime.parse(deletedAtStr);
+            if (deletedAt.isBefore(cutoffDate)) {
+              // 超过保留期限，不导入此记录
+              print('[HistorySync] 跳过过期的软删除记录: ${session.sessionId}, 删除时间: $deletedAtStr');
+              removedCount++;
+              continue;
+            }
+          }
+        }
+        
+        filteredSessions.add(session);
+      }
+      
+      if (removedCount > 0) {
+        print('[HistorySync] 已过滤掉 $removedCount 个过期的软删除记录');
+        // 更新 syncData 中的 sessions
+        final filteredSyncData = HistorySyncData(
+          version: syncData.version,
+          dataType: syncData.dataType,
+          deviceId: syncData.deviceId,
+          lastModified: syncData.lastModified,
+          sessions: filteredSessions,
+        );
+        // 使用过滤后的数据继续处理
+        final updatedData = filteredSyncData.toMap();
+        data.clear();
+        data.addAll(updatedData);
+      }
       
       // 检测并解决冲突
       final conflicts = await _conflictResolver.detectAndResolveConflicts(syncData.sessions, syncData.deviceId, _deviceId);
@@ -393,6 +443,17 @@ class HistorySyncService {
         return SyncResult.failure('同步配置不存在');
       }
 
+      // 0. 硬删除过期的软删除记录
+      onProgress?.call('正在清理过期的删除记录...');
+      print('[HistorySyncService] 第零步：硬删除过期的软删除记录');
+      try {
+        await _deletionService.hardDeleteExpiredSoftDeletedRecords();
+        print('[HistorySyncService] 过期软删除记录清理完成');
+      } catch (e) {
+        print('[HistorySyncService] 清理过期软删除记录时出错: $e');
+        // 不中断同步流程，继续执行
+      }
+
       // 1. 获取本地历史记录数据
       onProgress?.call('正在获取本地历史记录数据...');
       print('[HistorySyncService] 第一步：获取本地历史记录数据');
@@ -422,6 +483,37 @@ class HistorySyncService {
         remoteHistoryData = downloadResult.data!;
         remoteSessions = remoteHistoryData['sessions'] as List<dynamic>;
         print('[HistorySyncService] 远端会话数量: ${remoteSessions.length}');
+      }
+      
+      // 2.5. 检测设备离线时间，如果超过配置天数则提示用户选择同步策略
+      final config = syncService.getConfig(configId);
+      if (config?.lastSyncTime != null) {
+        final retentionDays = await _configService!.getDeletedRecordsRetentionDays();
+        final daysSinceLastSync = DateTime.now().difference(config!.lastSyncTime!).inDays;
+        if (daysSinceLastSync > retentionDays) {
+          print('[HistorySyncService] 设备离线超过${retentionDays}天 ($daysSinceLastSync天)，需要用户确认同步策略');
+          
+          // 显示用户确认对话框
+           final shouldOverwrite = await _showOfflineDeviceDialog(daysSinceLastSync, retentionDays);
+          if (shouldOverwrite == null) {
+            // 用户取消同步
+            return SyncResult.failure('用户取消了同步操作');
+          } else if (shouldOverwrite) {
+            // 用户选择用远端数据覆盖本地数据
+            print('[HistorySyncService] 用户选择用远端数据覆盖本地数据');
+            onProgress?.call('正在用云端数据覆盖本地数据...');
+            
+            // 清空本地数据并导入远端数据
+            if (remoteSessions.isNotEmpty) {
+              await _clearLocalDataAndImportRemote(remoteHistoryData, provider, onImportComplete, onProgress);
+            }
+            
+            // 更新同步时间并返回
+            await syncService.updateConfigLastSyncTime(configId);
+            return SyncResult.success(message: '已用云端数据覆盖本地数据');
+          }
+          // 如果用户选择继续正常同步，则继续执行下面的双向合并逻辑
+        }
       }
       
       // 3. 执行双向合并
@@ -1068,6 +1160,95 @@ class HistorySyncService {
     } catch (e) {
       print('[HistorySync] 清理备份文件时发生错误: $e');
       return SyncResult.failure('清理备份文件失败: $e');
+    }
+  }
+
+  /// 显示离线设备确认对话框
+  Future<bool?> _showOfflineDeviceDialog(int daysSinceLastSync, int retentionDays) async {
+    final context = _getNavigatorContext();
+    if (context == null) {
+      print('[HistorySync] 无法获取 BuildContext，默认选择继续正常同步');
+      return false; // 默认选择继续正常同步
+    }
+
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('设备离线时间过长'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('您的设备已离线 $daysSinceLastSync 天，超过了$retentionDays天的安全阈值。'),
+              const SizedBox(height: 16),
+              const Text('为了避免数据冲突，建议选择以下操作之一：'),
+              const SizedBox(height: 12),
+              const Text('• 用云端数据覆盖本地数据（推荐）'),
+              const Text('• 继续正常同步（可能产生冲突）'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('取消同步'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('继续正常同步'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('用云端数据覆盖'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 清空本地数据并导入远端数据
+  Future<void> _clearLocalDataAndImportRemote(
+    Map<String, dynamic> remoteHistoryData,
+    SyncProvider? provider,
+    VoidCallback? onImportComplete,
+    void Function(String step, {int? current, int? total})? onProgress,
+  ) async {
+    try {
+      // 1. 清空本地所有历史记录数据
+      onProgress?.call('正在清空本地数据...');
+      print('[HistorySync] 开始清空本地历史记录数据');
+      
+      final db = await _dbHelper.database;
+      await db.transaction((txn) async {
+        // 删除所有会话结果
+        await txn.delete('dictation_results');
+        // 删除所有会话
+        await txn.delete('dictation_sessions');
+      });
+      
+      print('[HistorySync] 本地历史记录数据清空完成');
+      
+      // 2. 导入远端数据
+      onProgress?.call('正在导入云端数据...');
+      print('[HistorySync] 开始导入远端数据');
+      
+      final importResult = await importHistoryData(
+        remoteHistoryData,
+        provider,
+        onImportComplete,
+        onProgress,
+      );
+      
+      if (!importResult.success) {
+        throw Exception('导入远端数据失败: ${importResult.message}');
+      }
+      
+      print('[HistorySync] 远端数据导入完成');
+    } catch (e) {
+      print('[HistorySync] 清空本地数据并导入远端数据时发生错误: $e');
+      rethrow;
     }
   }
 

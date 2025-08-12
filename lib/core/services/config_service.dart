@@ -144,6 +144,15 @@ class ConfigService {
     await _localConfig!.setHistoryLimit(limit);
   }
 
+  // Deleted records retention settings
+  int getDeletedRecordsRetentionDays() {
+    return _localConfig!.getDeletedRecordsRetentionDays();
+  }
+
+  Future<void> setDeletedRecordsRetentionDays(int days) async {
+    await _localConfig!.setDeletedRecordsRetentionDays(days);
+  }
+
   // Brush settings
   Future<double> getDefaultBrushSize() async {
     return await _localConfig!.getDefaultBrushSize();

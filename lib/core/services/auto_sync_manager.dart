@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'sync_service.dart';
 import 'history_sync_service.dart';
 import 'wordbook_sync_service.dart';
+import 'history_deletion_service.dart';
 import '../../features/sync/widgets/sync_progress_dialog.dart';
 import '../../main.dart';
 
@@ -21,8 +22,10 @@ class AutoSyncManager with WidgetsBindingObserver {
 
   final SyncService _syncService = SyncService();
   final HistorySyncService _historySyncService = HistorySyncService();
+  final HistoryDeletionService _historyDeletionService = HistoryDeletionService();
 
   Timer? _syncTimer;
+  Timer? _deletionTimer;
   bool _isInitialized = false;
   bool _isSyncing = false;
 
@@ -45,6 +48,9 @@ class AutoSyncManager with WidgetsBindingObserver {
     // 启动定时同步
     _startPeriodicSync();
 
+    // 启动定时硬删除
+    _startPeriodicDeletion();
+
     _isInitialized = true;
     print('[AutoSyncManager] 自动同步管理器初始化完成');
   }
@@ -59,6 +65,9 @@ class AutoSyncManager with WidgetsBindingObserver {
     // 停止定时器
     _syncTimer?.cancel();
     _syncTimer = null;
+    
+    _deletionTimer?.cancel();
+    _deletionTimer = null;
 
     _isInitialized = false;
   }
@@ -336,10 +345,44 @@ class AutoSyncManager with WidgetsBindingObserver {
     await _performAutoSync(reason: reason);
   }
 
+  /// 启动定时硬删除
+  void _startPeriodicDeletion() {
+    _deletionTimer?.cancel();
+
+    // 每24小时执行一次硬删除检查
+    const deletionInterval = Duration(hours: 24);
+    print('[AutoSyncManager] 启动定时硬删除，间隔: ${_formatDuration(deletionInterval)}');
+
+    _deletionTimer = Timer.periodic(deletionInterval, (timer) {
+      print('[AutoSyncManager] 定时硬删除触发');
+      _performPeriodicDeletion();
+    });
+  }
+
+  /// 执行定时硬删除
+   Future<void> _performPeriodicDeletion() async {
+     try {
+       print('[AutoSyncManager] 开始执行定时硬删除过期软删除记录');
+       
+       // 硬删除过期的软删除记录（不需要按配置分别处理，这是全局操作）
+       await _historyDeletionService.hardDeleteExpiredSoftDeletedRecords();
+       
+       print('[AutoSyncManager] 定时硬删除完成');
+     } catch (e) {
+       print('[AutoSyncManager] 定时硬删除过程中发生错误: $e');
+     }
+   }
+
   /// 重新启动定时同步（配置更改后调用）
   void restartPeriodicSync() {
     print('[AutoSyncManager] 重新启动定时同步');
     _startPeriodicSync();
+  }
+
+  /// 重新启动定时硬删除（配置更改后调用）
+  void restartPeriodicDeletion() {
+    print('[AutoSyncManager] 重新启动定时硬删除');
+    _startPeriodicDeletion();
   }
 
   /// 格式化时间间隔
