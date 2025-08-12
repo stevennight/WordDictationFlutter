@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import '../utils/path_utils.dart';
 import '../enums/pen_mode.dart';
 
@@ -347,21 +346,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       
-      // Get the appropriate directory based on platform
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
-      }
-      
-      final Directory imageDir = Directory(path.join(appDir, 'handwriting_cache'));
+      // Use unified path management
+      final appDir = await PathUtils.getAppDirectory();
+      final Directory imageDir = Directory(path.join(appDir.path, 'handwriting_cache'));
       
       // Create directory if it doesn't exist
       if (!await imageDir.exists()) {

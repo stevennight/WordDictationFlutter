@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+import '../../shared/utils/path_utils.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -24,19 +24,9 @@ class DatabaseHelper {
       // For web platform, use in-memory database
       path = 'word_dictation.db';
     } else {
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
-      }
-      path = join(appDir, 'word_dictation.db');
+      // Use unified path management
+      final appDir = await PathUtils.getAppDirectory();
+      path = join(appDir.path, 'word_dictation.db');
     }
     
     return await openDatabase(
@@ -517,19 +507,9 @@ class DatabaseHelper {
     if (kIsWeb) {
       return 'word_dictation.db';
     } else {
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
-      }
-      return join(appDir, 'word_dictation.db');
+      // Use unified path management
+      final appDir = await PathUtils.getAppDirectory();
+      return join(appDir.path, 'word_dictation.db');
     }
   }
 

@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
 import '../models/word.dart';
 import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
+import '../utils/path_utils.dart';
 import '../../core/services/dictation_service.dart';
 import '../../core/services/word_service.dart';
 import '../../core/utils/file_hash_utils.dart';
@@ -635,24 +635,14 @@ class DictationProvider extends ChangeNotifier {
         return relativePath;
       }
       
-      // For desktop platforms, use executable directory
-      // For mobile platforms, fallback to documents directory
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final appDocDir = await getApplicationDocumentsDirectory();
-        appDir = appDocDir.path;
-      }
+      // Use unified path management
+      final appDir = await PathUtils.getAppDirectory();
       
       // 将数据库中的正斜杠路径转换为系统路径分隔符
       // 使用path.joinAll来处理路径片段，确保使用正确的系统分隔符
       final pathSegments = relativePath.split('/');
-      final absolutePath = path.joinAll([appDir, ...pathSegments]);
-      debugPrint('Path conversion: $relativePath -> $absolutePath (appDir: $appDir)');
+      final absolutePath = path.joinAll([appDir.path, ...pathSegments]);
+      debugPrint('Path conversion: $relativePath -> $absolutePath (appDir: ${appDir.path})');
       return absolutePath;
     } catch (e) {
       debugPrint('转换绝对路径失败: $e');

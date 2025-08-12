@@ -1,6 +1,6 @@
 # Flutter Word Dictation App
 
-Version 1.1.0-pre 2025-08-11 历史记录同步功能
+Version 1.1.1-pre
 （Preview版本，有可能造成数据损坏或丢失，暂未经过充分测试，请谨慎使用）
 
 基于原Python版本wordDictation默写工具的Flutter跨平台实现

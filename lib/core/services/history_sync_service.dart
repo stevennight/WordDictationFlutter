@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_word_dictation/shared/utils/path_utils.dart';
 import 'package:path/path.dart' as path;
 import 'package:path/path.dart' show dirname;
-import 'package:path_provider/path_provider.dart';
 
 import '../../main.dart' show navigatorKey;
 import '../../shared/models/dictation_session.dart';
@@ -152,16 +151,8 @@ class HistorySyncService {
     await _deviceIdService.initialize();
     _deviceId = await _deviceIdService.getDeviceId();
     
-    // For desktop platforms, use executable directory
-    // For mobile platforms, fallback to documents directory
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      // Get executable directory for desktop platforms
-      final executablePath = Platform.resolvedExecutable;
-      _appDocDir = Directory(dirname(executablePath));
-    } else {
-      // Fallback to documents directory for mobile platforms
-      _appDocDir = await getApplicationDocumentsDirectory();
-    }
+    // Use unified path management
+    _appDocDir = await PathUtils.getAppDirectory();
     
     // 初始化sync_cache目录
     _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
