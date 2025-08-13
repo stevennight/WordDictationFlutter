@@ -90,35 +90,32 @@ class HistoryCard extends StatelessWidget {
               const SizedBox(height: 12),
               
               // Mode and Statistics row
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   // Mode indicator
                   _buildModeChip(context, session.mode),
-                  const SizedBox(width: 8),
                   // Direction indicator
                   _buildDirectionChip(context, session.dictationDirection),
-                  const SizedBox(width: 8),
                   _buildStatChip(
                     context,
                     icon: Icons.quiz,
                     label: '${session.totalWords}/${session.expectedTotalWords ?? session.totalWords}题',
                     color: Theme.of(context).colorScheme.primary,
                   ),
-                  const SizedBox(width: 8),
                   _buildStatChip(
                     context,
                     icon: Icons.check_circle,
                     label: '${session.correctCount}对',
                     color: Colors.green,
                   ),
-                  const SizedBox(width: 8),
                   _buildStatChip(
                     context,
                     icon: Icons.cancel,
                     label: '${session.incorrectCount}错',
                     color: Colors.red,
                   ),
-                  const Spacer(),
                   if (duration != null)
                     Text(
                       '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}',
