@@ -40,15 +40,40 @@ class _UnifiedCanvasToolbarState extends State<UnifiedCanvasToolbar> {
     try {
       final configService = await ConfigService.getInstance();
       final defaultSize = (await configService.getSetting('default_brush_size'))?.toDouble() ?? 3.0;
+      final defaultColorValue = (await configService.getSetting('default_brush_color'))?.toInt();
+      final defaultColor = defaultColorValue != null ? Color(defaultColorValue) : Colors.black;
+      
       if (mounted) {
         setState(() {
           _strokeWidth = defaultSize;
+          // 只在非默写模式下加载颜色设置
+          if (!widget.isDictationMode) {
+            _penColor = defaultColor;
+          }
         });
         _updateCanvasSettings();
       }
     } catch (e) {
       // Use default value if loading fails
-      print('Failed to load default brush size: $e');
+      print('Failed to load default brush settings: $e');
+    }
+  }
+
+  Future<void> _saveBrushSize(double size) async {
+    try {
+      final configService = await ConfigService.getInstance();
+      await configService.setSetting('default_brush_size', size);
+    } catch (e) {
+      print('Failed to save brush size: $e');
+    }
+  }
+
+  Future<void> _saveBrushColor(Color color) async {
+    try {
+      final configService = await ConfigService.getInstance();
+      await configService.setSetting('default_brush_color', color.value);
+    } catch (e) {
+      print('Failed to save brush color: $e');
     }
   }
 
@@ -186,6 +211,7 @@ class _UnifiedCanvasToolbarState extends State<UnifiedCanvasToolbar> {
                           _strokeWidth = value;
                         });
                         _updateCanvasSettings();
+                        _saveBrushSize(value);
                       },
                     ),
                   ],
@@ -238,6 +264,10 @@ class _UnifiedCanvasToolbarState extends State<UnifiedCanvasToolbar> {
                   _penColor = color;
                 });
                 _updateCanvasSettings();
+                // 在抄写模式下也保存颜色设置
+                if (!widget.isDictationMode) {
+                  _saveBrushColor(color);
+                }
               },
               child: Container(
                 width: 24,
