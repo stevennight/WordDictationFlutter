@@ -20,6 +20,7 @@ import 'history_deletion_service.dart';
 import 'device_id_service.dart';
 import 'config_service.dart';
 import 'session_conflict_resolver.dart';
+import 'file_index_manager.dart';
 
 /// 历史记录同步数据结构
 class HistorySyncData {
@@ -143,6 +144,7 @@ class HistorySyncService {
   final SessionConflictResolver _conflictResolver = SessionConflictResolver();
   ConfigService? _configService;
   late HistoryFileSyncManager _historyFileSyncManager;
+  late FileIndexManager _fileIndexManager;
   late String _deviceId;
   late Directory _appDocDir;
   late Directory _syncCacheDir;
@@ -167,6 +169,10 @@ class HistorySyncService {
     
     _historyFileSyncManager = HistoryFileSyncManager();
     await _historyFileSyncManager.initialize();
+    
+    // 初始化文件索引管理器
+    _fileIndexManager = FileIndexManager(_appDocDir.path);
+    await _fileIndexManager.initialize();
   }
 
   /// 获取设备ID
@@ -635,6 +641,10 @@ class HistorySyncService {
     try {
       print('[HistorySync] 开始上传历史记录数据');
       
+      // 预热文件索引缓存
+      onProgress?.call('正在初始化文件索引...', current: 0, total: 1);
+      await _fileIndexManager.preloadIndex(provider);
+      
       final sessions = mergeHistoryData['sessions'] as List<dynamic>? ?? [];
 
       // 整理文件路径 => md5的map
@@ -658,6 +668,26 @@ class HistorySyncService {
         }
       }
 
+      // 使用文件索引管理器优化文件存在性检查
+      onProgress?.call('正在扫描本地handwriting_cache目录...', current: 0, total: 1);
+      
+      // 先扫描并更新本地handwriting_cache目录的索引
+      await _scanAndUpdateHandwritingCacheIndex();
+      
+      onProgress?.call('正在检查远端文件索引...', current: 0, total: 1);
+      
+      // 下载远端文件索引
+      final remoteIndex = await _fileIndexManager.downloadRemoteIndex(provider);
+      
+      // 如果远端索引存在，需要与本地索引合并
+      if (remoteIndex != null) {
+        await _mergeRemoteIndexWithLocal(remoteIndex);
+      }
+      
+      // 比较本地和远端索引，获取需要上传的文件列表
+      final indexComparison = _fileIndexManager.compareIndexes(remoteIndex);
+      final filesToUploadFromIndex = indexComparison['upload'] ?? <String>[];
+      
       // 首先收集所有需要上传的图片文件
       final imagesToUpload = <String>{};
       
@@ -678,7 +708,7 @@ class HistorySyncService {
           final originalMd5 = resultMap['original_image_md5'] as String?;
           final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
 
-          // 判断远端文件是否存在
+          // 使用索引判断文件是否需要上传
           if (originalPath != null && originalPath.isNotEmpty) {
             final originalMd5InRemote = filePathMd5Map[originalPath];
             bool originalUpload = true;
@@ -688,7 +718,8 @@ class HistorySyncService {
               }
             }
 
-            if (originalUpload || !await provider.fileExists(originalPath)) {
+            // 使用文件索引检查而不是网络请求
+            if (originalUpload || filesToUploadFromIndex.contains(originalPath)) {
               imagesToUpload.add(originalPath);
             }
           }
@@ -701,7 +732,8 @@ class HistorySyncService {
               }
             }
 
-            if (annotatedUpload && !await provider.fileExists(annotatedPath)) {
+            // 使用文件索引检查而不是网络请求
+            if (annotatedUpload && filesToUploadFromIndex.contains(annotatedPath)) {
               imagesToUpload.add(annotatedPath);
             }
           }
@@ -792,6 +824,29 @@ class HistorySyncService {
       }
 
       _logDebug('历史记录数据上传完成');
+      
+      // 更新本地文件索引
+      onProgress?.call('正在更新文件索引...', current: uploadedImages.length, total: imagesToUpload.length + 1);
+      
+      try {
+        // 批量更新已上传文件的索引
+        final uploadedFilePaths = uploadedImages.keys.toList();
+        if (uploadedFilePaths.isNotEmpty) {
+          await _fileIndexManager.batchUpdateLocalIndex(uploadedFilePaths, _appDocDir.path);
+        }
+        
+        // 上传更新后的索引到远端
+        final indexUploadResult = await _fileIndexManager.uploadIndexToRemote(provider);
+        if (!indexUploadResult.success) {
+          _logDebug('上传文件索引失败: ${indexUploadResult.message}');
+          // 索引上传失败不影响主要功能，只记录日志
+        } else {
+          _logDebug('文件索引上传成功');
+        }
+      } catch (e) {
+        _logDebug('更新文件索引失败: $e');
+        // 索引更新失败不影响主要功能，只记录日志
+      }
 
       return SyncResult.success(
         message: '历史记录上传成功',
@@ -1092,6 +1147,83 @@ class HistorySyncService {
      'imagePathToObjectKey': imagePathToObjectKey,
    };
  }
+
+  /// 扫描并更新handwriting_cache目录的索引
+  Future<void> _scanAndUpdateHandwritingCacheIndex() async {
+    try {
+      final handwritingCacheDir = Directory(path.join(_syncCacheDir.path, 'handwriting_cache'));
+      
+      if (!await handwritingCacheDir.exists()) {
+        print('[HistorySync] handwriting_cache目录不存在，跳过扫描');
+         return;
+       }
+       
+       print('[HistorySync] 开始扫描handwriting_cache目录: ${handwritingCacheDir.path}');
+       
+       final files = <String>[];
+       await for (final entity in handwritingCacheDir.list(recursive: true)) {
+         if (entity is File) {
+           // 计算相对于sync_cache目录的路径
+           final relativePath = path.relative(entity.path, from: _syncCacheDir.path);
+           files.add(relativePath);
+         }
+       }
+       
+       print('[HistorySync] 找到 ${files.length} 个文件需要更新索引');
+       
+       if (files.isNotEmpty) {
+         // 批量更新本地索引
+         await _fileIndexManager.batchUpdateLocalIndex(files, _syncCacheDir.path);
+         print('[HistorySync] handwriting_cache目录索引更新完成');
+       }
+     } catch (e) {
+       print('[HistorySync] 扫描handwriting_cache目录失败: $e');
+    }
+  }
+  
+  /// 合并远端索引与本地索引
+  Future<void> _mergeRemoteIndexWithLocal(FileIndex remoteIndex) async {
+    try {
+      print('[HistorySync] 开始合并远端索引与本地索引');
+       
+       final localIndex = _fileIndexManager.localIndex;
+       if (localIndex == null) {
+         print('[HistorySync] 本地索引为空，直接使用远端索引');
+         return;
+       }
+      
+      var mergedCount = 0;
+      
+      // 将远端索引中的文件信息合并到本地索引
+      for (final entry in remoteIndex.files.entries) {
+        final relativePath = entry.key;
+        final remoteItem = entry.value;
+        final localItem = localIndex.files[relativePath];
+        
+        // 如果本地没有这个文件，或者远端文件更新，则添加到本地索引
+        if (localItem == null || remoteItem.lastModified.isAfter(localItem.lastModified)) {
+          localIndex.updateFile(remoteItem);
+          mergedCount++;
+        }
+      }
+      
+      if (mergedCount > 0) {
+        // 更新本地索引的时间戳
+        final now = DateTime.now();
+        final mergedIndex = localIndex.copyWith(
+          updatedAt: now,
+        );
+        
+        // 保存合并后的索引
+          await _fileIndexManager.saveLocalIndex();
+          print('[HistorySync] 索引合并完成，合并了 $mergedCount 个文件');
+      } else {
+         print('[HistorySync] 无需合并，本地索引已是最新');
+       }
+     } catch (e) {
+       print('[HistorySync] 合并远端索引失败: $e');
+    }
+  }
 
   /// 清理旧的备份文件，保留指定数量的最新备份
   /// [provider] 同步提供者
