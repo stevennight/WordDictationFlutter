@@ -161,11 +161,6 @@ class HistorySyncService {
     // Use unified path management
     _appDocDir = await PathUtils.getAppDirectory();
     
-    // 初始化sync_cache目录
-    _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
-    if (!await _syncCacheDir.exists()) {
-      await _syncCacheDir.create(recursive: true);
-    }
     
     _historyFileSyncManager = HistoryFileSyncManager();
     await _historyFileSyncManager.initialize();
@@ -1151,7 +1146,9 @@ class HistorySyncService {
   /// 扫描并更新handwriting_cache目录的索引
   Future<void> _scanAndUpdateHandwritingCacheIndex() async {
     try {
-      final handwritingCacheDir = Directory(path.join(_syncCacheDir.path, 'handwriting_cache'));
+      // 直接扫描应用根目录下的handwriting_cache目录
+      final appDir = await PathUtils.getAppDirectory();
+      final handwritingCacheDir = Directory(path.join(appDir.path, 'handwriting_cache'));
       
       if (!await handwritingCacheDir.exists()) {
         print('[HistorySync] handwriting_cache目录不存在，跳过扫描');
@@ -1163,8 +1160,8 @@ class HistorySyncService {
        final files = <String>[];
        await for (final entity in handwritingCacheDir.list(recursive: true)) {
          if (entity is File) {
-           // 计算相对于sync_cache目录的路径
-           final relativePath = path.relative(entity.path, from: _syncCacheDir.path);
+           // 使用PathUtils确保路径格式与数据库一致（正斜杠格式）
+           final relativePath = await PathUtils.convertToRelativePath(entity.path);
            files.add(relativePath);
          }
        }
@@ -1172,8 +1169,8 @@ class HistorySyncService {
        print('[HistorySync] 找到 ${files.length} 个文件需要更新索引');
        
        if (files.isNotEmpty) {
-         // 批量更新本地索引
-         await _fileIndexManager.batchUpdateLocalIndex(files, _syncCacheDir.path);
+         // 批量更新本地索引，使用应用根目录作为基准路径
+         await _fileIndexManager.batchUpdateLocalIndex(files, appDir.path);
          print('[HistorySync] handwriting_cache目录索引更新完成');
        }
      } catch (e) {

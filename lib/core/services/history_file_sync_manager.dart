@@ -22,15 +22,10 @@ class HistoryFileSyncManager {
   Future<void> initialize() async {
     // 统一使用PathUtils获取应用根目录
     _appDocDir = await PathUtils.getAppDirectory();
+
     
-    // 初始化sync_cache目录
-    _syncCacheDir = Directory(path.join(_appDocDir.path, 'sync_cache'));
-    if (!await _syncCacheDir.exists()) {
-      await _syncCacheDir.create(recursive: true);
-    }
-    
-    // 将图片缓存目录放到sync_cache下
-    _imagesCacheDir = Directory(path.join(_syncCacheDir.path, 'handwriting_cache'));
+    // 直接使用应用根目录下的handwriting_cache目录
+    _imagesCacheDir = Directory(path.join(_appDocDir.path, 'handwriting_cache'));
     
     // 确保缓存目录存在
     if (!await _imagesCacheDir.exists()) {

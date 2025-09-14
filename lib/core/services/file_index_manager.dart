@@ -280,15 +280,18 @@ class FileIndexManager {
       final stat = await file.stat();
       final md5Hash = await FileHashUtils.calculateFileMd5Async(file);
       
+      // 确保相对路径使用正斜杠格式，与数据库存储格式一致
+      final normalizedRelativePath = relativePath.replaceAll('\\', '/');
+      
       final item = FileIndexItem(
-        relativePath: relativePath,
+        relativePath: normalizedRelativePath,
         md5Hash: md5Hash,
         size: stat.size,
         lastModified: stat.modified,
       );
 
       _localIndex!.updateFile(item);
-      _logDebug('更新本地索引: $relativePath');
+      _logDebug('更新本地索引: $normalizedRelativePath');
     } catch (e) {
       _logDebug('更新本地索引失败: $relativePath, $e');
       throw Exception('更新本地索引失败: $e');

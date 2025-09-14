@@ -352,7 +352,7 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       
-      // Use unified path management
+      // Save directly to app root handwriting_cache directory
       final appDir = await PathUtils.getAppDirectory();
       final Directory imageDir = Directory(path.join(appDir.path, 'handwriting_cache'));
       
