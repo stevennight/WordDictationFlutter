@@ -11,25 +11,44 @@ enum SyncDataType {
   // 预留其他数据类型
 }
 
+/// 同步操作结果状态
+enum SyncStatus {
+  success,
+  warning,
+  failure,
+}
+
 /// 同步操作结果
 class SyncResult {
-  final bool success;
+  final SyncStatus status;
   final String? message;
   final Map<String, dynamic>? data;
   final DateTime timestamp;
 
   SyncResult({
-    required this.success,
+    required this.status,
     this.message,
     this.data,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
   SyncResult.success({String? message, Map<String, dynamic>? data})
-      : this(success: true, message: message, data: data);
+      : this(status: SyncStatus.success, message: message, data: data);
+
+  SyncResult.warning({String? message, Map<String, dynamic>? data})
+      : this(status: SyncStatus.warning, message: message, data: data);
 
   SyncResult.failure(String message)
-      : this(success: false, message: message);
+      : this(status: SyncStatus.failure, message: message);
+
+  /// 兼容性属性：当状态为success时返回true
+  bool get success => status == SyncStatus.success;
+
+  /// 是否为警告状态
+  bool get isWarning => status == SyncStatus.warning;
+
+  /// 是否为失败状态
+  bool get isFailure => status == SyncStatus.failure;
 }
 
 /// 同步配置

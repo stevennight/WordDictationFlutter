@@ -327,14 +327,29 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         }
 
         if (mounted) {
+          String message;
+          Color backgroundColor;
+          
+          if (result.success) {
+            message = result.message ?? '同步成功';
+            backgroundColor = Colors.green;
+          } else if (result.isWarning) {
+            message = result.message ?? '同步完成但有警告';
+            backgroundColor = Colors.orange;
+          } else {
+            message = '同步失败: ${result.message}';
+            backgroundColor = Colors.red;
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result.success ? '同步成功' : '同步失败: ${result.message}'),
-              backgroundColor: result.success ? Colors.green : Colors.red,
+              content: Text(message),
+              backgroundColor: backgroundColor,
+              duration: result.isWarning ? const Duration(seconds: 5) : const Duration(seconds: 4),
             ),
           );
         }
-        return result.success;
+        return result.success || result.isWarning;
       }
       return false;
     } catch (e) {

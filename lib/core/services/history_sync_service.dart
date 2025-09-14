@@ -824,34 +824,64 @@ class HistorySyncService {
       onProgress?.call('正在更新文件索引...', current: uploadedImages.length, total: imagesToUpload.length + 1);
       
       try {
-        // 批量更新已上传文件的索引
+        // 只更新成功上传的文件的索引
         final uploadedFilePaths = uploadedImages.keys.toList();
         if (uploadedFilePaths.isNotEmpty) {
           await _fileIndexManager.batchUpdateLocalIndex(uploadedFilePaths, _appDocDir.path);
         }
         
-        // 上传更新后的索引到远端
+        // 处理上传失败的文件：从本地索引中移除
+        final failedUploads = imagesToUpload.where((path) => !uploadedImages.containsKey(path)).toList();
+        if (failedUploads.isNotEmpty) {
+          _logDebug('移除上传失败文件的索引: ${failedUploads.length} 个文件');
+          for (final failedPath in failedUploads) {
+            _fileIndexManager.removeFromLocalIndex(failedPath);
+            _logDebug('从索引中移除上传失败的文件: $failedPath');
+          }
+          // 保存更新后的本地索引
+          await _fileIndexManager.saveLocalIndex();
+        }
+        
+        // 上传更新后的索引到远端（只包含成功上传的文件）
         final indexUploadResult = await _fileIndexManager.uploadIndexToRemote(provider);
         if (!indexUploadResult.success) {
           _logDebug('上传文件索引失败: ${indexUploadResult.message}');
           // 索引上传失败不影响主要功能，只记录日志
         } else {
-          _logDebug('文件索引上传成功');
+          _logDebug('文件索引上传成功，已排除上传失败的文件');
         }
       } catch (e) {
         _logDebug('更新文件索引失败: $e');
         // 索引更新失败不影响主要功能，只记录日志
       }
 
-      return SyncResult.success(
-        message: '历史记录上传成功',
-        data: {
-          'objectKey': objectKey,
-          'latestKey': latestKey,
-          'uploadedImages': uploadedImages.length,
-          'totalImages': imagesToUpload.length,
-        },
-      );
+      // 检查是否有文件上传失败
+      final failedCount = imagesToUpload.length - uploadedImages.length;
+      if (failedCount > 0) {
+        // 有文件上传失败，返回警告状态
+        return SyncResult.warning(
+          message: '历史记录上传完成，但有 $failedCount 个文件上传失败',
+          data: {
+            'objectKey': objectKey,
+            'latestKey': latestKey,
+            'uploadedImages': uploadedImages.length,
+            'totalImages': imagesToUpload.length,
+            'failedCount': failedCount,
+          },
+        );
+      } else {
+        // 所有文件上传成功
+        return SyncResult.success(
+          message: '历史记录上传成功，所有 ${uploadedImages.length} 个文件已上传',
+          data: {
+            'objectKey': objectKey,
+            'latestKey': latestKey,
+            'uploadedImages': uploadedImages.length,
+            'totalImages': imagesToUpload.length,
+            'failedCount': 0,
+          },
+        );
+      }
     } catch (e) {
       print('[HistorySync] 上传历史记录数据异常: $e');
       return SyncResult.failure('上传历史记录数据失败: $e');
@@ -1096,20 +1126,12 @@ class HistorySyncService {
      
      print("[HistorySync] 检查图片: $imagePath, storedMd5: $storedMd5");
      
-     // 检查本地文件是否存在以及MD5是否匹配
+     // 检查本地文件是否需要同步（统一使用needsSync方法）
      final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
-     final localFile = File(absolutedImagePath);
      final expectedMd5 = imagePathToMd5[imagePath]!;
      
-     bool needDownload = false;
-     if (!localFile.existsSync()) {
-       print('[HistorySync] 本地文件不存在，需要下载: $absolutedImagePath');
-       needDownload = true;
-     } else {
-       // 检查MD5是否匹配
-       needDownload = await FileHashUtils.needsSync(absolutedImagePath, expectedMd5);
-       print('[HistorySync] 根据文件MD5判断是否需要同步: ${needDownload.toString()}');
-     }
+     final needDownload = await FileHashUtils.needsDownload(absolutedImagePath, expectedMd5);
+     print('[HistorySync] 根据文件存在性和MD5判断是否需要下载: ${needDownload.toString()}');
      
      // 只有需要下载的图片才创建ImageFileInfo
      if (needDownload) {

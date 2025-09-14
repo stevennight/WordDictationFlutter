@@ -32,22 +32,28 @@ class FileHashUtils {
     return digest.toString();
   }
   
-  /// 检查文件是否需要同步（基于MD5比较）
-  static Future<bool> needsSync(String localPath, String? remoteMd5) async {
+  /// 检查本地文件是否需要从远端下载（基于MD5比较）
+  /// 
+  /// 当以下情况时返回true：
+  /// - 远端MD5为空或null（远端文件不存在）
+  /// - 本地文件不存在
+  /// - 本地文件MD5与远端MD5不匹配
+  /// - MD5计算失败
+  static Future<bool> needsDownload(String localPath, String? remoteMd5) async {
     if (remoteMd5 == null || remoteMd5.isEmpty) {
-      return true; // 远端没有MD5，需要同步
+      return true; // 远端没有MD5，需要下载
     }
     
     final localFile = File(localPath);
     if (!await localFile.exists()) {
-      return false; // 本地文件不存在，不需要同步
+      return true; // 本地文件不存在，需要下载
     }
     
     try {
       final localMd5 = await calculateFileMd5Async(localFile);
-      return localMd5 != remoteMd5; // MD5不同则需要同步
+      return localMd5 != remoteMd5; // MD5不同则需要下载
     } catch (e) {
-      return true; // 计算失败，保险起见认为需要同步
+      return true; // 计算失败，保险起见认为需要下载
     }
   }
   
