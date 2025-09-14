@@ -283,6 +283,12 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     });
   }
 
+  void setEraserMode(bool isEraserMode) {
+    setState(() {
+      _drawingMode = isEraserMode ? DrawingMode.eraser : DrawingMode.pen;
+    });
+  }
+
   void clear() {
     clearCanvas();
   }

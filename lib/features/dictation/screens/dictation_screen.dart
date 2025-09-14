@@ -5,8 +5,8 @@ import '../../../shared/providers/app_state_provider.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/utils/path_utils.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
-import '../../../shared/widgets/unified_canvas_toolbar.dart';
-import '../widgets/dictation_progress.dart';
+import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
+import '../../../shared/widgets/collapsible_progress_bar.dart';
 import 'dictation_result_screen.dart';
 
 class DictationScreen extends StatefulWidget {
@@ -129,12 +129,14 @@ class _DictationScreenState extends State<DictationScreen> {
 
     return Column(
       children: [
-        // Progress bar
-        DictationProgress(
+        // Progress bar - 可收起的进度信息栏
+        CollapsibleProgressBar(
           current: provider.currentIndex + 1,
           total: provider.totalWords,
           correct: provider.correctCount,
           incorrect: provider.incorrectCount,
+          title: '默写进度',
+          onExit: () => _showExitConfirmation(provider),
         ),
         
         // Main content
@@ -143,6 +145,11 @@ class _DictationScreenState extends State<DictationScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                // Control buttons - 移动到单词上方
+                _buildControlButtons(provider),
+                
+                const SizedBox(height: 16),
+                
                 // Prompt section (now includes answer when showing)
                 _buildPromptSection(),
                 
@@ -152,11 +159,6 @@ class _DictationScreenState extends State<DictationScreen> {
                 Expanded(
                   child: _buildCanvasSection(),
                 ),
-                
-                const SizedBox(height: 16),
-                
-                // Control buttons
-                _buildControlButtons(provider),
               ],
             ),
           ),
@@ -291,8 +293,8 @@ class _DictationScreenState extends State<DictationScreen> {
       elevation: 2,
       child: Column(
         children: [
-          // 统一工具栏
-          UnifiedCanvasToolbar(
+          // 可收起的工具栏
+          CollapsibleCanvasToolbar(
             canvasKey: _canvasKey,
             isDictationMode: true,
             showDictationControls: true,
@@ -344,30 +346,16 @@ class _DictationScreenState extends State<DictationScreen> {
       
       return Column(
         children: [
-          // 导航按钮行 - 只有在未提交时才显示
-          if (provider.currentIndex > 0 && !hasSubmitted)
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isSubmitting ? null : () => _goToPreviousWord(provider),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('上一个'),
-                  ),
-                ),
-              ],
-            ),
-          
-          if (provider.currentIndex > 0 && !hasSubmitted) const SizedBox(height: 12),
-          
           // 主要操作按钮行
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _showExitConfirmation(provider),
-                  icon: const Icon(Icons.exit_to_app),
-                  label: const Text('退出默写'),
+                  onPressed: (provider.currentIndex > 0 && !hasSubmitted && !_isSubmitting) 
+                      ? () => _goToPreviousWord(provider) 
+                      : null,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('上一个'),
                 ),
               ),
               const SizedBox(width: 12),

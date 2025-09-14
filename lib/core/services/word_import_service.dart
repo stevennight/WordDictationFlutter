@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
+import 'package:path/path.dart' as path;
 
 import '../../shared/models/word.dart';
 import 'import_data_service.dart';
@@ -266,7 +267,7 @@ class WordImportService {
       }
       
       return {
-        'fileName': filePath.split('/').last.split('\\').last,
+        'fileName': path.basename(filePath),
         'fileSize': stat.size,
         'wordCount': words.length,
         'lastModified': stat.modified,

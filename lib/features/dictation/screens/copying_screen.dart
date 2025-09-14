@@ -3,9 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
-import '../../../shared/widgets/unified_canvas_toolbar.dart';
+import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
-
 class CopyingScreen extends StatefulWidget {
   const CopyingScreen({super.key});
 
@@ -31,9 +30,6 @@ class _CopyingScreenState extends State<CopyingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('抄写练习'),
-      ),
       body: Consumer<DictationProvider>(
         builder: (context, provider, child) {
           if (provider.currentWord == null) {
@@ -44,13 +40,69 @@ class _CopyingScreenState extends State<CopyingScreen> {
 
           return Column(
             children: [
-              // Progress bar
-              DictationProgress(
-                current: provider.currentIndex,
-                total: provider.totalWords,
-                correct: 0, // 抄写模式不显示正确数
-                incorrect: 0, // 抄写模式不显示错误数
-                showStats: false, // 隐藏统计信息
+              // Progress bar - 一行显示
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        // 进度图标和标题
+                        Icon(
+                          Icons.timeline,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '抄写进度',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        
+                        const SizedBox(width: 16),
+                        
+                        // 进度条和数字
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: LinearProgressIndicator(
+                                  value: provider.totalWords > 0 ? (provider.currentIndex + 1) / provider.totalWords : 0.0,
+                                  backgroundColor: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Theme.of(context).colorScheme.primary,
+                                  ),
+                                  minHeight: 4,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${provider.currentIndex + 1}/${provider.totalWords}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               
               // Main content
@@ -59,6 +111,11 @@ class _CopyingScreenState extends State<CopyingScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
+                      // Action buttons - 移动到单词上方
+                      _buildActionButtons(provider),
+                      
+                      const SizedBox(height: 16),
+                      
                       // Word display section
                       _buildWordSection(provider),
                       
@@ -68,11 +125,6 @@ class _CopyingScreenState extends State<CopyingScreen> {
                       Expanded(
                         child: _buildCanvasSection(provider),
                       ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Action buttons
-                      _buildActionButtons(provider),
                     ],
                   ),
                 ),
@@ -205,11 +257,23 @@ class _CopyingScreenState extends State<CopyingScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // 统一工具栏
-            UnifiedCanvasToolbar(
+            // 可收起工具栏
+            CollapsibleCanvasToolbar(
               canvasKey: _canvasKey,
               isDictationMode: false,
               showDictationControls: false,
+              onUndo: () {
+                final canvas = _canvasKey.currentState as dynamic;
+                if (canvas != null) {
+                  canvas.undo();
+                }
+              },
+              onClear: () {
+                final canvas = _canvasKey.currentState as dynamic;
+                if (canvas != null) {
+                  canvas.clearCanvas();
+                }
+              },
             ),
             
             const SizedBox(height: 16),
