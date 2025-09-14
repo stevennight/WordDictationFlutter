@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/dictation_session.dart';
+import '../../../shared/models/word.dart';
+import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/history_provider.dart';
+import '../../dictation/screens/copying_screen.dart';
 import '../widgets/result_detail_card.dart';
 
 class HistoryDetailScreen extends StatefulWidget {
@@ -325,6 +328,27 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
               ),
             ),
             const Spacer(),
+            // 抄写错题按钮
+            if (_session != null && _session!.incorrectCount > 0)
+              OutlinedButton.icon(
+                onPressed: _copyIncorrectWords,
+                icon: const Icon(
+                  Icons.edit,
+                  size: 18,
+                ),
+                label: Text(
+                  '抄写错题(${_session!.incorrectCount})',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: Colors.orange,
+                  side: const BorderSide(color: Colors.orange),
+                ),
+              ),
+            if (_session != null && _session!.incorrectCount > 0) const SizedBox(width: 8),
             // 过滤按钮
             OutlinedButton.icon(
               onPressed: _toggleErrorFilter,
@@ -399,7 +423,60 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
     return _results;
   }
 
-  void _toggleErrorFilter() {
+  void _copyIncorrectWords() async {
+    try {
+      final dictationProvider = context.read<DictationProvider>();
+      
+      // 获取错题结果
+      final incorrectResults = _results.where((result) => !result.isCorrect).toList();
+      
+      if (incorrectResults.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('没有错题可以抄写')),
+          );
+        }
+        return;
+      }
+      
+      // 将错题结果转换为Word对象
+      final copyWords = incorrectResults.map((result) => Word(
+        id: result.wordId,
+        prompt: result.prompt,
+        answer: result.answer,
+        category: result.category,
+        partOfSpeech: result.partOfSpeech,
+        level: result.level,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      )).toList();
+      
+      // 使用loadWordsFromWordbook加载错题进行抄写
+      await dictationProvider.loadWordsFromWordbook(
+        words: copyWords,
+        wordbookName: '${_session?.wordFileName ?? '未知文件'} - 错题抄写',
+        mode: 1, // copying mode
+        order: 0, // sequential order
+        count: copyWords.length,
+      );
+      
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
+        );
+      }
+    }
+   }
+
+   void _toggleErrorFilter() {
     setState(() {
       _showOnlyErrors = !_showOnlyErrors;
       _filteredResults = _getFilteredResults();

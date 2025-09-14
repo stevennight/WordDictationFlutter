@@ -99,6 +99,23 @@ class _CopyingScreenState extends State<CopyingScreen> {
                             ],
                           ),
                         ),
+                        
+                        // 退出抄写按钮
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => _showExitConfirmation(provider),
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.red,
+                            size: 20,
+                          ),
+                          tooltip: '退出抄写',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(24, 24),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -425,6 +442,34 @@ class _CopyingScreenState extends State<CopyingScreen> {
         ),
       ),
     );
+  }
+
+  void _showExitConfirmation(DictationProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认退出'),
+        content: const Text('确定要退出当前抄写吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _exitCopying(provider);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _exitCopying(DictationProvider provider) {
+    // 退出抄写，返回上一页
+    Navigator.of(context).pop();
   }
 
   void _finishCopying() {

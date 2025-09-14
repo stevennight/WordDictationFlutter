@@ -8,6 +8,7 @@ class HistoryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback? onRetry;
+  final VoidCallback? onCopy;
   final VoidCallback? onShare;
 
   const HistoryCard({
@@ -16,6 +17,7 @@ class HistoryCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     this.onRetry,
+    this.onCopy,
     this.onShare,
   });
 
@@ -177,6 +179,20 @@ class HistoryCard extends StatelessWidget {
                       ),
                     ),
                   if (onRetry != null) const SizedBox(width: 8),
+                  if (onCopy != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onCopy,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: Text('抄写错题(${session.incorrectCount})'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          foregroundColor: Colors.orange,
+                          side: const BorderSide(color: Colors.orange),
+                        ),
+                      ),
+                    ),
+                  if (onCopy != null) const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: onTap,
