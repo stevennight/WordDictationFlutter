@@ -297,12 +297,13 @@ class _UnitManagementScreenState extends State<UnitManagementScreen> {
 
   Future<void> _updateUnitName(Unit unit, String newName) async {
     try {
-      final updatedUnit = unit.copyWith(
-        name: newName,
-        updatedAt: DateTime.now(),
+      // 使用事务：重命名单元并同步该词书下所有按名称绑定的单词category
+      await _unitService.renameUnitAndSyncWordCategories(
+        unitId: unit.id!,
+        wordbookId: widget.wordbook.id!,
+        oldName: unit.name,
+        newName: newName,
       );
-      
-      await _unitService.updateUnit(updatedUnit);
       await _loadUnits();
       
       ScaffoldMessenger.of(context).showSnackBar(

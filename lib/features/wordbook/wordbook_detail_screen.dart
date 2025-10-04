@@ -1503,19 +1503,21 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
   Future<void> _updateUnitName(Unit unit, String newName) async {
     try {
-      final updatedUnit = Unit(
-        id: unit.id,
-        wordbookId: unit.wordbookId,
-        name: newName,
-        description: unit.description,
-        wordCount: unit.wordCount,
-        isLearned: unit.isLearned,
-        createdAt: unit.createdAt,
-        updatedAt: DateTime.now(),
+      // 使用事务：重命名单元并同步该词书下所有按名称绑定的单词category
+      await _unitService.renameUnitAndSyncWordCategories(
+        unitId: unit.id!,
+        wordbookId: unit.wordbookId!,
+        oldName: unit.name,
+        newName: newName,
       );
-      
-      await _unitService.updateUnit(updatedUnit);
-      await _loadUnits();
+      // 防止筛选项仍使用旧名称导致过滤结果为0
+      setState(() {
+        if (_selectedUnit == unit.name) {
+          _selectedUnit = newName;
+        }
+      });
+      // 重新加载词与单元，重建 _unitWords 映射并应用筛选
+      await _loadWords();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

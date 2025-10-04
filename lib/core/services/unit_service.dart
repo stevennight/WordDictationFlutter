@@ -84,6 +84,50 @@ class UnitService {
     );
   }
 
+  /// 重命名单元，并同步更新该单元下所有单词的 category（按名称绑定场景）
+  Future<void> renameUnitAndSyncWordCategories({
+    required int unitId,
+    required int wordbookId,
+    required String oldName,
+    required String newName,
+  }) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      // 更新单元名称
+      await txn.update(
+        'units',
+        {
+          'name': newName,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: [unitId],
+      );
+
+      // 同步更新该词书下绑定到旧名称的单词的 category
+      await txn.update(
+        'words',
+        {
+          'category': newName,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'wordbook_id = ? AND category = ?',
+        whereArgs: [wordbookId, oldName],
+      );
+
+      // 额外一致性处理：对所有 unit_id = 该单元 的单词，若 category 为空或与旧名称相同，则设置为新名称
+      await txn.update(
+        'words',
+        {
+          'category': newName,
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'wordbook_id = ? AND unit_id = ? AND (category IS NULL OR category = ?)',
+        whereArgs: [wordbookId, unitId, oldName],
+      );
+    });
+  }
+
   /// 标记单元为已学习
   Future<int> markUnitAsLearned(int unitId) async {
     final db = await _db;
