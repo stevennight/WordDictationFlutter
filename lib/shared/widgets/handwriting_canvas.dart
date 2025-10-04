@@ -352,9 +352,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       
-      // Save directly to app root handwriting_cache directory
+      // Save directly to app root userdata/temp/handwriting_cache directory
       final appDir = await PathUtils.getAppDirectory();
-      final Directory imageDir = Directory(path.join(appDir.path, 'handwriting_cache'));
+      final Directory imageDir = Directory(path.join(appDir.path, 'userdata/temp/handwriting_cache'));
       
       // Create directory if it doesn't exist
       if (!await imageDir.exists()) {

@@ -21,6 +21,7 @@ import 'device_id_service.dart';
 import 'config_service.dart';
 import 'session_conflict_resolver.dart';
 import 'file_index_manager.dart';
+import 'session_file_service.dart';
 
 /// 历史记录同步数据结构
 class HistorySyncData {
@@ -168,6 +169,83 @@ class HistorySyncService {
     // 初始化文件索引管理器
     _fileIndexManager = FileIndexManager(_appDocDir.path);
     await _fileIndexManager.initialize();
+  }
+
+  /// 迁移旧版handwriting_cache中的笔迹图片为.session文件
+  /// 对所有未删除的会话执行：若.session不存在，则根据数据库中的结果记录打包生成
+  /// 可选：生成成功后删除旧的图片文件
+  Future<Map<String, dynamic>> migrateLegacyCacheToSessionFiles({
+    bool deleteLegacyImages = true,
+    void Function(String step, {int? current, int? total})? onProgress,
+  }) async {
+    try {
+      final sessions = await _dictationService.getAllSessions();
+      int migrated = 0;
+      int skipped = 0;
+      int failed = 0;
+
+      for (int i = 0; i < sessions.length; i++) {
+        final s = sessions[i];
+        onProgress?.call('检查会话: ${s.sessionId}', current: i, total: sessions.length);
+        try {
+          final sessionFilePath = await SessionFileService.getSessionFilePath(s.sessionId);
+          final sessionFile = File(sessionFilePath);
+          if (await sessionFile.exists()) {
+            skipped++;
+            continue;
+          }
+
+          // 获取结果并打包为session文件
+          final results = await _dictationService.getSessionResults(s.sessionId);
+          await SessionFileService.saveSessionFile(s, results);
+
+          // 校验生成结果
+          if (await sessionFile.exists()) {
+            migrated++;
+
+            if (deleteLegacyImages) {
+              for (final r in results) {
+                final paths = [r.originalImagePath, r.annotatedImagePath];
+                for (final p in paths) {
+                  if (p != null && p.isNotEmpty) {
+                    try {
+                      final abs = await PathUtils.convertToAbsolutePath(p);
+                      final f = File(abs);
+                      if (await f.exists()) {
+                        await f.delete();
+                      }
+                    } catch (e) {
+                      _logDebug('删除旧图片失败（$p）: $e');
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            failed++;
+            _logDebug('生成session文件失败: ${s.sessionId}');
+          }
+        } catch (e) {
+          failed++;
+          _logDebug('迁移会话失败: ${s.sessionId}, $e');
+        }
+      }
+
+      return {
+        'migrated': migrated,
+        'skipped': skipped,
+        'failed': failed,
+        'total': sessions.length,
+      };
+    } catch (e) {
+      return {
+        'migrated': 0,
+        'skipped': 0,
+        'failed': 0,
+        'total': 0,
+        'error': '迁移失败: $e',
+      };
+    }
   }
 
   /// 获取设备ID
@@ -325,10 +403,11 @@ class HistorySyncService {
       
       // 下载session文件
       final downloadResult = await _downloadSessionFiles(syncData, conflicts, provider, onProgress);
-      final allImageFiles = downloadResult['imageFiles'] as Set<ImageFileInfo>;
+      final downloadedCount = downloadResult['downloaded'] as int? ?? 0;
+      final totalToDownload = downloadResult['total'] as int? ?? 0;
       
       print('[HistorySync] 导入历史记录：找到 ${syncData.sessions.length} 个会话');
-      print('[HistorySync] 导入历史记录：已经下载 ${allImageFiles.length} 个session文件');
+      print('[HistorySync] 导入历史记录：已经下载 $downloadedCount/$totalToDownload 个session文件');
       
       // 注意：删除本地记录的逻辑现在由冲突检测和处理机制决定
       
@@ -407,11 +486,12 @@ class HistorySyncService {
       }
       
       return SyncResult.success(
-        message: '成功导入 $importedSessions 个会话，$importedResults 个结果，${allImageFiles.length} 个图片文件',
+        message: '成功导入 $importedSessions 个会话，$importedResults 个结果，已下载 $downloadedCount 个session文件',
         data: {
           'importedSessions': importedSessions,
           'importedResults': importedResults,
-          'downloadedImages': allImageFiles.length,
+          'downloadedSessions': downloadedCount,
+          'totalSessionsToDownload': totalToDownload,
         },
       );
     } catch (e) {
@@ -509,8 +589,19 @@ class HistorySyncService {
               await _clearLocalDataAndImportRemote(remoteHistoryData, provider, onImportComplete, onProgress);
             }
             
-            // 更新同步时间并返回
+            // 更新同步时间
             await syncService.updateConfigLastSyncTime(configId);
+
+            // 同步结束后清理本地索引中不存在的文件，并上传最终索引到远端
+            try {
+              onProgress?.call('正在清理本地索引并上传到云端...');
+              await _fileIndexManager.cleanupLocalIndex(_appDocDir.path);
+              await _fileIndexManager.uploadIndexToRemote(provider);
+              print('[HistorySyncService] 同步后索引清理并上传完成');
+            } catch (e) {
+              print('[HistorySyncService] 同步后索引清理/上传失败: $e');
+            }
+
             return SyncResult.success(message: '已用云端数据覆盖本地数据');
           }
           // 如果用户选择继续正常同步，则继续执行下面的双向合并逻辑
@@ -558,7 +649,17 @@ class HistorySyncService {
         
         // 更新配置中的同步时间
         await syncService.updateConfigLastSyncTime(configId);
-        
+
+        // 同步结束后清理本地索引中不存在的文件，并上传最终索引到远端
+        try {
+          onProgress?.call('正在清理本地索引并上传到云端...');
+          await _fileIndexManager.cleanupLocalIndex(_appDocDir.path);
+          await _fileIndexManager.uploadIndexToRemote(provider);
+          print('[HistorySyncService] 同步后索引清理并上传完成');
+        } catch (e) {
+          print('[HistorySyncService] 同步后索引清理/上传失败: $e');
+        }
+
         print('[HistorySyncService] 智能同步完成');
         return SyncResult.success(message: '智能同步完成');
       } else {
@@ -631,167 +732,12 @@ class HistorySyncService {
     }
   }
   
-  /// 上传历史记录数据（包含图片文件）
+  /// 上传历史记录数据（上传JSON与 .session 文件）
   Future<SyncResult> _uploadHistoryData(SyncProvider provider, List<dynamic> remoteSessions, Map<String, dynamic> mergeHistoryData, void Function(String step, {int? current, int? total})? onProgress) async {
     try {
       print('[HistorySync] 开始上传历史记录数据');
-      
-      // 预热文件索引缓存
-      onProgress?.call('正在初始化文件索引...', current: 0, total: 1);
-      await _fileIndexManager.preloadIndex(provider);
-      
-      final sessions = mergeHistoryData['sessions'] as List<dynamic>? ?? [];
 
-      // 整理文件路径 => md5的map
-      final filePathMd5Map = <String, String>{};
-      for (final session in remoteSessions) {
-        final sessionMap = session as Map<String, dynamic>;
-        final results = sessionMap['results'] as List<dynamic>? ?? [];
-
-        for (final result in results) {
-          final resultMap = result as Map<String, dynamic>;
-          final originalPath = resultMap['original_image_path'] as String?;
-          final originalMd5 = resultMap['original_image_md5'] as String?;
-          if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-            filePathMd5Map[originalPath] = originalMd5;
-          }
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-          if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-            filePathMd5Map[annotatedPath] = annotatedMd5;
-          }
-        }
-      }
-
-      // 使用文件索引管理器优化文件存在性检查
-      onProgress?.call('正在扫描本地handwriting_cache目录...', current: 0, total: 1);
-      
-      // 先扫描并更新本地handwriting_cache目录的索引
-      await _scanAndUpdateHandwritingCacheIndex();
-      
-      onProgress?.call('正在检查远端文件索引...', current: 0, total: 1);
-      
-      // 下载远端文件索引
-      final remoteIndex = await _fileIndexManager.downloadRemoteIndex(provider);
-      
-      // 如果远端索引存在，需要与本地索引合并
-      if (remoteIndex != null) {
-        await _mergeRemoteIndexWithLocal(remoteIndex);
-      }
-      
-      // 比较本地和远端索引，获取需要上传的文件列表
-      final indexComparison = _fileIndexManager.compareIndexes(remoteIndex);
-      final filesToUploadFromIndex = indexComparison['upload'] ?? <String>[];
-      
-      // 首先收集所有需要上传的图片文件
-      final imagesToUpload = <String>{};
-      
-      for (final session in sessions) {
-        final sessionMap = session as Map<String, dynamic>;
-        final results = sessionMap['results'] as List<dynamic>? ?? [];
-        
-        for (final result in results) {
-          final resultMap = result as Map<String, dynamic>;
-          
-          if (sessionMap['sessionData']['deleted'] == 1) {
-            continue;
-          }
-
-          // 比较原来远端的文件md5和本地文件的md5，不一致则上传
-          final originalPath = resultMap['original_image_path'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          final originalMd5 = resultMap['original_image_md5'] as String?;
-          final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-
-          // 使用索引判断文件是否需要上传
-          if (originalPath != null && originalPath.isNotEmpty) {
-            final originalMd5InRemote = filePathMd5Map[originalPath];
-            bool originalUpload = true;
-            if (originalMd5 != null && originalMd5.isNotEmpty && originalMd5InRemote != null && originalMd5InRemote.isNotEmpty) {
-              if (originalMd5 == originalMd5InRemote) {
-                originalUpload = false;
-              }
-            }
-
-            // 使用文件索引检查而不是网络请求
-            if (originalUpload || filesToUploadFromIndex.contains(originalPath)) {
-              imagesToUpload.add(originalPath);
-            }
-          }
-          if (annotatedPath != null && annotatedPath.isNotEmpty) {
-            final annotatedMd5InRemote = filePathMd5Map[annotatedPath];
-            bool annotatedUpload = true;
-            if (annotatedMd5 != null && annotatedMd5.isNotEmpty && annotatedMd5InRemote != null && annotatedMd5InRemote.isNotEmpty) {
-              if (annotatedMd5 == annotatedMd5InRemote) {
-                annotatedUpload = false;
-              }
-            }
-
-            // 使用文件索引检查而不是网络请求
-            if (annotatedUpload && filesToUploadFromIndex.contains(annotatedPath)) {
-              imagesToUpload.add(annotatedPath);
-            }
-          }
-        }
-      }
-      
-      print('[HistorySync] 找到 ${imagesToUpload.length} 个图片文件需要上传');
-      
-      // 上传图片文件
-      final uploadedImages = <String, String>{}; // 原路径 -> 对象键
-      
-      for (final imagePath in imagesToUpload) {
-        onProgress?.call('正在上传图片: $imagePath', current: uploadedImages.length, total: imagesToUpload.length);
-
-        try {
-          // 上传图片文件到云端
-          final uploadResult = await _uploadSingleImage(imagePath, provider);
-          if (uploadResult != null) {
-            uploadedImages[imagePath] = uploadResult;
-            print('[HistorySync] 图片上传成功: $imagePath -> $uploadResult');
-          } else {
-            print('[HistorySync] 图片上传失败: $imagePath');
-          }
-        } catch (e) {
-          print('[HistorySync] 上传图片异常: $imagePath, 错误: $e');
-        }
-      }
-      
-      print('[HistorySync] 成功上传 ${uploadedImages.length} 个图片文件');
-      
-      // 更新历史记录数据中的图片路径为对象键
-      final updatedData = Map<String, dynamic>.from(mergeHistoryData);
-      final updatedSessions = <Map<String, dynamic>>[];
-      
-      for (final session in sessions) {
-        final sessionMap = Map<String, dynamic>.from(session as Map<String, dynamic>);
-        final results = sessionMap['results'] as List<dynamic>? ?? [];
-        final updatedResults = <Map<String, dynamic>>[];
-        
-        for (final result in results) {
-          final resultMap = Map<String, dynamic>.from(result as Map<String, dynamic>);
-          
-          // 更新图片路径为对象键
-          final originalPath = resultMap['original_image_path'] as String?;
-          final annotatedPath = resultMap['annotated_image_path'] as String?;
-          
-          if (originalPath != null && uploadedImages.containsKey(originalPath)) {
-            resultMap['original_image_object_key'] = uploadedImages[originalPath];
-          }
-          if (annotatedPath != null && uploadedImages.containsKey(annotatedPath)) {
-            resultMap['annotated_image_object_key'] = uploadedImages[annotatedPath];
-          }
-          
-          updatedResults.add(resultMap);
-        }
-        
-        sessionMap['results'] = updatedResults;
-        updatedSessions.add(sessionMap);
-      }
-      
-      updatedData['sessions'] = updatedSessions;
-
-      // 对于其他数据类型，委托给 provider 处理
+      // 上传合并后的JSON数据
       const dataType = SyncDataType.history;
       _logDebug('开始上传数据，类型: $dataType');
 
@@ -804,14 +750,12 @@ class HistorySyncService {
 
       _logDebug('上传JSON数据，大小: ${bytes.length} bytes');
 
-      // 上传带时间戳的文件
       final uploadResult = await provider.uploadBytes(bytes, objectKey);
       if (!uploadResult.success) {
         _logDebug('上传主文件失败: ${uploadResult.message}');
         return uploadResult;
       }
 
-      // 同时上传latest文件作为最新版本的快速访问
       final latestResult = await provider.uploadBytes(bytes, latestKey);
       if (!latestResult.success) {
         _logDebug('上传latest文件失败: ${latestResult.message}');
@@ -819,69 +763,80 @@ class HistorySyncService {
       }
 
       _logDebug('历史记录数据上传完成');
-      
-      // 更新本地文件索引
-      onProgress?.call('正在更新文件索引...', current: uploadedImages.length, total: imagesToUpload.length + 1);
-      
-      try {
-        // 只更新成功上传的文件的索引
-        final uploadedFilePaths = uploadedImages.keys.toList();
-        if (uploadedFilePaths.isNotEmpty) {
-          await _fileIndexManager.batchUpdateLocalIndex(uploadedFilePaths, _appDocDir.path);
+
+      // 上传 .session 文件（仅未删除的会话），并按文件索引去重
+      final sessions = mergeHistoryData['sessions'] as List<dynamic>? ?? [];
+      final sessionsToUpload = <String>[]; // sessionId 列表
+      for (final session in sessions) {
+        final sessionMap = session as Map<String, dynamic>;
+        final sessionData = sessionMap['sessionData'] as Map<String, dynamic>;
+        if ((sessionData['deleted'] ?? 0) == 0) {
+          sessionsToUpload.add(sessionData['session_id'] as String);
         }
-        
-        // 处理上传失败的文件：从本地索引中移除
-        final failedUploads = imagesToUpload.where((path) => !uploadedImages.containsKey(path)).toList();
-        if (failedUploads.isNotEmpty) {
-          _logDebug('移除上传失败文件的索引: ${failedUploads.length} 个文件');
-          for (final failedPath in failedUploads) {
-            _fileIndexManager.removeFromLocalIndex(failedPath);
-            _logDebug('从索引中移除上传失败的文件: $failedPath');
-          }
-          // 保存更新后的本地索引
-          await _fileIndexManager.saveLocalIndex();
-        }
-        
-        // 上传更新后的索引到远端（只包含成功上传的文件）
-        final indexUploadResult = await _fileIndexManager.uploadIndexToRemote(provider);
-        if (!indexUploadResult.success) {
-          _logDebug('上传文件索引失败: ${indexUploadResult.message}');
-          // 索引上传失败不影响主要功能，只记录日志
-        } else {
-          _logDebug('文件索引上传成功，已排除上传失败的文件');
-        }
-      } catch (e) {
-        _logDebug('更新文件索引失败: $e');
-        // 索引更新失败不影响主要功能，只记录日志
       }
 
-      // 检查是否有文件上传失败
-      final failedCount = imagesToUpload.length - uploadedImages.length;
-      if (failedCount > 0) {
-        // 有文件上传失败，返回警告状态
-        return SyncResult.warning(
-          message: '历史记录上传完成，但有 $failedCount 个文件上传失败',
-          data: {
-            'objectKey': objectKey,
-            'latestKey': latestKey,
-            'uploadedImages': uploadedImages.length,
-            'totalImages': imagesToUpload.length,
-            'failedCount': failedCount,
-          },
-        );
-      } else {
-        // 所有文件上传成功
-        return SyncResult.success(
-          message: '历史记录上传成功，所有 ${uploadedImages.length} 个文件已上传',
-          data: {
-            'objectKey': objectKey,
-            'latestKey': latestKey,
-            'uploadedImages': uploadedImages.length,
-            'totalImages': imagesToUpload.length,
-            'failedCount': 0,
-          },
-        );
+      // 更新本地索引中对应的 session 文件项
+      final sessionRelativePaths = <String>[];
+      for (final sessionId in sessionsToUpload) {
+        final relativePath = 'sessions/$sessionId.session';
+        final absolutePath = await SessionFileService.getSessionFilePath(sessionId);
+        final file = File(absolutePath);
+        if (!await file.exists()) {
+          // 如果缺少，尝试重建
+          try {
+            final s = await _dictationService.getSession(sessionId);
+            if (s != null) {
+              final results = await _dictationService.getSessionResults(sessionId);
+              await SessionFileService.saveSessionFile(s, results);
+            }
+          } catch (e) {
+            _logDebug('为上传重建session文件失败: $e');
+          }
+        }
+        if (await file.exists()) {
+          await _fileIndexManager.updateLocalFileIndex(relativePath, absolutePath);
+          sessionRelativePaths.add(relativePath);
+        } else {
+          _logDebug('跳过索引与上传：本地缺少session文件 $sessionId');
+        }
       }
+      await _fileIndexManager.saveLocalIndex();
+
+      // 下载远端索引并比较，筛选需要上传的 session 文件
+      final remoteIndex = await _fileIndexManager.downloadRemoteIndex(provider);
+      final compare = _fileIndexManager.compareIndexes(remoteIndex);
+      final toUploadRelative = compare['upload']!
+          .where((p) => p.startsWith('sessions/'))
+          .where((p) => sessionRelativePaths.contains(p))
+          .toList();
+
+      int uploadedCount = 0;
+      for (int i = 0; i < toUploadRelative.length; i++) {
+        final relativePath = toUploadRelative[i];
+        final sessionId = relativePath.split('/').last.replaceAll('.session', '');
+        onProgress?.call('正在上传会话文件: $sessionId', current: uploadedCount, total: toUploadRelative.length);
+
+        final absolutePath = await SessionFileService.getSessionFilePath(sessionId);
+        final r = await provider.uploadFile(absolutePath, relativePath);
+        if (r.success) {
+          uploadedCount++;
+        } else {
+          _logDebug('上传session文件失败: ${r.message}');
+        }
+      }
+
+      // 上传更新后的索引到远端（包含会话文件的变更）
+      await _fileIndexManager.uploadIndexToRemote(provider);
+
+      return SyncResult.success(
+        message: '历史记录上传成功，已上传 $uploadedCount 个会话文件',
+        data: {
+          'objectKey': objectKey,
+          'latestKey': latestKey,
+          'uploadedSessions': uploadedCount,
+          'totalSessions': toUploadRelative.length,
+        },
+      );
     } catch (e) {
       print('[HistorySync] 上传历史记录数据异常: $e');
       return SyncResult.failure('上传历史记录数据失败: $e');
@@ -1066,111 +1021,96 @@ class HistorySyncService {
    }
  }
 
- /// 下载session文件（收集并下载需要的图片文件）
+ /// 下载session文件（按会话整体下载 .session 文件）
  Future<Map<String, dynamic>> _downloadSessionFiles(
    HistorySyncData syncData,
    List<SessionConflict> conflicts,
    SyncProvider? provider,
    void Function(String step, {int? current, int? total})? onProgress,
  ) async {
-   // 收集所有需要下载的图片文件信息（根据冲突解决结果判断）
-   final Set<ImageFileInfo> allImageFiles = {};
-   final Map<String, String> imagePathToMd5 = {};
-   final Map<String, String> imagePathToObjectKey = {};
-   
+   int downloaded = 0;
+
+   // 若未提供provider，沿用旧逻辑：只补齐缺失的本地文件
+   if (provider == null) {
+     int total = 0;
+     for (final sessionSync in syncData.sessions) {
+       final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
+       DictationSession? finalSession;
+       if (conflict != null) {
+         finalSession = _conflictResolver.getSessionToApply(conflict);
+       } else {
+         finalSession = DictationSession.fromMap(sessionSync.sessionData);
+       }
+       if (finalSession != null && !finalSession.deleted) {
+         total++;
+         // 未提供provider，无法执行下载，这里仅统计总数
+       }
+     }
+     return {'downloaded': 0, 'total': total};
+   }
+
+   // 使用文件索引做去重：按远端索引比较，下载差异的 .session 文件
+   // 先将已有的本地 .session 文件更新到本地索引
    for (final sessionSync in syncData.sessions) {
-     // 查找对应的冲突
      final conflict = conflicts.where((c) => c.sessionId == sessionSync.sessionId).firstOrNull;
-     
-     // 根据冲突解决结果获取最终的session状态
-     DictationSession? finalSession;
-     if (conflict != null) {
-       finalSession = _conflictResolver.getSessionToApply(conflict);
+     final DictationSession finalSession = (conflict != null)
+         ? (_conflictResolver.getSessionToApply(conflict) ?? DictationSession.fromMap(sessionSync.sessionData))
+         : DictationSession.fromMap(sessionSync.sessionData);
+     if (!finalSession.deleted) {
+       final sessionId = finalSession.sessionId;
+       final relativePath = 'sessions/$sessionId.session';
+       final absolutePath = await SessionFileService.getSessionFilePath(sessionId);
+       final file = File(absolutePath);
+       if (await file.exists()) {
+         await _fileIndexManager.updateLocalFileIndex(relativePath, absolutePath);
+       } else {
+         // 缺失的不用加入索引，后续由比较结果决定是否下载
+       }
+     }
+   }
+   await _fileIndexManager.saveLocalIndex();
+
+   // 下载远端索引并比较
+   final remoteIndex = await _fileIndexManager.downloadRemoteIndex(provider);
+   final compare = _fileIndexManager.compareIndexes(remoteIndex);
+   final toDownloadRelative = compare['download']!
+       .where((p) => p.startsWith('sessions/'))
+       .toList();
+
+   final total = toDownloadRelative.length;
+   for (int i = 0; i < toDownloadRelative.length; i++) {
+     final relativePath = toDownloadRelative[i];
+     final sessionId = relativePath.split('/').last.replaceAll('.session', '');
+     final absolutePath = await SessionFileService.getSessionFilePath(sessionId);
+     onProgress?.call('正在下载会话文件: $sessionId', current: i, total: total);
+     final result = await provider.downloadBytes(relativePath);
+     if (result.success && result.data != null) {
+       final bytes = result.data!['data'] as List<int>;
+       final file = File(absolutePath);
+       await file.parent.create(recursive: true);
+       await file.writeAsBytes(bytes);
+       await _fileIndexManager.updateLocalFileIndex(relativePath, absolutePath);
+       downloaded++;
      } else {
-       // 没有冲突，使用远程session
-       finalSession = DictationSession.fromMap(sessionSync.sessionData);
-     }
-     
-     // 只有当最终session存在且未被删除时，才收集其图片文件
-     if (finalSession != null && !finalSession.deleted) {
-       // 从results中收集图片路径和MD5
-       for (final resultMap in syncData.sessions.where((s) => s.sessionId == sessionSync.sessionId).first.results) {
-         final originalPath = resultMap['original_image_path'] as String?;
-         final originalMd5 = resultMap['original_image_md5'] as String?;
-         final annotatedPath = resultMap['annotated_image_path'] as String?;
-         final annotatedMd5 = resultMap['annotated_image_md5'] as String?;
-         
-         if (originalPath != null && originalPath.isNotEmpty && originalMd5 != null && originalMd5.isNotEmpty) {
-           imagePathToMd5[originalPath] = originalMd5;
-           // 生成对象键
-           final generatedObjectKey = FileHashUtils.generateCloudObjectKey(originalPath, originalMd5);
-           imagePathToObjectKey[originalPath] = generatedObjectKey;
-         }
-         if (annotatedPath != null && annotatedPath.isNotEmpty && annotatedMd5 != null && annotatedMd5.isNotEmpty) {
-           imagePathToMd5[annotatedPath] = annotatedMd5;
-           // 生成对象键
-           final generatedObjectKey = FileHashUtils.generateCloudObjectKey(annotatedPath, annotatedMd5);
-           imagePathToObjectKey[annotatedPath] = generatedObjectKey;
-         }
-       }
+       _logDebug('下载session文件失败: $relativePath, ${result.message}');
      }
    }
-   
-   print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToObjectKey.length} 个图片对象键');
-   print('[HistorySync] 从冲突解决后的数据中找到 ${imagePathToMd5.length} 个图片MD5');
-   
-   // 检查哪些图片需要下载（本地不存在或MD5不匹配）
-   for (final entry in imagePathToMd5.entries) {
-     final imagePath = entry.key;
-     final storedMd5 = entry.value;
-     
-     print("[HistorySync] 检查图片: $imagePath, storedMd5: $storedMd5");
-     
-     // 检查本地文件是否需要同步（统一使用needsSync方法）
-     final absolutedImagePath = await PathUtils.convertToAbsolutePath(imagePath);
-     final expectedMd5 = imagePathToMd5[imagePath]!;
-     
-     final needDownload = await FileHashUtils.needsDownload(absolutedImagePath, expectedMd5);
-     print('[HistorySync] 根据文件存在性和MD5判断是否需要下载: ${needDownload.toString()}');
-     
-     // 只有需要下载的图片才创建ImageFileInfo
-     if (needDownload) {
-       final imageInfo = await _historyFileSyncManager.getImageFileInfoWithMd5(imagePath, storedMd5, true);
-       if (imageInfo != null) {
-         allImageFiles.add(imageInfo);
-       }
-     }
-   }
-   
-   // 如果提供了同步提供者，下载图片文件
-   if (provider != null && allImageFiles.isNotEmpty) {
-     try {
-       onProgress?.call('正在下载session文件...', current: 0, total: allImageFiles.length);
-       print('[HistorySync] 开始下载session文件...');
-       await _downloadImageFiles(allImageFiles.toList(), provider, imagePathToObjectKey, onProgress);
-       print('[HistorySync] session文件下载完成');
-     } catch (e) {
-       print('[HistorySync] 下载session文件时出错: $e');
-       // 继续导入历史记录数据，不因图片下载失败而中断
-     }
-   } else if (provider == null) {
-     print('[HistorySync] 未提供同步提供者，跳过session文件下载');
-   } else {
-     print('[HistorySync] 没有需要下载的session文件');
-   }
-   
+
+   // 下载完成后同步索引
+   await _fileIndexManager.saveLocalIndex();
+
    return {
-     'imageFiles': allImageFiles,
-     'imagePathToObjectKey': imagePathToObjectKey,
+     'downloaded': downloaded,
+     'total': total,
    };
  }
 
   /// 扫描并更新handwriting_cache目录的索引
   Future<void> _scanAndUpdateHandwritingCacheIndex() async {
     try {
-      // 直接扫描应用根目录下的handwriting_cache目录
+      // 直接扫描应用根目录下的userdata/temp/handwriting_cache目录
       final appDir = await PathUtils.getAppDirectory();
-      final handwritingCacheDir = Directory(path.join(appDir.path, 'handwriting_cache'));
+      final handwritingCacheDir = Directory(path.join(appDir.path, 'userdata/temp/handwriting_cache'));
       
       if (!await handwritingCacheDir.exists()) {
         print('[HistorySync] handwriting_cache目录不存在，跳过扫描');
@@ -1178,6 +1118,10 @@ class HistorySyncService {
        }
        
        print('[HistorySync] 开始扫描handwriting_cache目录: ${handwritingCacheDir.path}');
+       
+       // 先清理本地索引中已不存在的文件记录，避免残留老路径如 "handwriting_cache/..."
+       await _fileIndexManager.cleanupLocalIndex(appDir.path);
+       print('[HistorySync] 已清理不存在的文件索引记录');
        
        final files = <String>[];
        await for (final entity in handwritingCacheDir.list(recursive: true)) {
@@ -1195,8 +1139,8 @@ class HistorySyncService {
          await _fileIndexManager.batchUpdateLocalIndex(files, appDir.path);
          print('[HistorySync] handwriting_cache目录索引更新完成');
        }
-     } catch (e) {
-       print('[HistorySync] 扫描handwriting_cache目录失败: $e');
+    } catch (e) {
+      print('[HistorySync] 扫描handwriting_cache目录失败: $e');
     }
   }
   

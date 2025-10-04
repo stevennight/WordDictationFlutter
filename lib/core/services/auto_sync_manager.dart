@@ -9,6 +9,7 @@ import 'wordbook_sync_service.dart';
 import 'history_deletion_service.dart';
 import '../../features/sync/widgets/sync_progress_dialog.dart';
 import '../../main.dart';
+import 'config_service.dart';
 
 /// 自动同步管理器
 /// 负责管理基于时间间隔、应用启动时的自动同步
@@ -41,6 +42,9 @@ class AutoSyncManager with WidgetsBindingObserver {
 
     // 注册应用生命周期监听器
     WidgetsBinding.instance.addObserver(this);
+
+    // 启动时执行一次旧版缓存迁移（带提示）
+    await _performStartupMigrationWithUI();
 
     // 启动时执行一次自动同步
     _performStartupSync();
@@ -100,6 +104,62 @@ class AutoSyncManager with WidgetsBindingObserver {
   void _performStartupSync() {
     print('[AutoSyncManager] 执行启动时自动同步');
     _performStartupSyncWithUI();
+  }
+
+  /// 启动时执行旧版手写缓存迁移，并提示进度
+  Future<void> _performStartupMigrationWithUI() async {
+    try {
+      final config = await ConfigService.getInstance();
+      final done = await config.getSetting<bool>('legacy_cache_migration_done', defaultValue: false) ?? false;
+      if (done) {
+        print('[AutoSyncManager] 旧版缓存迁移已完成，跳过');
+        return;
+      }
+
+      // 延迟一点时间确保UI已准备好
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      final context = navigatorKey.currentContext;
+      if (context == null || !context.mounted) {
+        print('[AutoSyncManager] 无法获取上下文，后台执行旧版缓存迁移');
+        final result = await _historySyncService.migrateLegacyCacheToSessionFiles(
+          deleteLegacyImages: true,
+          onProgress: (step, {current, total}) {
+            print('[AutoSyncManager] 迁移进度: $step ${current != null && total != null ? '($current/$total)' : ''}');
+          },
+        );
+        await config.setSetting('legacy_cache_migration_done', true);
+        print('[AutoSyncManager] 旧版缓存迁移完成: migrated=${result['migrated']}, skipped=${result['skipped']}, failed=${result['failed']}');
+        return;
+      }
+
+      try {
+        final result = await showSyncProgressDialog<Map<String, dynamic>>(
+          context: context,
+          title: '迁移旧版手写缓存',
+          syncFunction: (onProgress) async {
+            return await _historySyncService.migrateLegacyCacheToSessionFiles(
+              deleteLegacyImages: true,
+              onProgress: onProgress,
+            );
+          },
+        );
+
+        if (result != null) {
+          await config.setSetting('legacy_cache_migration_done', true);
+          final migrated = result['migrated'] ?? 0;
+          final skipped = result['skipped'] ?? 0;
+          final failed = result['failed'] ?? 0;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('缓存迁移完成：迁移 $migrated，跳过 $skipped，失败 $failed')),
+          );
+        }
+      } catch (e) {
+        print('[AutoSyncManager] 启动迁移失败: $e');
+      }
+    } catch (e) {
+      print('[AutoSyncManager] 检查或执行启动迁移时发生错误: $e');
+    }
   }
 
   /// 执行带UI的启动同步

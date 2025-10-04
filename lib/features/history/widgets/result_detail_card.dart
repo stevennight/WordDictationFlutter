@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../../../shared/utils/path_utils.dart';
+import '../../../core/services/session_file_service.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
@@ -284,24 +286,21 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
         
         Row(
           children: [
-            if (widget.result.originalImagePath != null)
-              Expanded(
-                child: _buildImageCard(
-                  context,
-                  '原始手写',
-                  widget.result.originalImagePath!,
-                ),
+            Expanded(
+              child: _buildSessionImageCard(
+                context,
+                '原始手写',
+                annotated: false,
               ),
-            if (widget.result.originalImagePath != null && widget.result.annotatedImagePath != null)
-              const SizedBox(width: 8),
-            if (widget.result.annotatedImagePath != null)
-              Expanded(
-                child: _buildImageCard(
-                  context,
-                  '批注版本',
-                  widget.result.annotatedImagePath!,
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSessionImageCard(
+                context,
+                '批注版本',
+                annotated: true,
               ),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -338,6 +337,116 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 从session文件构建图片卡片
+  Widget _buildSessionImageCard(BuildContext context, String title, {required bool annotated}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: () => _showSessionImageDialog(context, title, annotated: annotated),
+          child: Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _buildImageFromSession(annotated: annotated),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageFromSession({required bool annotated}) {
+    return FutureBuilder<Uint8List?>(
+      future: SessionFileService.loadImageBytes(
+        widget.result.sessionId,
+        widget.result.wordIndex,
+        annotated: annotated,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.image_not_supported,
+                    size: 32,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '图片不存在',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.broken_image,
+                      size: 32,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '加载失败',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -479,6 +588,39 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   maxWidth: 400,
                 ),
                 child: _buildImage(imagePath),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSessionImageDialog(BuildContext context, String title, {required bool annotated}) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text(title),
+              automaticallyImplyLeading: false,
+              actions: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            Flexible(
+              child: Container(
+                constraints: const BoxConstraints(
+                  maxHeight: 500,
+                  maxWidth: 400,
+                ),
+                child: _buildImageFromSession(annotated: annotated),
               ),
             ),
             const SizedBox(height: 16),

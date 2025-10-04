@@ -8,6 +8,7 @@ import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
 import '../utils/path_utils.dart';
 import '../../core/services/dictation_service.dart';
+import '../../core/services/session_file_service.dart';
 import '../../core/services/word_service.dart';
 import '../../core/utils/file_hash_utils.dart';
 
@@ -396,6 +397,41 @@ class DictationProvider extends ChangeNotifier {
       // 保存所有结果
       for (final result in _results) {
         await _dictationService.saveResult(result);
+      }
+
+      // 打包并保存session文件（包含手写图片）
+      try {
+        await SessionFileService.saveSessionFile(_currentSession!, _results);
+      } catch (e) {
+        debugPrint('保存session文件失败: $e');
+      }
+
+      // 打包完成后，安全删除本次会话的缓存手写图片
+      try {
+        final sessionFilePath = await SessionFileService.getSessionFilePath(_currentSession!.sessionId);
+        final sessionFile = File(sessionFilePath);
+        if (await sessionFile.exists()) {
+          for (final result in _results) {
+            final paths = [result.originalImagePath, result.annotatedImagePath];
+            for (final p in paths) {
+              if (p != null && p.isNotEmpty) {
+                try {
+                  final abs = await PathUtils.convertToAbsolutePath(p);
+                  final f = File(abs);
+                  if (await f.exists()) {
+                    await f.delete();
+                  }
+                } catch (e) {
+                  debugPrint('删除缓存图片失败（$p）: $e');
+                }
+              }
+            }
+          }
+        } else {
+          debugPrint('session文件未找到，跳过缓存图片删除');
+        }
+      } catch (e) {
+        debugPrint('清理缓存手写图片失败: $e');
       }
     } catch (e) {
       debugPrint('保存session到历史记录失败: $e');

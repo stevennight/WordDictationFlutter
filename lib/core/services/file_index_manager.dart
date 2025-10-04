@@ -381,7 +381,7 @@ class FileIndexManager {
     final filesToRemove = <String>[];
     
     for (final relativePath in _localIndex!.files.keys) {
-      final absolutePath = path.join(baseDir, relativePath);
+      final absolutePath = await _resolveAbsolutePath(baseDir, relativePath);
       final file = File(absolutePath);
       
       if (!await file.exists()) {
@@ -397,6 +397,15 @@ class FileIndexManager {
       await _saveLocalIndex();
       _logDebug('清理本地索引完成，移除了 ${filesToRemove.length} 个不存在的文件');
     }
+  }
+
+  /// 解析索引中的相对路径为本地绝对路径
+  /// 统一映射到应用根目录下的 `userdata/`，避免误判
+  Future<String> _resolveAbsolutePath(String baseDir, String relativePath) async {
+    // 统一相对路径分隔符
+    final normalized = relativePath.replaceAll('\\', '/');
+    // 索引的相对路径均以 `userdata/` 为根
+    return path.join(baseDir, 'userdata', normalized);
   }
 
   /// 智能同步索引策略

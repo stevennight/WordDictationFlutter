@@ -24,8 +24,8 @@ class HistoryFileSyncManager {
     _appDocDir = await PathUtils.getAppDirectory();
 
     
-    // 直接使用应用根目录下的handwriting_cache目录
-    _imagesCacheDir = Directory(path.join(_appDocDir.path, 'handwriting_cache'));
+    // 使用应用根目录下的userdata/temp/handwriting_cache目录
+    _imagesCacheDir = Directory(path.join(_appDocDir.path, 'userdata/temp/handwriting_cache'));
     
     // 确保缓存目录存在
     if (!await _imagesCacheDir.exists()) {
