@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../../shared/models/dictation_result.dart';
-import '../../../core/services/local_config_service.dart';
-import '../../../shared/providers/theme_provider.dart';
-import '../../../shared/utils/accuracy_header_utils.dart';
 
+import '../../../core/services/local_config_service.dart';
 import '../../../shared/models/dictation_session.dart';
+import '../../../shared/utils/accuracy_header_utils.dart';
 
 class CompletionDialog extends StatelessWidget {
   final DictationSession session;
@@ -22,7 +19,6 @@ class CompletionDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accuracy = session.accuracy;
-    final duration = session.duration;
     final screenHeight = MediaQuery.of(context).size.height;
     
     return Dialog(

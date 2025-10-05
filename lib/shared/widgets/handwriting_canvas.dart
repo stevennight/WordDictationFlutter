@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import '../utils/path_utils.dart';
 import '../enums/pen_mode.dart';
 
 enum DrawingMode {
@@ -57,7 +58,6 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   double _strokeWidth = 2.0;
   Color _strokeColor = Colors.black;
   Color _annotationColor = Colors.red;
-  bool _isErasing = false;
   ui.Image? _backgroundImage;
   
   @override
@@ -85,15 +85,30 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
   void _loadBackgroundImage() async {
     if (widget.backgroundImagePath == null) return;
     
+    debugPrint('Loading background image: ${widget.backgroundImagePath}');
+    
     try {
-      final File imageFile = File(widget.backgroundImagePath!);
-      if (await imageFile.exists()) {
+      // 处理相对路径和绝对路径
+      String imagePath = widget.backgroundImagePath!;
+      
+      // 转换为绝对路径
+      imagePath = await PathUtils.convertToAbsolutePath(imagePath);
+      debugPrint('Converted to absolute path: $imagePath');
+      
+      final File imageFile = File(imagePath);
+      final bool exists = await imageFile.exists();
+      debugPrint('Image file exists: $exists');
+      
+      if (exists) {
         final Uint8List bytes = await imageFile.readAsBytes();
         final ui.Codec codec = await ui.instantiateImageCodec(bytes);
         final ui.FrameInfo frameInfo = await codec.getNextFrame();
         setState(() {
           _backgroundImage = frameInfo.image;
         });
+        debugPrint('Background image loaded successfully');
+      } else {
+        debugPrint('Image file does not exist: $imagePath');
       }
     } catch (e) {
       debugPrint('Error loading background image: $e');
@@ -268,6 +283,12 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
     });
   }
 
+  void setEraserMode(bool isEraserMode) {
+    setState(() {
+      _drawingMode = isEraserMode ? DrawingMode.eraser : DrawingMode.pen;
+    });
+  }
+
   void clear() {
     clearCanvas();
   }
@@ -331,18 +352,9 @@ class _HandwritingCanvasState extends State<HandwritingCanvas> {
       
       final Uint8List pngBytes = byteData.buffer.asUint8List();
       
-      // Get the app directory (same logic as database and config)
-      String appDir;
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Get executable directory for desktop platforms
-        final executablePath = Platform.resolvedExecutable;
-        appDir = path.dirname(executablePath);
-      } else {
-        // Fallback to documents directory for mobile platforms
-        final documentsDirectory = await getApplicationDocumentsDirectory();
-        appDir = documentsDirectory.path;
-      }
-      final Directory imageDir = Directory(path.join(appDir, 'handwriting_cache'));
+      // Save directly to app root userdata/temp/handwriting_cache directory
+      final appDir = await PathUtils.getAppDirectory();
+      final Directory imageDir = Directory(path.join(appDir.path, 'userdata/temp/handwriting_cache'));
       
       // Create directory if it doesn't exist
       if (!await imageDir.exists()) {

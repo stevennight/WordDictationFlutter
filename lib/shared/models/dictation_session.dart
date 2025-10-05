@@ -27,6 +27,8 @@ class DictationSession {
   final bool isRetrySession;
   final String? originalSessionId;
   final int dictationDirection; // 0: 原文→译文, 1: 译文→原文
+  final bool deleted; // 软删除标记
+  final DateTime? deletedAt; // 删除时间
 
   const DictationSession({
     this.id,
@@ -44,6 +46,8 @@ class DictationSession {
     this.isRetrySession = false,
     this.originalSessionId,
     this.dictationDirection = 0, // 默认原文→译文
+    this.deleted = false,
+    this.deletedAt,
   });
 
   DictationSession copyWith({
@@ -62,6 +66,8 @@ class DictationSession {
     bool? isRetrySession,
     String? originalSessionId,
     int? dictationDirection,
+    bool? deleted,
+    DateTime? deletedAt,
   }) {
     return DictationSession(
       id: id ?? this.id,
@@ -79,6 +85,8 @@ class DictationSession {
       isRetrySession: isRetrySession ?? this.isRetrySession,
       originalSessionId: originalSessionId ?? this.originalSessionId,
       dictationDirection: dictationDirection ?? this.dictationDirection,
+      deleted: deleted ?? this.deleted,
+      deletedAt: deletedAt ?? this.deletedAt,
     );
   }
 
@@ -112,6 +120,8 @@ class DictationSession {
       'is_retry_session': isRetrySession ? 1 : 0,
       'original_session_id': originalSessionId,
       'dictation_direction': dictationDirection,
+      'deleted': deleted ? 1 : 0,
+      'deleted_at': deletedAt?.millisecondsSinceEpoch,
     };
     
     // Only include id if it's not null (for updates)
@@ -141,6 +151,10 @@ class DictationSession {
       isRetrySession: (map['is_retry_session'] ?? 0) == 1,
       originalSessionId: map['original_session_id'],
       dictationDirection: map['dictation_direction']?.toInt() ?? 0,
+      deleted: (map['deleted'] ?? 0) == 1,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(map['deleted_at'])
+          : null,
     );
   }
 

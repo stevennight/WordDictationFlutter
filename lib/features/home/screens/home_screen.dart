@@ -1,24 +1,18 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:file_picker/file_picker.dart';
 
-import '../../../shared/models/word.dart';
-import '../../../shared/models/wordbook.dart';
-import '../../../shared/models/unit.dart';
-import '../../../shared/models/dictation_session.dart';
-import '../../../shared/providers/dictation_provider.dart';
-import '../../../shared/providers/app_state_provider.dart';
-import '../../../shared/widgets/unified_dictation_config_dialog.dart';
+import '../../../core/services/unit_service.dart';
 import '../../../core/services/word_import_service.dart';
 import '../../../core/services/wordbook_service.dart';
-import '../../../core/services/unit_service.dart';
-import '../widgets/mode_selection_card.dart';
-import '../widgets/quantity_selection_dialog.dart';
-import '../widgets/file_drop_zone.dart';
-import '../widgets/home_dictation_mode_dialog.dart';
-import '../../wordbook/widgets/wordbook_quantity_selection_dialog.dart';
-import '../../wordbook/widgets/dictation_mode_selection_dialog.dart';
+import '../../../shared/models/unit.dart';
+import '../../../shared/models/word.dart';
+import '../../../shared/models/wordbook.dart';
+import '../../../shared/providers/app_state_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../wordbook/wordbook_management_screen.dart';
+import '../widgets/file_drop_zone.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,11 +31,28 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _fileName;
   List<Wordbook> _wordbooks = [];
   bool _isLoadingWordbooks = false;
+  int _lastWordbookUpdateCounter = -1;
 
   @override
   void initState() {
     super.initState();
     _loadWordbooks();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 监听词书更新状态
+    final appState = context.watch<AppStateProvider>();
+    if (appState.wordbookUpdateCounter != _lastWordbookUpdateCounter) {
+      _lastWordbookUpdateCounter = appState.wordbookUpdateCounter;
+      if (_lastWordbookUpdateCounter > 0) {
+        // 延迟刷新，避免在build过程中调用setState
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadWordbooks();
+        });
+      }
+    }
   }
 
   Future<void> _loadWordbooks() async {
@@ -714,46 +725,4 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _startDictation(DictationMode mode) async {
-    if (_loadedWords.isEmpty) return;
-
-    // Show unified dictation config dialog
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => UnifiedDictationConfigDialog(
-        totalWords: _loadedWords.length,
-        sourceName: _fileName ?? '未知文件',
-        showQuantitySelection: true,
-        initialMode: mode,
-      ),
-    );
-
-    if (result == null) return;
-
-    final dictationDirection = result['mode'] as int; // 获取默写方向
-    final order = result['order'] as int;
-    final quantity = result['quantity'] as int;
-    final selectedMode = order == 0 ? DictationMode.sequential : DictationMode.random;
- 
-    try {
-      final dictationProvider = context.read<DictationProvider>();
-      final appState = context.read<AppStateProvider>();
-
-      // Start dictation
-      await dictationProvider.startDictation(
-        mode: selectedMode,
-        customQuantity: quantity,
-        wordFileName: _fileName,
-        dictationDirection: dictationDirection,
-      );
-
-      // Enter dictation mode
-      appState.enterDictationMode(
-        wordFileName: _fileName ?? '未知文件',
-        totalWords: quantity,
-      );
-    } catch (e) {
-      _setStatus('开始默写失败: $e');
-    }
-  }
 }

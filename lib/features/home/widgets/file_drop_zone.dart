@@ -177,37 +177,4 @@ class _FileDropZoneState extends State<FileDropZone>
       ],
     );
   }
-
-  void _handleDragEnter() {
-    setState(() {
-      _isDragOver = true;
-    });
-    _animationController.forward();
-  }
-
-  void _handleDragLeave() {
-    setState(() {
-      _isDragOver = false;
-    });
-    _animationController.reverse();
-  }
-
-  void _handleDragDrop(String filePath) {
-    setState(() {
-      _isDragOver = false;
-    });
-    _animationController.reverse();
-    
-    final extension = filePath.split('.').last.toLowerCase();
-    if (extension == 'xlsx' || extension == 'csv') {
-      widget.onFileSelected(filePath);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请选择 .xlsx 或 .csv 格式的文件'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 }

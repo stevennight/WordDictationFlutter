@@ -34,6 +34,8 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
   Duration _syncInterval = const Duration(hours: 1);
   bool _obscureSecretKey = true;
   bool _isLoading = false;
+  bool _enabled = true;
+  int _retentionCount = 10;
 
   @override
   void initState() {
@@ -58,6 +60,8 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
       _useSSL = storageConfig.useSSL;
       _autoSync = config.autoSync;
       _syncInterval = config.syncInterval;
+      _enabled = config.enabled;
+      _retentionCount = config.retentionCount;
     } else {
       _pathPrefixController.text = 'wordDictationSync';
     }
@@ -364,14 +368,25 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
             ),
             const SizedBox(height: 16),
             SwitchListTile(
-              title: const Text('自动同步'),
-              subtitle: const Text('定期自动同步词书数据'),
-              value: _autoSync,
+              title: const Text('启用同步'),
+              subtitle: const Text('启用或禁用此同步配置'),
+              value: _enabled,
               onChanged: (value) {
+                setState(() {
+                  _enabled = value;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              title: const Text('自动同步'),
+              subtitle: const Text('在应用启动和定时间隔时自动同步历史记录数据'),
+              value: _autoSync,
+              onChanged: _enabled ? (value) {
                 setState(() {
                   _autoSync = value;
                 });
-              },
+              } : null,
             ),
             if (_autoSync) ...[
               const SizedBox(height: 16),
@@ -382,6 +397,18 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 5),
+                    child: Text('5分钟'),
+                  ),
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 10),
+                    child: Text('10分钟'),
+                  ),
+                  const DropdownMenuItem(
+                    value: Duration(minutes: 15),
+                    child: Text('15分钟'),
+                  ),
                   const DropdownMenuItem(
                     value: Duration(minutes: 30),
                     child: Text('30分钟'),
@@ -412,6 +439,38 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
                 },
               ),
             ],
+            const SizedBox(height: 16),
+            TextFormField(
+              initialValue: _retentionCount.toString(),
+              decoration: const InputDecoration(
+                labelText: '备份文件保留数量',
+                hintText: '保留最新的备份文件数量（默认10个）',
+                border: OutlineInputBorder(),
+                suffixText: '个',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return '请输入保留数量';
+                }
+                final count = int.tryParse(value);
+                if (count == null || count < 1) {
+                  return '请输入有效的数量（至少1个）';
+                }
+                if (count > 1000) {
+                  return '保留数量不能超过1000个';
+                }
+                return null;
+              },
+              onChanged: (value) {
+                final count = int.tryParse(value);
+                if (count != null && count >= 1 && count <= 1000) {
+                  setState(() {
+                    _retentionCount = count;
+                  });
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -518,6 +577,8 @@ class _ObjectStorageConfigDialogState extends State<ObjectStorageConfigDialog> {
         autoSync: _autoSync,
         syncInterval: _syncInterval,
         lastSyncTime: widget.existingConfig?.lastSyncTime,
+        enabled: _enabled,
+        retentionCount: _retentionCount,
       );
 
       widget.onSave(syncConfig);

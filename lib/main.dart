@@ -8,6 +8,8 @@ import 'dart:io';
 
 import 'core/database/database_helper.dart';
 import 'core/services/config_service.dart';
+import 'core/services/history_sync_service.dart';
+import 'core/services/auto_sync_manager.dart';
 import 'shared/providers/app_state_provider.dart';
 import 'shared/providers/dictation_provider.dart';
 import 'shared/providers/history_provider.dart';
@@ -16,6 +18,9 @@ import 'features/home/screens/home_screen.dart';
 import 'features/dictation/screens/dictation_screen.dart';
 import 'features/history/screens/history_screen.dart';
 import 'features/settings/screens/settings_screen.dart';
+
+// 全局导航键，用于在服务中显示对话框
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,9 +40,17 @@ void main() async {
   // Initialize config service
   await ConfigService.getInstance();
   
+  // Initialize history sync service (this will create device_id.txt)
+  final historySyncService = HistorySyncService();
+  await historySyncService.initialize();
+  
   // Clear inProgress sessions on app startup
   final historyProvider = HistoryProvider();
   await historyProvider.clearInProgressSessions();
+  
+  // Initialize auto sync manager
+  final autoSyncManager = AutoSyncManager();
+  await autoSyncManager.initialize();
   
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
@@ -105,6 +118,7 @@ class _WordDictationAppState extends State<WordDictationApp> {
           return MaterialApp(
             title: '默写小助手',
             debugShowCheckedModeBanner: false,
+            navigatorKey: navigatorKey,
             theme: themeProvider.lightTheme,
             darkTheme: themeProvider.darkTheme,
             themeMode: themeProvider.themeMode,

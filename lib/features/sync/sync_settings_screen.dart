@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/services/sync_service.dart';
+import '../../core/services/history_sync_service.dart';
+import '../../core/services/wordbook_sync_service.dart';
+import '../../shared/providers/history_provider.dart';
+import '../../shared/providers/app_state_provider.dart';
 import 'widgets/object_storage_config_dialog.dart';
 import 'widgets/sync_status_card.dart';
+import 'widgets/sync_progress_dialog.dart';
 
 class SyncSettingsScreen extends StatefulWidget {
   const SyncSettingsScreen({super.key});
@@ -12,7 +18,6 @@ class SyncSettingsScreen extends StatefulWidget {
 
 class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
   final SyncService _syncService = SyncService();
-  bool _isLoading = false;
   bool _initialized = false;
 
   @override
@@ -72,6 +77,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
             return success;
           },
           onTest: () => _testSyncConfig(config),
+          onToggleEnabled: (enabled) => _toggleSyncConfig(config, enabled),
         );
       },
     );
@@ -219,31 +225,59 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
 
   Future<bool> _performSync(SyncConfig config) async {
     setState(() {
-      _isLoading = true;
     });
 
     try {
       // 显示同步选项对话框
-      final action = await showDialog<String>(
+      final action = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('选择同步操作'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.cloud_upload),
-                title: const Text('上传到云端'),
-                subtitle: const Text('将本地词书上传到云端\n⚠️ 需要本地有词书数据'),
-                onTap: () => Navigator.of(context).pop('upload'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_download),
-                title: const Text('从云端下载'),
-                subtitle: const Text('从云端下载词书到本地\n⚠️ 会覆盖同名本地词书'),
-                onTap: () => Navigator.of(context).pop('download'),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '词书同步',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.cloud_upload),
+                  title: const Text('上传词书到云端'),
+                  subtitle: const Text('将本地词书上传到云端\n⚠️ 需要本地有词书数据'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'wordbooks',
+                    'action': 'upload',
+                  }),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cloud_download),
+                  title: const Text('从云端下载词书'),
+                  subtitle: const Text('从云端下载词书到本地\n⚠️ 会覆盖同名本地词书'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'wordbooks',
+                    'action': 'download',
+                  }),
+                ),
+                const Divider(),
+                const Text(
+                  '历史记录同步',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.sync, color: Colors.green),
+                  title: const Text('智能同步历史记录（实验性）'),
+                  subtitle: const Text('合并本地与云端数据\n⚠️ 目前实验性质，可能会损坏本地记录'),
+                  onTap: () => Navigator.of(context).pop({
+                    'type': 'history',
+                    'action': 'smart_sync',
+                  }),
+                ),
+
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -255,20 +289,67 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
       );
 
       if (action != null) {
-        final result = await _syncService.syncWordbooks(
-          config.id,
-          upload: action == 'upload',
-        );
+        SyncResult result;
+        
+        if (action['type'] == 'wordbooks') {
+          final wordbookSyncService = WordbookSyncService();
+          result = await wordbookSyncService.syncWordbooks(
+            config.id,
+            upload: action['action'] == 'upload',
+          );
+          
+          // 如果同步成功，通知首页刷新词书列表
+          if (result.success && mounted) {
+            context.read<AppStateProvider>().notifyWordbookUpdated();
+          }
+        } else if (action['type'] == 'history') {
+          // 使用进度对话框显示同步进度
+          result = await showSyncProgressDialog<SyncResult>(
+            context: context,
+            title: '智能同步历史记录',
+            syncFunction: (onProgress) async {
+              final historySyncService = HistorySyncService();
+              await historySyncService.initialize();
+              return await historySyncService.smartSyncHistory(
+                config.id,
+                onImportComplete: () {
+                  // 刷新历史记录列表
+                  if (mounted) {
+                    context.read<HistoryProvider>().loadHistory();
+                  }
+                },
+                onProgress: onProgress,
+              );
+            },
+          ) ?? SyncResult.failure('同步被取消');
+        } else {
+          result = SyncResult.failure('未知的同步类型');
+        }
 
         if (mounted) {
+          String message;
+          Color backgroundColor;
+          
+          if (result.success) {
+            message = result.message ?? '同步成功';
+            backgroundColor = Colors.green;
+          } else if (result.isWarning) {
+            message = result.message ?? '同步完成但有警告';
+            backgroundColor = Colors.orange;
+          } else {
+            message = '同步失败: ${result.message}';
+            backgroundColor = Colors.red;
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result.success ? '同步成功' : '同步失败: ${result.message}'),
-              backgroundColor: result.success ? Colors.green : Colors.red,
+              content: Text(message),
+              backgroundColor: backgroundColor,
+              duration: result.isWarning ? const Duration(seconds: 5) : const Duration(seconds: 4),
             ),
           );
         }
-        return result.success;
+        return result.success || result.isWarning;
       }
       return false;
     } catch (e) {
@@ -284,7 +365,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
         });
       }
     }
@@ -292,7 +372,6 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
 
   Future<void> _testSyncConfig(SyncConfig config) async {
     setState(() {
-      _isLoading = true;
     });
 
     try {
@@ -318,8 +397,44 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _toggleSyncConfig(SyncConfig config, bool enabled) async {
+    try {
+      final updatedConfig = SyncConfig(
+        id: config.id,
+        name: config.name,
+        providerType: config.providerType,
+        settings: config.settings,
+        autoSync: config.autoSync,
+        syncInterval: config.syncInterval,
+        lastSyncTime: config.lastSyncTime,
+        enabled: enabled,
+        retentionCount: config.retentionCount,
+      );
+      
+      await _syncService.addConfig(updatedConfig);
+      
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(enabled ? '同步配置已启用' : '同步配置已禁用'),
+            backgroundColor: enabled ? Colors.green : Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('更新配置失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }

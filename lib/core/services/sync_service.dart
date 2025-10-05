@@ -1,10 +1,6 @@
 import 'dart:convert';
-import '../../shared/models/wordbook.dart';
-import '../../shared/models/word.dart';
-import '../../shared/models/unit.dart';
+
 import 'local_config_service.dart';
-import 'json_data_service.dart';
-import 'import_data_service.dart';
 import 'object_storage_sync_provider.dart';
 
 /// 同步数据类型枚举
@@ -15,25 +11,44 @@ enum SyncDataType {
   // 预留其他数据类型
 }
 
+/// 同步操作结果状态
+enum SyncStatus {
+  success,
+  warning,
+  failure,
+}
+
 /// 同步操作结果
 class SyncResult {
-  final bool success;
+  final SyncStatus status;
   final String? message;
   final Map<String, dynamic>? data;
   final DateTime timestamp;
 
   SyncResult({
-    required this.success,
+    required this.status,
     this.message,
     this.data,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
   SyncResult.success({String? message, Map<String, dynamic>? data})
-      : this(success: true, message: message, data: data);
+      : this(status: SyncStatus.success, message: message, data: data);
+
+  SyncResult.warning({String? message, Map<String, dynamic>? data})
+      : this(status: SyncStatus.warning, message: message, data: data);
 
   SyncResult.failure(String message)
-      : this(success: false, message: message);
+      : this(status: SyncStatus.failure, message: message);
+
+  /// 兼容性属性：当状态为success时返回true
+  bool get success => status == SyncStatus.success;
+
+  /// 是否为警告状态
+  bool get isWarning => status == SyncStatus.warning;
+
+  /// 是否为失败状态
+  bool get isFailure => status == SyncStatus.failure;
 }
 
 /// 同步配置
@@ -46,6 +61,7 @@ class SyncConfig {
   final Duration syncInterval;
   final DateTime? lastSyncTime;
   final bool enabled;
+  final int retentionCount;
 
   SyncConfig({
     required this.id,
@@ -56,6 +72,7 @@ class SyncConfig {
     this.syncInterval = const Duration(hours: 1),
     this.lastSyncTime,
     this.enabled = true,
+    this.retentionCount = 100,
   });
 
   Map<String, dynamic> toMap() {
@@ -68,6 +85,7 @@ class SyncConfig {
       'syncInterval': syncInterval.inMilliseconds,
       'lastSyncTime': lastSyncTime?.millisecondsSinceEpoch,
       'enabled': enabled,
+      'retentionCount': retentionCount,
     };
   }
 
@@ -85,6 +103,7 @@ class SyncConfig {
           ? DateTime.fromMillisecondsSinceEpoch(map['lastSyncTime'])
           : null,
       enabled: map['enabled'] ?? true,
+      retentionCount: map['retentionCount'] ?? 10,
     );
   }
 }
@@ -109,20 +128,55 @@ abstract class SyncProvider {
   /// 测试连接
   Future<SyncResult> testConnection();
 
-  /// 上传数据
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data);
-
-  /// 下载数据
-  Future<SyncResult> downloadData(SyncDataType dataType);
-
-  /// 删除远程数据
-  Future<SyncResult> deleteData(SyncDataType dataType);
-
-  /// 获取远程数据信息（如最后修改时间等）
-  Future<SyncResult> getDataInfo(SyncDataType dataType);
-
   /// 列出所有可用的数据文件
   Future<SyncResult> listDataFiles();
+
+  // ========== 纯文件存储操作方法 ==========
+  
+  /// 上传文件到指定路径
+  /// [filePath] 本地文件路径
+  /// [remotePath] 远程存储路径
+  /// [onProgress] 上传进度回调
+  Future<SyncResult> uploadFile(String filePath, String remotePath, {void Function(int current, int total)? onProgress});
+
+  /// 从指定路径下载文件
+  /// [remotePath] 远程存储路径
+  /// [localPath] 本地保存路径
+  /// [onProgress] 下载进度回调
+  Future<SyncResult> downloadFile(String remotePath, String localPath, {void Function(int current, int total)? onProgress});
+
+  /// 删除指定路径的文件
+  /// [remotePath] 远程存储路径（不含存储配置的前缀）
+  Future<SyncResult> deleteFile(String remotePath);
+
+  /// 上传字节数据到指定路径
+  /// [data] 要上传的字节数据
+  /// [remotePath] 远程存储路径
+  /// [contentType] 内容类型，如 'application/json', 'image/png' 等
+  /// [onProgress] 上传进度回调
+  Future<SyncResult> uploadBytes(List<int> data, String remotePath, {String? contentType, void Function(int current, int total)? onProgress});
+
+  /// 从指定路径下载字节数据
+  /// [remotePath] 远程存储路径
+  /// [onProgress] 下载进度回调
+  Future<SyncResult> downloadBytes(String remotePath, {void Function(int current, int total)? onProgress});
+
+  /// 检查文件是否存在
+  /// [remotePath] 远程存储路径
+  Future<bool> fileExists(String remotePath);
+
+  /// 获取文件信息（大小、修改时间等）
+  /// [remotePath] 远程存储路径
+  Future<SyncResult> getFileInfo(String remotePath);
+
+  /// 列出指定目录下的文件
+  /// [remotePath] 远程目录路径
+  /// [recursive] 是否递归列出子目录
+  Future<SyncResult> listFiles(String remotePath, {bool recursive = false});
+
+  /// 获取同步路径前缀
+  /// [provider] 同步提供商
+  Future<String> getPathPrefix();
 }
 
 /// 同步服务主类
@@ -165,87 +219,16 @@ class SyncService {
     }
   }
 
+  /// 获取指定的同步提供商
+  SyncProvider? getProvider(String configId) {
+    return _providers[configId];
+  }
+
   /// 删除配置
   Future<void> removeConfig(String configId) async {
     _configs.removeWhere((c) => c.id == configId);
     _providers.remove(configId);
     await _saveConfigs();
-  }
-
-  /// 同步词书数据
-  Future<SyncResult> syncWordbooks(String configId, {bool upload = true}) async {
-    final provider = _providers[configId];
-    if (provider == null) {
-      return SyncResult.failure('同步配置不存在');
-    }
-
-    try {
-      if (upload) {
-        // 上传本地词书数据
-        final wordbooksData = await _exportAllWordbooks();
-        
-        // 检查是否为空数据
-        if (!_isValidDataForUpload(wordbooksData)) {
-          return SyncResult.failure('本地数据为空或无效，为避免覆盖远端数据，请先添加词书后再同步');
-        }
-        
-        final result = await provider.uploadData(SyncDataType.wordbooks, wordbooksData);
-        
-        if (result.success) {
-          // 更新最后同步时间
-          final config = getConfig(configId);
-          if (config != null) {
-            final updatedConfig = SyncConfig(
-              id: config.id,
-              name: config.name,
-              providerType: config.providerType,
-              settings: config.settings,
-              autoSync: config.autoSync,
-              syncInterval: config.syncInterval,
-              lastSyncTime: DateTime.now(),
-              enabled: config.enabled,
-            );
-            await addConfig(updatedConfig);
-          }
-        }
-        
-        return result;
-      } else {
-        // 下载远程词书数据
-        final result = await provider.downloadData(SyncDataType.wordbooks);
-        
-        if (result.success && result.data != null) {
-          // 检查下载的数据是否有效
-          if (!_isValidDataForImport(result.data!)) {
-            return SyncResult.failure('远端数据为空或格式无效');
-          }
-          
-          await _importWordbooks(result.data!);
-          
-          // 更新最后同步时间
-          final config = getConfig(configId);
-          if (config != null) {
-            final updatedConfig = SyncConfig(
-              id: config.id,
-              name: config.name,
-              providerType: config.providerType,
-              settings: config.settings,
-              autoSync: config.autoSync,
-              syncInterval: config.syncInterval,
-              lastSyncTime: DateTime.now(),
-              enabled: config.enabled,
-            );
-            await addConfig(updatedConfig);
-          }
-          
-          return SyncResult.success(message: '词书数据同步成功');
-        }
-        
-        return result;
-      }
-    } catch (e) {
-      return SyncResult.failure('同步失败: $e');
-    }
   }
 
   /// 测试同步配置
@@ -324,71 +307,27 @@ class SyncService {
     }
   }
 
-  /// 导出所有词书数据（内部方法）
-  Future<Map<String, dynamic>> _exportAllWordbooks() async {
-    final jsonDataService = JsonDataService();
-    return await jsonDataService.exportAllWordbooks();
-  }
+  /// 更新配置的最后同步时间
+  Future<void> updateConfigLastSyncTime(String configId) async {
+    final configIndex = _configs.indexWhere((c) => c.id == configId);
+    if (configIndex == -1) {
+      throw Exception('配置不存在: $configId');
+    }
 
-  /// 验证上传数据是否有效
-  bool _isValidDataForUpload(Map<String, dynamic> data) {
-    // 检查基本格式
-    if (data['wordbooks'] == null || data['wordbooks'] is! List) {
-      return false;
-    }
+    final config = _configs[configIndex];
+    final updatedConfig = SyncConfig(
+      id: config.id,
+      name: config.name,
+      providerType: config.providerType,
+      settings: config.settings,
+      autoSync: config.autoSync,
+      syncInterval: config.syncInterval,
+      lastSyncTime: DateTime.now(),
+      enabled: config.enabled,
+      retentionCount: config.retentionCount,
+    );
     
-    final List<dynamic> wordbooks = data['wordbooks'];
-    
-    // 检查是否有词书
-    if (wordbooks.isEmpty) {
-      return false;
-    }
-    
-    // 检查是否至少有一个词书包含单词
-    bool hasValidWordbook = false;
-    for (final wordbook in wordbooks) {
-      if (wordbook is Map<String, dynamic> && 
-          wordbook['words'] is List && 
-          (wordbook['words'] as List).isNotEmpty) {
-        hasValidWordbook = true;
-        break;
-      }
-    }
-    
-    return hasValidWordbook;
-  }
-  
-  /// 验证导入数据是否有效
-  bool _isValidDataForImport(Map<String, dynamic> data) {
-    // 检查基本格式
-    if (data['wordbooks'] == null || data['wordbooks'] is! List) {
-      return false;
-    }
-    
-    final List<dynamic> wordbooks = data['wordbooks'];
-    
-    // 允许空词书列表（用户可能想清空本地数据）
-    // 但需要确保格式正确
-    for (final wordbook in wordbooks) {
-      if (wordbook is! Map<String, dynamic>) {
-        return false;
-      }
-      
-      // 检查词书必需字段
-      if (wordbook['name'] == null || wordbook['name'] is! String) {
-        return false;
-      }
-    }
-    
-    return true;
-  }
-
-  /// 导入词书数据（内部方法）
-  Future<void> _importWordbooks(Map<String, dynamic> data) async {
-    final importDataService = ImportDataService();
-    final result = await importDataService.importFromJsonData(data);
-    if (!result.success) {
-      throw Exception(result.message);
-    }
+    _configs[configIndex] = updatedConfig;
+    await _saveConfigs();
   }
 }

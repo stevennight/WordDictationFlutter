@@ -1,22 +1,21 @@
-import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../../core/database/database_helper.dart';
+import '../../core/services/unit_service.dart';
+import '../../core/services/wordbook_service.dart';
+import '../../shared/models/unit.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
-import '../../shared/models/unit.dart';
-import '../../shared/models/dictation_session.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
-import '../../core/services/wordbook_service.dart';
-import '../../core/services/unit_service.dart';
-import '../../core/database/database_helper.dart';
-import 'wordbook_import_screen.dart';
-import '../dictation/screens/dictation_screen.dart';
 import '../dictation/screens/copying_screen.dart';
-import 'widgets/wordbook_quantity_selection_dialog.dart';
-import 'widgets/dictation_mode_selection_dialog.dart';
+import '../dictation/screens/dictation_screen.dart';
+import 'wordbook_import_screen.dart';
 
 enum UnitSortType {
   nameAsc,
@@ -126,7 +125,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         unitsToFilter = _units.where((unit) => !unit.isLearned).toList();
         break;
       case UnitLearningFilter.all:
-      default:
         unitsToFilter = _units;
         break;
     }
@@ -163,15 +161,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     _filteredUnits = unitsToFilter;
   }
 
-  int _getUnlearnedWordsCount() {
-    final unlearnedUnits = _units.where((unit) => !unit.isLearned);
-    int count = 0;
-    for (final unit in unlearnedUnits) {
-      count += _unitWords[unit.name]?.length ?? 0;
-    }
-    return count;
-  }
-
   int _getLearnedWordsCount() {
     final learnedUnits = _units.where((unit) => unit.isLearned);
     int count = 0;
@@ -179,19 +168,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       count += _unitWords[unit.name]?.length ?? 0;
     }
     return count;
-  }
-
-  Future<List<Word>> _getUnlearnedWords() async {
-    try {
-      return await _wordbookService.getWordbookUnlearnedWords(widget.wordbook.id!);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取未学习单词失败: $e')),
-        );
-      }
-      return [];
-    }
   }
 
   Future<List<Word>> _getLearnedWords() async {
@@ -573,13 +549,13 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                     Icon(
                       Icons.book,
                       size: 16,
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '${_currentWordCount} 个单词',
                       style: TextStyle(
-                        color: Colors.grey[600],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 14,
                       ),
                     ),
@@ -587,13 +563,13 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                     Icon(
                       Icons.access_time,
                       size: 16,
-                      color: Colors.grey[600],
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       _formatDate(widget.wordbook.createdAt),
                       style: TextStyle(
-                        color: Colors.grey[600],
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 14,
                       ),
                     ),
@@ -812,10 +788,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: Colors.blue[100],
+                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
                       '${index + 1}',
-                      style: TextStyle(color: Colors.blue[800]),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
                     ),
                   ),
                   title: Text(
@@ -835,9 +813,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                               Chip(
                                 label: Text(
                                   word.partOfSpeech!,
-                                  style: const TextStyle(fontSize: 10),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                  ),
                                 ),
-                                backgroundColor: Colors.blue[100],
+                                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
                                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                             if (word.partOfSpeech != null && word.level != null)
@@ -846,9 +827,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                               Chip(
                                 label: Text(
                                   word.level!,
-                                  style: const TextStyle(fontSize: 10),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(context).colorScheme.onTertiaryContainer,
+                                  ),
                                 ),
-                                backgroundColor: Colors.green[100],
+                                backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
                                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                           ],
@@ -867,9 +851,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                         Chip(
                           label: Text(
                             word.category!,
-                            style: const TextStyle(fontSize: 12),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          backgroundColor: Colors.grey[200],
+                          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
                         ),
                     ],
                   ),
@@ -938,12 +925,17 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                     final unitWords = _unitWords[unit.name] ?? [];
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
+                      color: Theme.of(context).colorScheme.surface,
                       child: ListTile(
                          leading: CircleAvatar(
-                           backgroundColor: unit.isLearned ? Colors.green[100] : Colors.orange[100],
+                           backgroundColor: unit.isLearned
+                               ? Theme.of(context).colorScheme.secondaryContainer
+                               : Theme.of(context).colorScheme.primaryContainer,
                            child: Icon(
                              unit.isLearned ? Icons.check_circle : Icons.folder,
-                             color: unit.isLearned ? Colors.green[800] : Colors.orange[800],
+                             color: unit.isLearned
+                                 ? Theme.of(context).colorScheme.onSecondaryContainer
+                                 : Theme.of(context).colorScheme.onPrimaryContainer,
                            ),
                           ),
                           title: Row(
@@ -958,14 +950,14 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                                  Container(
                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                    decoration: BoxDecoration(
-                                     color: Colors.green[100],
+                                     color: Theme.of(context).colorScheme.secondaryContainer,
                                      borderRadius: BorderRadius.circular(12),
                                    ),
                                    child: Text(
                                      '已学习',
                                      style: TextStyle(
                                        fontSize: 12,
-                                       color: Colors.green[800],
+                                       color: Theme.of(context).colorScheme.onSecondaryContainer,
                                        fontWeight: FontWeight.w500,
                                      ),
                                    ),
@@ -1265,9 +1257,9 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       useSafeArea: false,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.8,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: Column(
           children: [
@@ -1277,7 +1269,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               height: 4,
               margin: const EdgeInsets.only(top: 8, bottom: 4),
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: Theme.of(context).colorScheme.surfaceVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1312,7 +1304,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                 child: Text(
                   '${unitWords.length} 个单词',
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -1328,12 +1320,15 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                   final word = unitWords[index];
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
+                    color: Theme.of(context).colorScheme.surface,
                     child: ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: Colors.blue[100],
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                         child: Text(
                           '${index + 1}',
-                          style: TextStyle(color: Colors.blue[800]),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
                         ),
                       ),
                       title: Text(
@@ -1353,9 +1348,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                                   Chip(
                                     label: Text(
                                       word.partOfSpeech!,
-                                      style: const TextStyle(fontSize: 10),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                                      ),
                                     ),
-                                    backgroundColor: Colors.blue[100],
+                                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   ),
                                 if (word.partOfSpeech != null && word.level != null)
@@ -1364,9 +1362,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                                   Chip(
                                     label: Text(
                                       word.level!,
-                                      style: const TextStyle(fontSize: 10),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Theme.of(context).colorScheme.onTertiaryContainer,
+                                      ),
                                     ),
-                                    backgroundColor: Colors.green[100],
+                                    backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   ),
                               ],
@@ -1527,19 +1528,21 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
   Future<void> _updateUnitName(Unit unit, String newName) async {
     try {
-      final updatedUnit = Unit(
-        id: unit.id,
-        wordbookId: unit.wordbookId,
-        name: newName,
-        description: unit.description,
-        wordCount: unit.wordCount,
-        isLearned: unit.isLearned,
-        createdAt: unit.createdAt,
-        updatedAt: DateTime.now(),
+      // 使用事务：重命名单元并同步该词书下所有按名称绑定的单词category
+      await _unitService.renameUnitAndSyncWordCategories(
+        unitId: unit.id!,
+        wordbookId: unit.wordbookId!,
+        oldName: unit.name,
+        newName: newName,
       );
-      
-      await _unitService.updateUnit(updatedUnit);
-      await _loadUnits();
+      // 防止筛选项仍使用旧名称导致过滤结果为0
+      setState(() {
+        if (_selectedUnit == unit.name) {
+          _selectedUnit = newName;
+        }
+      });
+      // 重新加载词与单元，重建 _unitWords 映射并应用筛选
+      await _loadWords();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

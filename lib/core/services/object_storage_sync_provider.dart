@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:http/http.dart' as http;
+
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
+
 import 'sync_service.dart';
 
 /// 对象存储类型
@@ -119,17 +121,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     print('[ObjectStorageSync] $message');
   }
 
-  String _getObjectKey(SyncDataType dataType) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final dataTypeName = dataType.toString().split('.').last;
-    return '${_storageConfig.pathPrefix}/$dataTypeName-$timestamp.json';
-  }
-
-  String _getLatestObjectKey(SyncDataType dataType) {
-    final dataTypeName = dataType.toString().split('.').last;
-    return '${_storageConfig.pathPrefix}/$dataTypeName-latest.json';
-  }
-
   @override
   Future<SyncResult> testConnection() async {
     try {
@@ -156,103 +147,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   @override
-  Future<SyncResult> uploadData(SyncDataType dataType, Map<String, dynamic> data) async {
-    try {
-      final objectKey = _getObjectKey(dataType);
-      final latestKey = _getLatestObjectKey(dataType);
-      final jsonData = jsonEncode(data);
-      final bytes = utf8.encode(jsonData);
-
-      // 上传带时间戳的文件
-      final uploadResult = await _putObject(objectKey, bytes);
-      if (!uploadResult.success) {
-        return uploadResult;
-      }
-
-      // 同时上传latest文件作为最新版本的快速访问
-      final latestResult = await _putObject(latestKey, bytes);
-      if (!latestResult.success) {
-        return SyncResult.failure('上传latest文件失败: ${latestResult.message}');
-      }
-
-      return SyncResult.success(
-        message: '数据上传成功',
-        data: {'objectKey': objectKey, 'latestKey': latestKey},
-      );
-    } catch (e) {
-      return SyncResult.failure('上传数据失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> downloadData(SyncDataType dataType) async {
-    try {
-      final latestKey = _getLatestObjectKey(dataType);
-      final result = await _getObject(latestKey);
-      
-      if (result.success && result.data != null) {
-        final contentBytes = result.data!['content'] as List<int>;
-        _logDebug('下载的数据长度: ${contentBytes.length} bytes');
-        _logDebug('Content-Type: ${result.data!['contentType']}');
-        
-        try {
-          final jsonString = utf8.decode(contentBytes);
-          _logDebug('解码后的JSON字符串长度: ${jsonString.length}');
-          final data = jsonDecode(jsonString) as Map<String, dynamic>;
-          
-          return SyncResult.success(
-            message: '数据下载成功',
-            data: data,
-          );
-        } catch (decodeError) {
-          _logDebug('数据解码失败: $decodeError');
-          _logDebug('原始数据前100字节: ${contentBytes.take(100).toList()}');
-          return SyncResult.failure('数据解码失败: $decodeError');
-        }
-      } else {
-        return SyncResult.failure('下载数据失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('下载数据失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> deleteData(SyncDataType dataType) async {
-    try {
-      final latestKey = _getLatestObjectKey(dataType);
-      final result = await _deleteObject(latestKey);
-      
-      if (result.success) {
-        return SyncResult.success(message: '数据删除成功');
-      } else {
-        return SyncResult.failure('删除数据失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('删除数据失败: $e');
-    }
-  }
-
-  @override
-  Future<SyncResult> getDataInfo(SyncDataType dataType) async {
-    try {
-      final latestKey = _getLatestObjectKey(dataType);
-      final result = await _headObject(latestKey);
-      
-      if (result.success) {
-        return SyncResult.success(
-          message: '获取数据信息成功',
-          data: result.data,
-        );
-      } else {
-        return SyncResult.failure('获取数据信息失败: ${result.message}');
-      }
-    } catch (e) {
-      return SyncResult.failure('获取数据信息失败: $e');
-    }
-  }
-
-  @override
   Future<SyncResult> listDataFiles() async {
     try {
       final result = await _listObjects(prefix: _storageConfig.pathPrefix);
@@ -271,24 +165,32 @@ class ObjectStorageSyncProvider extends SyncProvider {
   }
 
   // 内部HTTP请求方法
-  Future<SyncResult> _putObject(String objectKey, List<int> data) async {
+  Future<SyncResult> _putObject(String objectKey, List<int> data, {String? contentType, void Function(int current, int total)? onProgress}) async {
     try {
       final url = _buildObjectUrl(objectKey);
-      _logDebug('PUT请求URL: $url');
       final headers = await _buildHeaders('PUT', objectKey, data);
-      _logDebug('PUT请求头: $headers');
+      
+      // 如果指定了内容类型，添加到headers中
+      if (contentType != null) {
+        headers['Content-Type'] = contentType;
+      }
+      
+      // 如果有进度回调，先调用开始状态
+      onProgress?.call(0, data.length);
       
       final response = await http.put(
         Uri.parse(url),
         headers: headers,
         body: data,
       );
+      
+      // 上传完成后调用进度回调
+      onProgress?.call(data.length, data.length);
 
-      _logDebug('PUT响应状态码: ${response.statusCode}');
       if (response.statusCode == 200 || response.statusCode == 201) {
         return SyncResult.success();
       } else {
-        _logDebug('PUT响应内容: ${response.body}');
+        _logDebug('PUT请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
@@ -297,56 +199,41 @@ class ObjectStorageSyncProvider extends SyncProvider {
     }
   }
 
-  Future<SyncResult> _getObject(String objectKey) async {
+  Future<SyncResult> _getObject(String objectKey, {void Function(int current, int total)? onProgress}) async {
     try {
       final url = _buildObjectUrl(objectKey);
-      _logDebug('GET请求URL: $url');
       final headers = await _buildHeaders('GET', objectKey);
-      _logDebug('GET请求头: $headers');
       
       final response = await http.get(
         Uri.parse(url),
         headers: headers,
       );
-
-      _logDebug('GET响应状态码: ${response.statusCode}');
-      _logDebug('GET响应头: ${response.headers}');
-      _logDebug('GET响应体长度: ${response.bodyBytes.length}');
       
       if (response.statusCode == 200) {
         // 检查响应体是否为空
         if (response.bodyBytes.isEmpty) {
-          _logDebug('警告: 响应体为空');
           return SyncResult.failure('服务器返回空响应');
         }
         
-        // 记录响应体的前100字节用于调试
-        final previewBytes = response.bodyBytes.take(100).toList();
-        _logDebug('响应体前100字节: $previewBytes');
-        
-        try {
-          // 尝试解码为字符串以检查内容
-          final responseText = utf8.decode(response.bodyBytes);
-          _logDebug('响应体文本长度: ${responseText.length}');
-          _logDebug('响应体前200字符: ${responseText.length > 200 ? responseText.substring(0, 200) : responseText}');
-        } catch (decodeError) {
-          _logDebug('响应体UTF-8解码失败: $decodeError');
-        }
+        // 如果有进度回调，调用完成状态
+        final bytes = response.bodyBytes;
+        onProgress?.call(bytes.length, bytes.length);
         
         return SyncResult.success(data: {
-          'content': response.bodyBytes,
+          'data': bytes, // 使用 'data' 字段名以与新方法保持一致
+          'content': bytes, // 保留原有字段名以兼容现有代码
           'contentType': response.headers['content-type'],
           'lastModified': response.headers['last-modified'],
+          'size': bytes.length,
         });
       } else if (response.statusCode == 404) {
         return SyncResult.failure('文件不存在');
       } else {
-        _logDebug('GET响应内容: ${response.body}');
+        _logDebug('GET请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       _logDebug('GET请求异常: $e');
-      _logDebug('异常堆栈: $stackTrace');
       return SyncResult.failure('GET请求失败: $e');
     }
   }
@@ -432,25 +319,21 @@ class ObjectStorageSyncProvider extends SyncProvider {
         url = '$_baseUrl/${_storageConfig.bucket}?$query';
       }
       
-      _logDebug('LIST请求URL: $url');
       final headers = await _buildHeaders('GET', '', null, queryParams);
-      _logDebug('LIST请求头: $headers');
       
       final response = await http.get(
         Uri.parse(url),
         headers: headers,
       );
 
-      _logDebug('LIST响应状态码: ${response.statusCode}');
       if (response.statusCode == 200) {
-        _logDebug('LIST响应内容长度: ${response.body.length}');
         // 这里应该解析XML响应，但为了简化，我们返回原始响应
         return SyncResult.success(data: {
           'response': response.body,
           'statusCode': response.statusCode,
         });
       } else {
-        _logDebug('LIST响应内容: ${response.body}');
+        _logDebug('LIST请求失败: HTTP ${response.statusCode}');
         return SyncResult.failure('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
@@ -478,12 +361,9 @@ class ObjectStorageSyncProvider extends SyncProvider {
       'X-Amz-Date': _getAmzDate(),
     };
     
-    _logDebug('设置Host头: $hostHeader');
-
     // 计算并设置content-sha256头
     final payloadHash = _getPayloadHash(body);
     headers['x-amz-content-sha256'] = payloadHash;
-    _logDebug('设置x-amz-content-sha256: $payloadHash');
 
     if (body != null) {
       headers['Content-Length'] = body.length.toString();
@@ -524,7 +404,6 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final payloadHash = _getPayloadHash(body);
     
     final canonicalRequest = '$method\n$canonicalUri\n$canonicalQueryString\n$canonicalHeaders\n$signedHeaders\n$payloadHash';
-    _logDebug('规范请求: $canonicalRequest');
     
     // 2. 创建待签名字符串
     final algorithm = 'AWS4-HMAC-SHA256';
@@ -532,12 +411,10 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final canonicalRequestHash = _sha256Hash(canonicalRequest);
     
     final stringToSign = '$algorithm\n$amzDate\n$credentialScope\n$canonicalRequestHash';
-    _logDebug('待签名字符串: $stringToSign');
     
     // 3. 计算签名
     final signingKey = _getSigningKey(secretKey, dateStamp, region, service);
     final signature = _hmacSha256Hex(signingKey, stringToSign);
-    _logDebug('计算的签名: $signature');
     
     // 4. 构建授权头
     return '$algorithm Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature';
@@ -622,5 +499,287 @@ class ObjectStorageSyncProvider extends SyncProvider {
     final messageBytes = utf8.encode(message);
     final hmac = Hmac(sha256, key);
     return hmac.convert(messageBytes).toString();
+  }
+
+  // ========== 纯文件存储操作方法实现 ==========
+
+  @override
+  Future<SyncResult> uploadFile(String filePath, String remotePath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return SyncResult.failure('本地文件不存在: $filePath');
+      }
+
+      final bytes = await file.readAsBytes();
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('上传文件: $filePath -> $objectKey');
+      
+      final result = await _putObject(objectKey, bytes, onProgress: onProgress);
+      if (result.success) {
+        _logDebug('文件上传成功: $objectKey');
+        return SyncResult.success(message: '文件上传成功', data: {'objectKey': objectKey, 'size': bytes.length});
+      } else {
+        return SyncResult.failure('文件上传失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('上传文件异常: $e');
+      return SyncResult.failure('上传文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> downloadFile(String remotePath, String localPath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('下载文件: $objectKey -> $localPath');
+      
+      final result = await _getObject(objectKey, onProgress: onProgress);
+      if (result.success && result.data != null) {
+        final bytes = result.data!['data'] as List<int>;
+        
+        // 确保目录存在
+        final file = File(localPath);
+        await file.parent.create(recursive: true);
+        
+        await file.writeAsBytes(bytes);
+        
+        _logDebug('文件下载成功: $localPath');
+        return SyncResult.success(message: '文件下载成功', data: {'localPath': localPath, 'size': bytes.length});
+      } else {
+        return SyncResult.failure('文件下载失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('下载文件异常: $e');
+      return SyncResult.failure('下载文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> deleteFile(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('删除文件: $objectKey');
+      
+      final result = await _deleteObject(objectKey);
+      if (result.success) {
+        _logDebug('文件删除成功: $objectKey');
+        return SyncResult.success(message: '文件删除成功', data: {'objectKey': objectKey});
+      } else {
+        return SyncResult.failure('文件删除失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('删除文件异常: $e');
+      return SyncResult.failure('删除文件失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> uploadBytes(List<int> data, String remotePath, {String? contentType, void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('上传字节数据: $objectKey (${data.length} bytes)');
+      
+      final result = await _putObject(objectKey, data, contentType: contentType, onProgress: onProgress);
+      if (result.success) {
+        _logDebug('字节数据上传成功: $objectKey');
+        return SyncResult.success(message: '数据上传成功', data: {'objectKey': objectKey, 'size': data.length});
+      } else {
+        return SyncResult.failure('数据上传失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('上传字节数据异常: $e');
+      return SyncResult.failure('上传数据失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> downloadBytes(String remotePath, {void Function(int current, int total)? onProgress}) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('下载字节数据: $objectKey');
+      
+      final result = await _getObject(objectKey, onProgress: onProgress);
+      print('result:$result');
+      if (result.success && result.data != null) {
+        final bytes = result.data!['data'] as List<int>;
+        
+        _logDebug('字节数据下载成功: $objectKey (${bytes.length} bytes)');
+        return SyncResult.success(message: '数据下载成功', data: result.data);
+      } else {
+        return SyncResult.failure('数据下载失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('下载字节数据异常: $e');
+      return SyncResult.failure('下载数据失败: $e');
+    }
+  }
+
+  @override
+  Future<bool> fileExists(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('检查文件是否存在: $objectKey');
+      
+      final result = await _headObject(objectKey);
+      if (result.success) {
+        _logDebug('文件存在: $objectKey');
+        return true;
+      } else {
+        _logDebug('文件不存在: $objectKey');
+        return false;
+      }
+    } catch (e) {
+      _logDebug('检查文件存在异常: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<SyncResult> getFileInfo(String remotePath) async {
+    try {
+      final objectKey = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('获取文件信息: $objectKey');
+      
+      final result = await _headObject(objectKey);
+      if (result.success && result.data != null) {
+        _logDebug('获取文件信息成功: $objectKey');
+        return SyncResult.success(message: '获取文件信息成功', data: result.data);
+      } else {
+        return SyncResult.failure('获取文件信息失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('获取文件信息异常: $e');
+      return SyncResult.failure('获取文件信息失败: $e');
+    }
+  }
+
+  @override
+  Future<SyncResult> listFiles(String remotePath, {bool recursive = false}) async {
+    try {
+      final prefix = '${_storageConfig.pathPrefix}/$remotePath';
+      
+      _logDebug('列出文件: $prefix (recursive: $recursive)');
+      
+      final result = await _listObjects(prefix: prefix);
+      if (result.success && result.data != null) {
+        final xmlResponse = result.data!['response'] as String;
+        final files = _parseListObjectsResponse(xmlResponse, remotePath, recursive);
+        
+        _logDebug('列出文件成功: ${files.length} 个文件');
+        return SyncResult.success(message: '列出文件成功', data: {'files': files});
+      } else {
+        return SyncResult.failure('列出文件失败: ${result.message}');
+      }
+    } catch (e) {
+      _logDebug('列出文件异常: $e');
+      return SyncResult.failure('列出文件失败: $e');
+    }
+  }
+
+  @override
+  Future<String> getPathPrefix() async {
+    return '${_storageConfig.pathPrefix}/';
+  }
+
+  /// 解析ListObjects的XML响应
+  /// [xmlResponse] XML响应字符串
+  /// [remotePath] 远程路径
+  /// [recursive] 是否递归列出子目录文件
+  /// 返回文件信息列表，每个文件包含: relativePath, size, lastModified, etag
+  List<Map<String, dynamic>> _parseListObjectsResponse(String xmlResponse, String remotePath, bool recursive) {
+    try {
+      final document = XmlDocument.parse(xmlResponse);
+      final files = <Map<String, dynamic>>[];
+      
+      // 查找所有Contents元素（文件）
+      final contents = document.findAllElements('Contents');
+      
+      for (final content in contents) {
+        final keyElement = content.findElements('Key').firstOrNull;
+        final sizeElement = content.findElements('Size').firstOrNull;
+        final lastModifiedElement = content.findElements('LastModified').firstOrNull;
+        final etagElement = content.findElements('ETag').firstOrNull;
+        
+        if (keyElement != null) {
+          final fullKey = keyElement.innerText;
+          
+          // 移除路径前缀，获取相对路径
+          String relativePath = fullKey;
+          final pathPrefix = '${_storageConfig.pathPrefix}/';
+          if (relativePath.startsWith(pathPrefix)) {
+            relativePath = relativePath.substring(pathPrefix.length);
+          }
+          
+          // 如果指定了remotePath，进一步处理路径
+          if (remotePath.isNotEmpty) {
+            final remotePrefix = remotePath.endsWith('/') ? remotePath : '$remotePath/';
+            if (relativePath.startsWith(remotePrefix)) {
+              relativePath = relativePath.substring(remotePrefix.length);
+            } else if (!relativePath.startsWith(remotePath)) {
+              // 如果文件不在指定的远程路径下，跳过
+              continue;
+            }
+          }
+          
+          // 如果不是递归模式，跳过子目录中的文件
+          if (!recursive && relativePath.contains('/')) {
+            continue;
+          }
+          
+          // 跳过空的相对路径（通常是目录本身）
+          if (relativePath.isEmpty || relativePath.endsWith('/')) {
+            continue;
+          }
+          
+          final fileInfo = <String, dynamic>{
+            'relativePath': relativePath,
+            'fullPath': fullKey,
+          };
+          
+          // 添加文件大小
+          if (sizeElement != null) {
+            final sizeStr = sizeElement.innerText;
+            fileInfo['size'] = int.tryParse(sizeStr) ?? 0;
+          }
+          
+          // 添加最后修改时间
+          if (lastModifiedElement != null) {
+            final lastModifiedStr = lastModifiedElement.innerText;
+            try {
+              fileInfo['lastModified'] = DateTime.parse(lastModifiedStr);
+            } catch (e) {
+              _logDebug('解析最后修改时间失败: $lastModifiedStr, 错误: $e');
+            }
+          }
+          
+          // 添加ETag
+          if (etagElement != null) {
+            String etag = etagElement.innerText;
+            // 移除ETag两端的引号
+            if (etag.startsWith('"') && etag.endsWith('"')) {
+              etag = etag.substring(1, etag.length - 1);
+            }
+            fileInfo['etag'] = etag;
+          }
+          
+          files.add(fileInfo);
+        }
+      }
+      
+      _logDebug('解析XML响应成功，找到 ${files.length} 个文件');
+      return files;
+    } catch (e) {
+      _logDebug('解析XML响应失败: $e');
+      // 如果XML解析失败，返回空列表而不是抛出异常
+      return <Map<String, dynamic>>[];
+    }
   }
 }

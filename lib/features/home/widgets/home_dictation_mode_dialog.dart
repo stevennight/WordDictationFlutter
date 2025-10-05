@@ -28,8 +28,6 @@ class _HomeDictationModeDialogState extends State<HomeDictationModeDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final orderText = widget.initialMode == DictationMode.sequential ? '顺序' : '随机';
-    
     return AlertDialog(
       title: const Text('选择默写设置'),
       content: SingleChildScrollView(

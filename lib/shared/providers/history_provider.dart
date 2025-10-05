@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
 
-import '../models/dictation_session.dart';
-import '../models/dictation_result.dart';
 import '../../core/database/database_helper.dart';
 import '../../core/services/config_service.dart';
+import '../../core/services/history_deletion_service.dart';
+import '../models/dictation_result.dart';
+import '../models/dictation_session.dart';
 
 class HistoryProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final HistoryDeletionService _deletionService = HistoryDeletionService();
   ConfigService? _configService;
   
   List<DictationSession> _sessions = [];
@@ -27,10 +29,10 @@ class HistoryProvider with ChangeNotifier {
     try {
       final db = await _dbHelper.database;
       
-      // Load sessions (exclude inProgress status)
+      // Load sessions (exclude inProgress status and deleted sessions)
       final sessionMaps = await db.query(
         'dictation_sessions',
-        where: 'status != ?',
+        where: 'status != ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: ['inProgress'],
         orderBy: 'start_time DESC',
       );
@@ -55,16 +57,8 @@ class HistoryProvider with ChangeNotifier {
   /// Clear all inProgress sessions (called on app startup)
   Future<void> clearInProgressSessions() async {
     try {
-      final db = await _dbHelper.database;
-      
-      // Delete all sessions with inProgress status
-      await db.delete(
-        'dictation_sessions',
-        where: 'status = ?',
-        whereArgs: ['inProgress'],
-      );
-      
-      debugPrint('已清除所有inProgress状态的会话记录');
+      // 使用统一的删除服务清除进行中的会话
+      await _deletionService.clearInProgressSessions();
     } catch (e) {
       debugPrint('清除inProgress会话失败: $e');
     }
@@ -76,7 +70,7 @@ class HistoryProvider with ChangeNotifier {
       final db = await _dbHelper.database;
       final maps = await db.query(
         'dictation_sessions',
-        where: 'id = ?',
+        where: 'id = ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: [sessionId],
       );
       
@@ -96,7 +90,7 @@ class HistoryProvider with ChangeNotifier {
       final db = await _dbHelper.database;
       final maps = await db.query(
         'dictation_sessions',
-        where: 'session_id = ?',
+        where: 'session_id = ? AND (deleted IS NULL OR deleted = 0)',
         whereArgs: [sessionId],
       );
       
@@ -128,33 +122,11 @@ class HistoryProvider with ChangeNotifier {
     }
   }
 
-  /// Delete a session and its results
+  /// Delete a session and its results (soft delete)
   Future<void> deleteSession(String sessionId) async {
     try {
-      final db = await _dbHelper.database;
-      
-      await db.transaction((txn) async {
-        // Delete results first
-        await txn.delete(
-          'dictation_results',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-        
-        // Delete session words
-        await txn.delete(
-          'session_words',
-          where: 'session_id = ?',
-          whereArgs: [sessionId],
-        );
-        
-        // Delete session
-        await txn.delete(
-          'dictation_sessions',
-          where: 'id = ?',
-          whereArgs: [sessionId],
-        );
-      });
+      // 使用统一的删除服务进行软删除
+      await _deletionService.softDeleteSession(sessionId);
       
       // Remove from local list
       _sessions.removeWhere((session) => session.sessionId == sessionId);
@@ -169,13 +141,8 @@ class HistoryProvider with ChangeNotifier {
   /// Clear all history
   Future<void> clearAllHistory() async {
     try {
-      final db = await _dbHelper.database;
-      
-      await db.transaction((txn) async {
-        await txn.delete('dictation_results');
-        await txn.delete('session_words');
-        await txn.delete('dictation_sessions');
-      });
+      // 使用统一的删除服务清空所有历史记录
+      await _deletionService.clearAllHistory();
       
       _sessions.clear();
       _results.clear();
@@ -338,6 +305,7 @@ class HistoryProvider with ChangeNotifier {
     }
   }
 
+
   /// Clear error
   void clearError() {
     _error = null;
@@ -350,31 +318,11 @@ class HistoryProvider with ChangeNotifier {
     final historyLimit = _configService!.getHistoryLimit();
     
     if (_sessions.length > historyLimit) {
-      final db = await _dbHelper.database;
-      
-      // 获取需要删除的会话（最旧的记录）
-      final sessionsToDelete = _sessions.skip(historyLimit).toList();
-      
-      for (final session in sessionsToDelete) {
-        // 删除会话相关的结果记录
-        await db.delete(
-          'dictation_results',
-          where: 'session_id = ?',
-          whereArgs: [session.id],
-        );
-        
-        // 删除会话记录
-        await db.delete(
-          'dictation_sessions',
-          where: 'id = ?',
-          whereArgs: [session.id],
-        );
-      }
+      // 使用统一的删除服务删除超出限制的记录
+      await _deletionService.enforceHistoryLimit(_sessions, historyLimit);
       
       // 更新内存中的会话列表
       _sessions = _sessions.take(historyLimit).toList();
-      
-      debugPrint('已删除 ${sessionsToDelete.length} 条超出限制的历史记录');
     }
   }
 }

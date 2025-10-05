@@ -1,16 +1,12 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../shared/models/dictation_session.dart';
-import '../../../shared/models/word.dart';
-import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/utils/path_utils.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
-import '../../../shared/widgets/unified_canvas_toolbar.dart';
-import '../widgets/dictation_progress.dart';
-import '../widgets/answer_review_dialog.dart';
-import '../widgets/completion_dialog.dart';
+import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
+import '../../../shared/widgets/collapsible_progress_bar.dart';
 import 'dictation_result_screen.dart';
 
 class DictationScreen extends StatefulWidget {
@@ -133,12 +129,14 @@ class _DictationScreenState extends State<DictationScreen> {
 
     return Column(
       children: [
-        // Progress bar
-        DictationProgress(
+        // Progress bar - 可收起的进度信息栏
+        CollapsibleProgressBar(
           current: provider.currentIndex + 1,
           total: provider.totalWords,
           correct: provider.correctCount,
           incorrect: provider.incorrectCount,
+          title: '默写进度',
+          onExit: () => _showExitConfirmation(provider),
         ),
         
         // Main content
@@ -147,6 +145,11 @@ class _DictationScreenState extends State<DictationScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                // Control buttons - 移动到单词上方
+                _buildControlButtons(provider),
+                
+                const SizedBox(height: 16),
+                
                 // Prompt section (now includes answer when showing)
                 _buildPromptSection(),
                 
@@ -156,11 +159,6 @@ class _DictationScreenState extends State<DictationScreen> {
                 Expanded(
                   child: _buildCanvasSection(),
                 ),
-                
-                const SizedBox(height: 16),
-                
-                // Control buttons
-                _buildControlButtons(provider),
               ],
             ),
           ),
@@ -295,8 +293,8 @@ class _DictationScreenState extends State<DictationScreen> {
       elevation: 2,
       child: Column(
         children: [
-          // 统一工具栏
-          UnifiedCanvasToolbar(
+          // 可收起的工具栏
+          CollapsibleCanvasToolbar(
             canvasKey: _canvasKey,
             isDictationMode: true,
             showDictationControls: true,
@@ -348,30 +346,16 @@ class _DictationScreenState extends State<DictationScreen> {
       
       return Column(
         children: [
-          // 导航按钮行 - 只有在未提交时才显示
-          if (provider.currentIndex > 0 && !hasSubmitted)
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isSubmitting ? null : () => _goToPreviousWord(provider),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('上一个'),
-                  ),
-                ),
-              ],
-            ),
-          
-          if (provider.currentIndex > 0 && !hasSubmitted) const SizedBox(height: 12),
-          
           // 主要操作按钮行
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _showExitConfirmation(provider),
-                  icon: const Icon(Icons.exit_to_app),
-                  label: const Text('退出默写'),
+                  onPressed: (provider.currentIndex > 0 && !hasSubmitted && !_isSubmitting) 
+                      ? () => _goToPreviousWord(provider) 
+                      : null,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('上一个'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -458,8 +442,11 @@ class _DictationScreenState extends State<DictationScreen> {
       }
       
       if (imagePath != null) {
-        // 保存原始画板路径
-        provider.setOriginalImagePath(imagePath);
+        // 转换为相对路径
+        final relativePath = await PathUtils.convertToRelativePath(imagePath);
+        
+        // 保存原始画板路径（使用相对路径）
+        await provider.setOriginalImagePath(relativePath);
         
         // 提交答案
         await provider.submitAnswer();
@@ -602,7 +589,9 @@ class _DictationScreenState extends State<DictationScreen> {
       if (canvas != null) {
         final imagePath = await canvas.saveAsImage('annotated_${DateTime.now().millisecondsSinceEpoch}.png');
         if (imagePath != null) {
-          provider.setAnnotatedImagePath(imagePath);
+          // 转换为相对路径
+          final relativePath = await PathUtils.convertToRelativePath(imagePath);
+          await provider.setAnnotatedImagePath(relativePath);
         }
       }
     } catch (e) {
@@ -611,7 +600,9 @@ class _DictationScreenState extends State<DictationScreen> {
     }
   }
 
-  void _nextWord(DictationProvider provider) {
+
+
+  Future<void> _nextWord(DictationProvider provider) async {
     // 清空画板
     final canvas = _canvasKey.currentState as dynamic;
     if (canvas != null) {
@@ -620,8 +611,8 @@ class _DictationScreenState extends State<DictationScreen> {
     
     // 重置批改模式状态
     if (provider.isAnnotationMode) {
-      provider.setOriginalImagePath(null);
-      provider.setAnnotatedImagePath(null);
+      await provider.setOriginalImagePath(null);
+        await provider.setAnnotatedImagePath(null);
     }
     
     // 重置画笔颜色为黑色
@@ -670,7 +661,7 @@ class _DictationScreenState extends State<DictationScreen> {
     );
   }
 
-  void _exitDictation(DictationProvider provider) async {
+  Future<void> _exitDictation(DictationProvider provider) async {
     final appState = context.read<AppStateProvider>();
     await provider.endSession(); // 调用endSession保存进度
     
@@ -684,7 +675,7 @@ class _DictationScreenState extends State<DictationScreen> {
     }
   }
 
-  void _navigateToResultScreen(DictationProvider provider) async {
+  Future<void> _navigateToResultScreen(DictationProvider provider) async {
     final session = provider.currentSession!;
     final results = provider.results;
     
@@ -702,7 +693,7 @@ class _DictationScreenState extends State<DictationScreen> {
     provider.finishSession();
   }
 
-  void _goToPreviousWord(DictationProvider provider) async {
+  Future<void> _goToPreviousWord(DictationProvider provider) async {
     if (provider.currentIndex > 0) {
       // 清除画布
       (_canvasKey.currentState as dynamic)?.clear();
@@ -717,22 +708,24 @@ class _DictationScreenState extends State<DictationScreen> {
       
       if (existingResult != null) {
         // 如果已有结果，进入批改状态并恢复图片，只允许修改批改内容
-        provider.setAnnotatedImagePath(existingResult.annotatedImagePath);
-        provider.setOriginalImagePath(existingResult.originalImagePath);
+        await provider.setAnnotatedImagePath(existingResult.annotatedImagePath);
         provider.enterAnnotationMode();
         
-        // 恢复画布上的批改图片
+        // 恢复画布上的原始图片作为背景
+        if (existingResult.originalImagePath != null) {
+          // 直接设置原始图片路径，让画布组件自己处理路径转换
+          await provider.setOriginalImagePath(existingResult.originalImagePath);
+        }
+        
+        // 如果有批改图片，加载批改图片到画布上
         if (existingResult.annotatedImagePath != null) {
           await _loadImageToCanvas(existingResult.annotatedImagePath!);
-        } else if (existingResult.originalImagePath != null) {
-          // 如果没有批改图片，加载原始图片作为背景
-          await _loadImageToCanvas(existingResult.originalImagePath!);
         }
       } else {
         // 如果没有结果，允许返回到答题状态（只要下一个单词未提交）
         provider.setState(DictationState.inProgress);
-        provider.setAnnotatedImagePath(null);
-        provider.setOriginalImagePath(null);
+        await provider.setAnnotatedImagePath(null);
+        await provider.setOriginalImagePath(null);
       }
     }
   }
@@ -741,37 +734,17 @@ class _DictationScreenState extends State<DictationScreen> {
 
   Future<void> _loadImageToCanvas(String imagePath) async {
     try {
-      // 由于画布组件不支持加载图片到画布，这里只是清空画布
-      // 用户可以在空白画布上重新进行批改
-      final canvasState = _canvasKey.currentState as dynamic;
-      if (canvasState != null) {
-        canvasState.clearCanvas();
-      }
+      debugPrint('Loading annotated image to canvas: $imagePath');
+      
+      // 这个方法现在只用于加载批改图片到画布上
+      // 背景图片的加载由 HandwritingCanvas 自己处理
+      
+      // TODO: 实现批改图片的加载逻辑
+      // 目前暂时不实现，因为批改图片应该作为笔迹而不是背景
+      
     } catch (e) {
-      debugPrint('清空画布失败: $e');
+      debugPrint('加载批改图片到画布失败: $e');
     }
-  }
-
-  void _showCompletionDialog(DictationProvider provider) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => CompletionDialog(
-        session: provider.currentSession!,
-        onRetryIncorrect: () {
-          Navigator.of(context).pop();
-          _retryIncorrectWords(provider);
-        },
-        onFinish: () {
-          Navigator.of(context).pop();
-          _exitDictation(provider);
-        },
-      ),
-    );
-  }
-
-  void _retryIncorrectWords(DictationProvider provider) {
-    provider.retryIncorrectWords();
   }
 
   void _showAnswerFullscreen(String answerText, int dictationDirection) {

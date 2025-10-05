@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'dart:io';
-import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
 
-import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/dictation_result.dart';
+import '../../../shared/models/dictation_session.dart';
+import '../../../shared/models/word.dart';
+import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/history_provider.dart';
+import '../../dictation/screens/copying_screen.dart';
 import '../widgets/result_detail_card.dart';
 
 class HistoryDetailScreen extends StatefulWidget {
@@ -328,6 +328,27 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
               ),
             ),
             const Spacer(),
+            // 抄写错题按钮
+            if (_session != null && _session!.incorrectCount > 0)
+              OutlinedButton.icon(
+                onPressed: _copyIncorrectWords,
+                icon: const Icon(
+                  Icons.edit,
+                  size: 18,
+                ),
+                label: Text(
+                  '抄写错题(${_session!.incorrectCount})',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: Colors.orange,
+                  side: const BorderSide(color: Colors.orange),
+                ),
+              ),
+            if (_session != null && _session!.incorrectCount > 0) const SizedBox(width: 8),
             // 过滤按钮
             OutlinedButton.icon(
               onPressed: _toggleErrorFilter,
@@ -395,76 +416,6 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
     }
   }
 
-  Future<void> _exportResults() async {
-    try {
-      if (_session == null || _results.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('没有可导出的数据'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // 准备导出数据
-      final exportData = {
-        'session': _session!.toMap(),
-        'results': _results.map((r) => r.toMap()).toList(),
-        'exportTime': DateTime.now().toIso8601String(),
-        'version': '1.0.0',
-      };
-
-      final jsonString = jsonEncode(exportData);
-      
-      // 生成文件名
-      final now = DateTime.now();
-      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-      final fileName = 'dictation_session_${_session!.sessionId}_$timestamp.json';
-      
-      // 使用FilePicker保存文件
-      final String? outputFile = await FilePicker.platform.saveFile(
-        dialogTitle: '请选择保存导出的文件',
-        fileName: fileName,
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-        bytes: utf8.encode(jsonString), // 添加字节数据以支持Android/iOS
-      );
-
-      if (outputFile != null) {
-        final file = File(outputFile);
-        await file.writeAsString(jsonString);
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('默写记录已成功导出到: $outputFile'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('导出失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  void _retryIncorrectWords() {
-    // TODO: Implement retry functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('重做错题功能待实现'),
-      ),
-    );
-  }
-
   List<DictationResult> _getFilteredResults() {
     if (_showOnlyErrors) {
       return _results.where((result) => !result.isCorrect).toList();
@@ -472,7 +423,60 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
     return _results;
   }
 
-  void _toggleErrorFilter() {
+  void _copyIncorrectWords() async {
+    try {
+      final dictationProvider = context.read<DictationProvider>();
+      
+      // 获取错题结果
+      final incorrectResults = _results.where((result) => !result.isCorrect).toList();
+      
+      if (incorrectResults.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('没有错题可以抄写')),
+          );
+        }
+        return;
+      }
+      
+      // 将错题结果转换为Word对象
+      final copyWords = incorrectResults.map((result) => Word(
+        id: result.wordId,
+        prompt: result.prompt,
+        answer: result.answer,
+        category: result.category,
+        partOfSpeech: result.partOfSpeech,
+        level: result.level,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      )).toList();
+      
+      // 使用loadWordsFromWordbook加载错题进行抄写
+      await dictationProvider.loadWordsFromWordbook(
+        words: copyWords,
+        wordbookName: '${_session?.wordFileName ?? '未知文件'} - 错题抄写',
+        mode: 1, // copying mode
+        order: 0, // sequential order
+        count: copyWords.length,
+      );
+      
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
+        );
+      }
+    }
+   }
+
+   void _toggleErrorFilter() {
     setState(() {
       _showOnlyErrors = !_showOnlyErrors;
       _filteredResults = _getFilteredResults();
@@ -491,9 +495,7 @@ class _HistoryDetailScreenState extends State<HistoryDetailScreen> {
         return '进行中';
       case SessionStatus.paused:
         return '已暂停';
-      default:
-        return '未知状态';
-    }
+      }
   }
 
   String _getDirectionText(int direction) {

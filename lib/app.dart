@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/config/app_version.dart';
 import 'features/home/screens/home_screen.dart';
 import 'features/dictation/screens/dictation_screen.dart';
 import 'features/history/screens/history_screen.dart';
@@ -87,12 +88,7 @@ class _WordDictationMainAppState extends State<WordDictationMainApp> {
           ),
         ];
       case 1: // History
-        return [
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            onPressed: () => _showClearHistoryDialog(),
-          ),
-        ];
+        return [];
       case 2: // Settings
         return [
           IconButton(
@@ -139,37 +135,13 @@ class _WordDictationMainAppState extends State<WordDictationMainApp> {
     );
   }
   
-  void _showClearHistoryDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('清空历史记录'),
-        content: const Text('确定要清空所有历史记录吗？此操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implement clear history
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('历史记录已清空')),
-              );
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
+
   
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
       applicationName: '默写小助手',
-      applicationVersion: '1.0.0',
+      applicationVersion: AppVersion.version,
       applicationIcon: const Icon(
         Icons.edit,
         size: 48,

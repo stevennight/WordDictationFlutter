@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
-import '../../../shared/widgets/unified_canvas_toolbar.dart';
+import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
-
 class CopyingScreen extends StatefulWidget {
   const CopyingScreen({super.key});
 
@@ -32,9 +30,6 @@ class _CopyingScreenState extends State<CopyingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('抄写练习'),
-      ),
       body: Consumer<DictationProvider>(
         builder: (context, provider, child) {
           if (provider.currentWord == null) {
@@ -43,66 +38,88 @@ class _CopyingScreenState extends State<CopyingScreen> {
             );
   }
 
-  void _showFullScreenText(String text) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: Colors.black87,
-              child: Center(
-                child: Container(
-                  margin: const EdgeInsets.all(40),
-                  padding: const EdgeInsets.all(40),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        text,
-                        style: const TextStyle(
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        '点击任意位置关闭',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-       },
-     );
-  }
-
           return Column(
             children: [
-              // Progress bar
-              DictationProgress(
-                current: provider.currentIndex,
-                total: provider.totalWords,
-                correct: 0, // 抄写模式不显示正确数
-                incorrect: 0, // 抄写模式不显示错误数
-                showStats: false, // 隐藏统计信息
+              // Progress bar - 一行显示
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        // 进度图标和标题
+                        Icon(
+                          Icons.timeline,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '抄写进度',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        
+                        const SizedBox(width: 16),
+                        
+                        // 进度条和数字
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: LinearProgressIndicator(
+                                  value: provider.totalWords > 0 ? (provider.currentIndex + 1) / provider.totalWords : 0.0,
+                                  backgroundColor: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Theme.of(context).colorScheme.primary,
+                                  ),
+                                  minHeight: 4,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${provider.currentIndex + 1}/${provider.totalWords}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // 退出抄写按钮
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => _showExitConfirmation(provider),
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.red,
+                            size: 20,
+                          ),
+                          tooltip: '退出抄写',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(24, 24),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               
               // Main content
@@ -111,6 +128,11 @@ class _CopyingScreenState extends State<CopyingScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
+                      // Action buttons - 移动到单词上方
+                      _buildActionButtons(provider),
+                      
+                      const SizedBox(height: 16),
+                      
                       // Word display section
                       _buildWordSection(provider),
                       
@@ -120,11 +142,6 @@ class _CopyingScreenState extends State<CopyingScreen> {
                       Expanded(
                         child: _buildCanvasSection(provider),
                       ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Action buttons
-                      _buildActionButtons(provider),
                     ],
                   ),
                 ),
@@ -257,11 +274,23 @@ class _CopyingScreenState extends State<CopyingScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // 统一工具栏
-            UnifiedCanvasToolbar(
+            // 可收起工具栏
+            CollapsibleCanvasToolbar(
               canvasKey: _canvasKey,
               isDictationMode: false,
               showDictationControls: false,
+              onUndo: () {
+                final canvas = _canvasKey.currentState as dynamic;
+                if (canvas != null) {
+                  canvas.undo();
+                }
+              },
+              onClear: () {
+                final canvas = _canvasKey.currentState as dynamic;
+                if (canvas != null) {
+                  canvas.clearCanvas();
+                }
+              },
             ),
             
             const SizedBox(height: 16),
@@ -413,6 +442,34 @@ class _CopyingScreenState extends State<CopyingScreen> {
         ),
       ),
     );
+  }
+
+  void _showExitConfirmation(DictationProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认退出'),
+        content: const Text('确定要退出当前抄写吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _exitCopying(provider);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _exitCopying(DictationProvider provider) {
+    // 退出抄写，返回上一页
+    Navigator.of(context).pop();
   }
 
   void _finishCopying() {

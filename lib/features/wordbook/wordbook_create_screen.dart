@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../shared/models/wordbook.dart';
+
 import '../../core/services/wordbook_service.dart';
-import 'wordbook_detail_screen.dart';
+import '../../shared/models/wordbook.dart';
 
 class WordbookCreateScreen extends StatefulWidget {
   const WordbookCreateScreen({super.key});
@@ -46,7 +46,7 @@ class _WordbookCreateScreenState extends State<WordbookCreateScreen> {
       );
 
       final wordbookId = await _wordbookService.createWordbook(wordbook);
-      final createdWordbook = wordbook.copyWith(id: wordbookId);
+      wordbook.copyWith(id: wordbookId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

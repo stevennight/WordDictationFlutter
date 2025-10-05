@@ -1,17 +1,15 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../shared/models/dictation_session.dart';
-import '../../../shared/models/dictation_result.dart';
-import '../../../shared/providers/dictation_provider.dart';
-import '../../../shared/providers/app_state_provider.dart';
-import '../../../core/services/dictation_service.dart';
-import '../../../core/services/local_config_service.dart';
 import '../../../core/services/share_service.dart';
-import 'package:file_picker/file_picker.dart';
+import '../../../main.dart';
+import '../../../shared/models/dictation_result.dart';
+import '../../../shared/models/dictation_session.dart';
+import '../../../shared/providers/app_state_provider.dart';
+import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/utils/accuracy_header_utils.dart';
 import '../../history/screens/history_detail_screen.dart';
-import '../../../main.dart';
 
 class DictationResultScreen extends StatefulWidget {
   final DictationSession session;
@@ -28,8 +26,6 @@ class DictationResultScreen extends StatefulWidget {
 }
 
 class _DictationResultScreenState extends State<DictationResultScreen> {
-  final DictationService _dictationService = DictationService();
-
   @override
   Widget build(BuildContext context) {
     final accuracy = widget.session.accuracy;
@@ -325,7 +321,7 @@ class _DictationResultScreenState extends State<DictationResultScreen> {
 
 
   Widget _buildActionButtons() {
-    final hasIncorrectWords = widget.results.any((r) => !r.isCorrect);
+    widget.results.any((r) => !r.isCorrect);
     
     return Container(
       padding: const EdgeInsets.all(16),

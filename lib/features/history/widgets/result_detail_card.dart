@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import '../../../shared/utils/path_utils.dart';
+import '../../../core/services/session_file_service.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
-import '../../../core/services/word_service.dart';
 import '../../dictation/screens/copying_screen.dart';
 
 class ResultDetailCard extends StatefulWidget {
@@ -26,38 +28,13 @@ class ResultDetailCard extends StatefulWidget {
 }
 
 class _ResultDetailCardState extends State<ResultDetailCard> {
-  Word? _word;
-  bool _isLoadingWord = false;
+  // No longer need to load word details from database
+  // Word details are now stored directly in DictationResult
 
   @override
   void initState() {
     super.initState();
-    _loadWordDetails();
-  }
-
-  Future<void> _loadWordDetails() async {
-    if (widget.result.wordId <= 0) return;
-    
-    setState(() {
-      _isLoadingWord = true;
-    });
-    
-    try {
-      final wordService = WordService();
-      final word = await wordService.getWordById(widget.result.wordId);
-      if (mounted) {
-        setState(() {
-          _word = word;
-          _isLoadingWord = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingWord = false;
-        });
-      }
-    }
+    // No need to load word details anymore
   }
 
   @override
@@ -234,12 +211,12 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                     ),
                   ),
                   
-                  // 词性和等级信息
-                  if (_word != null && (_word!.partOfSpeech != null || _word!.level != null)) ...[
+                  // 词性和等级信息 - 直接从DictationResult获取
+                  if (widget.result.partOfSpeech != null || widget.result.level != null) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        if (_word!.partOfSpeech != null)
+                        if (widget.result.partOfSpeech != null)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
@@ -247,7 +224,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              _word!.partOfSpeech!,
+                              widget.result.partOfSpeech!,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context).colorScheme.onSecondaryContainer,
@@ -255,9 +232,9 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               ),
                             ),
                           ),
-                        if (_word!.partOfSpeech != null && _word!.level != null)
+                        if (widget.result.partOfSpeech != null && widget.result.level != null)
                           const SizedBox(width: 8),
-                        if (_word!.level != null)
+                        if (widget.result.level != null)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
@@ -265,7 +242,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              _word!.level!,
+                              widget.result.level!,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context).colorScheme.onTertiaryContainer,
@@ -309,24 +286,21 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
         
         Row(
           children: [
-            if (widget.result.originalImagePath != null)
-              Expanded(
-                child: _buildImageCard(
-                  context,
-                  '原始手写',
-                  widget.result.originalImagePath!,
-                ),
+            Expanded(
+              child: _buildSessionImageCard(
+                context,
+                '原始手写',
+                annotated: false,
               ),
-            if (widget.result.originalImagePath != null && widget.result.annotatedImagePath != null)
-              const SizedBox(width: 8),
-            if (widget.result.annotatedImagePath != null)
-              Expanded(
-                child: _buildImageCard(
-                  context,
-                  '批注版本',
-                  widget.result.annotatedImagePath!,
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSessionImageCard(
+                context,
+                '批注版本',
+                annotated: true,
               ),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -366,64 +340,198 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
     );
   }
 
-  Widget _buildImage(String imagePath) {
-    final file = File(imagePath);
-    
-    if (!file.existsSync()) {
-      return Container(
-        color: Colors.grey[200],
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.image_not_supported,
-                size: 32,
-                color: Colors.grey,
-              ),
-              SizedBox(height: 4),
-              Text(
-                '图片不存在',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
-            ],
+  /// 从session文件构建图片卡片
+  Widget _buildSessionImageCard(BuildContext context, String title, {required bool annotated}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-      );
-    }
-
-    return Image.file(
-      file,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Colors.grey[200],
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.broken_image,
-                  size: 32,
-                  color: Colors.grey,
-                ),
-                SizedBox(height: 4),
-                Text(
-                  '加载失败',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: () => _showSessionImageDialog(context, title, annotated: annotated),
+          child: Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _buildImageFromSession(annotated: annotated),
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageFromSession({required bool annotated}) {
+    return FutureBuilder<Uint8List?>(
+      future: SessionFileService.loadImageBytes(
+        widget.result.sessionId,
+        widget.result.wordIndex,
+        annotated: annotated,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.image_not_supported,
+                    size: 32,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '图片不存在',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.broken_image,
+                      size: 32,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '加载失败',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildImage(String imagePath) {
+    return FutureBuilder<File?>(
+      future: _getImageFile(imagePath),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        
+        final file = snapshot.data;
+        if (file == null || !file.existsSync()) {
+          return Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.image_not_supported,
+                    size: 32,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '图片不存在',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Image.file(
+          file,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[200],
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.broken_image,
+                      size: 32,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '加载失败',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 根据路径获取图片文件，支持相对路径和绝对路径
+  Future<File?> _getImageFile(String imagePath) async {
+    try {
+      final absolutePath = await PathUtils.convertToAbsolutePath(imagePath);
+      return File(absolutePath);
+    } catch (e) {
+      debugPrint('获取图片文件失败: $e');
+      return null;
+    }
   }
 
   Widget _buildNotesSection(BuildContext context) {
@@ -480,6 +588,39 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   maxWidth: 400,
                 ),
                 child: _buildImage(imagePath),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSessionImageDialog(BuildContext context, String title, {required bool annotated}) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text(title),
+              automaticallyImplyLeading: false,
+              actions: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            Flexible(
+              child: Container(
+                constraints: const BoxConstraints(
+                  maxHeight: 500,
+                  maxWidth: 400,
+                ),
+                child: _buildImageFromSession(annotated: annotated),
               ),
             ),
             const SizedBox(height: 16),
@@ -572,10 +713,13 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
     try {
       final dictationProvider = Provider.of<DictationProvider>(context, listen: false);
       
-      // Use the loaded word if available, otherwise create a basic word object
-      final word = _word ?? Word(
+      // Create a word object from the result data
+      final word = Word(
         prompt: widget.result.prompt,
         answer: widget.result.answer,
+        category: widget.result.category,
+        partOfSpeech: widget.result.partOfSpeech,
+        level: widget.result.level,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );

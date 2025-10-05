@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 
 import '../../../shared/models/dictation_session.dart';
 import '../../../shared/models/word.dart';
-import '../../../shared/providers/history_provider.dart';
-import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/app_state_provider.dart';
-import '../widgets/history_filter_dialog.dart';
+import '../../../shared/providers/dictation_provider.dart';
+import '../../../shared/providers/history_provider.dart';
+import '../../dictation/screens/dictation_result_screen.dart';
+import '../../dictation/screens/copying_screen.dart';
 import '../widgets/history_card.dart';
+import '../widgets/history_filter_dialog.dart';
 import '../widgets/history_stats_card.dart';
 import 'history_detail_screen.dart';
-import '../../dictation/screens/dictation_result_screen.dart';
 
 
 class HistoryScreen extends StatefulWidget {
@@ -119,6 +119,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               onRetry: session.incorrectCount > 0
                                   ? () => _retrySession(historyProvider, session)
                                   : null,
+                              onCopy: session.incorrectCount > 0
+                                  ? () => _copyIncorrectWords(session)
+                                  : null,
                               onShare: () => _shareSession(historyProvider, session),
                             ),
                           );
@@ -218,7 +221,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         case HistoryFilter.incomplete:
           return !session.isCompleted;
         case HistoryFilter.all:
-        default:
           return true;
       }
     }).toList();
@@ -248,7 +250,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case HistoryFilter.incomplete:
         return '未完成';
       case HistoryFilter.all:
-      default:
         return '全部';
     }
   }
@@ -492,6 +493,61 @@ class _HistoryScreenState extends State<HistoryScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('加载分享数据失败: $e')),
+        );
+      }
+    }
+  }
+
+  void _copyIncorrectWords(DictationSession session) async {
+    try {
+      final historyProvider = context.read<HistoryProvider>();
+      final dictationProvider = context.read<DictationProvider>();
+      
+      // 获取错题结果
+      final results = await historyProvider.getSessionResults(session.sessionId);
+      final incorrectResults = results.where((result) => !result.isCorrect).toList();
+      
+      if (incorrectResults.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('该会话没有错题可以抄写')),
+          );
+        }
+        return;
+      }
+      
+      // 将错题结果转换为Word对象
+      final copyWords = incorrectResults.map((result) => Word(
+        id: result.wordId,
+        prompt: result.prompt,
+        answer: result.answer,
+        category: result.category,
+        partOfSpeech: result.partOfSpeech,
+        level: result.level,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      )).toList();
+      
+      // 使用loadWordsFromWordbook加载错题进行抄写
+      await dictationProvider.loadWordsFromWordbook(
+        words: copyWords,
+        wordbookName: '${session.wordFileName ?? '未知文件'} - 错题抄写',
+        mode: 1, // copying mode
+        order: 0, // sequential order
+        count: copyWords.length,
+      );
+      
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const CopyingScreen(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动抄写失败: $e')),
         );
       }
     }
