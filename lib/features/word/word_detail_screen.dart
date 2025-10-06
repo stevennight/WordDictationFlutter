@@ -136,7 +136,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                             children: [
                               Icon(Icons.format_quote, size: 16, color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 6),
-                              Text('含义 ${ex.senseIndex + 1}', style: Theme.of(context).textTheme.bodySmall),
+                              Text(
+                                _senseLabel(word.answer, ex.senseIndex),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
@@ -198,28 +201,43 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         }
       }
 
-      final rubyBlock = match.group(1) ?? '';
-      final rb = RegExp(r"<rb>([\s\S]*?)<\/rb>").firstMatch(rubyBlock)?.group(1) ?? '';
-      final rt = RegExp(r"<rt>([\s\S]*?)<\/rt>").firstMatch(rubyBlock)?.group(1) ?? '';
+      final rubyBlock = (match.group(1) ?? '')
+          .replaceAll(RegExp(r"<rp>[\s\S]*?<\/rp>"), '');
 
-      spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (rt.isNotEmpty)
-                  Text(rt, style: rubyStyle, textAlign: TextAlign.center),
-                if (rb.isNotEmpty)
-                  Text(rb, style: baseStyle, textAlign: TextAlign.center),
-              ],
+      final rbs = RegExp(r"<rb>([\s\S]*?)<\/rb>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
+      final rts = RegExp(r"<rt>([\s\S]*?)<\/rt>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
+
+      if (rbs.isEmpty && rts.isEmpty) {
+        // fallback: no explicit rb/rt, treat ruby block as plain
+        final plainBlock = rubyBlock.replaceAll(RegExp(r"<[^>]+>"), "");
+        if (plainBlock.isNotEmpty) {
+          spans.add(TextSpan(text: plainBlock, style: baseStyle));
+        }
+      } else {
+        final count = (rbs.length > rts.length) ? rbs.length : rts.length;
+        for (int i = 0; i < count; i++) {
+          final rb = i < rbs.length ? rbs[i] : '';
+          final rt = i < rts.length ? rts[i] : '';
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (rt.isNotEmpty)
+                      Text(rt, style: rubyStyle, textAlign: TextAlign.center),
+                    if (rb.isNotEmpty)
+                      Text(rb, style: baseStyle, textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-      );
+          );
+        }
+      }
 
       lastIndex = match.end;
     }
@@ -233,5 +251,17 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     }
 
     return spans;
+  }
+
+  String _senseLabel(String answer, int senseIndex) {
+    final senses = answer
+        .split(RegExp(r'[;；]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (senseIndex >= 0 && senseIndex < senses.length) {
+      return senses[senseIndex];
+    }
+    return '含义 ${senseIndex + 1}';
   }
 }

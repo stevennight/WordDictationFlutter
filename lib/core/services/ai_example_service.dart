@@ -43,8 +43,16 @@ class AIExampleService {
     final senses = _splitSenses(answer);
     final expectedCount = senses.length;
 
-    final langSource = sourceLanguage?.trim();
-    final langTarget = targetLanguage?.trim();
+    // Auto-detect languages when not provided
+    final autoSource = _detectSourceLanguageFromPrompt(prompt);
+    final autoTarget = _detectTargetLanguageFromAnswer(senses, answer);
+
+    final langSource = (sourceLanguage?.trim().isNotEmpty ?? false)
+        ? sourceLanguage!.trim()
+        : autoSource;
+    final langTarget = (targetLanguage?.trim().isNotEmpty ?? false)
+        ? targetLanguage!.trim()
+        : autoTarget;
 
     final system = 'You are a helpful assistant generating example sentences. '
         'Return ONLY a valid JSON array. Each item MUST have keys: '
@@ -52,15 +60,24 @@ class AIExampleService {
         'textPlain (string), '
         'textHtml (string), '
         'textTranslation (string). '
-        'Do NOT include markdown fences, extra text, or explanations.';
+        'Do NOT include markdown fences, extra text, or explanations. '
+        'For each item, ensure senseIndex strictly matches the meaning index provided. '
+        'textTranslation MUST be the full-sentence translation aligned to that meaning. '
+        'If the original sentence is Japanese, include ruby for ALL kanji across the entire sentence, not just the target word. '
+        'Use <ruby><rb>漢字</rb><rt>かな</rt></ruby> markup and allow multiple rb/rt pairs within a single ruby block. '
+        'Use hiragana for rt; do not use romaji.';
 
     final List<String> rules = [];
-    if (langSource != null && langSource.isNotEmpty) {
+    if (langSource.isNotEmpty) {
       rules.add('Use '+langSource+' for textPlain and textHtml.');
+      if (langSource.toLowerCase().startsWith('jap')) {
+        rules.add('Add ruby for all kanji characters throughout the sentence using <ruby><rb>..</rb><rt>..</rt></ruby>.');
+      }
     } else {
       rules.add('Auto-detect the original sentence language from the "Original word" and use it for textPlain and textHtml.');
+      rules.add('If Japanese is detected, include ruby for all kanji across the sentence.');
     }
-    if (langTarget != null && langTarget.isNotEmpty) {
+    if (langTarget.isNotEmpty) {
       rules.add('Provide textTranslation in '+langTarget+' as a complete translation.');
     } else {
       rules.add('Auto-detect the translation language from the meanings or the most appropriate target, and provide a complete translation in that language.');
@@ -71,7 +88,8 @@ class AIExampleService {
         List.generate(senses.length, (i) => '[$i] '+senses[i]).join('; ')+
         '. Generate exactly '+expectedCount.toString()+' example sentences, one per meaning index. '
         + rules.join(' ')+
-        ' Keep textPlain concise and natural, and include ruby in textHtml where appropriate.';
+        ' For each item: use the meaning at senseIndex to guide context, and make textTranslation consistent with that meaning. '
+        ' Keep textPlain concise and natural. If the original is Japanese, provide textHtml with ruby markup for ALL kanji (multiple <rb>/<rt> pairs allowed in a single <ruby>).';
 
     final body = jsonEncode({
       'model': model,
@@ -137,5 +155,35 @@ class AIExampleService {
       return jsonPart;
     }
     return null;
+  }
+
+  // --- Language detection helpers ---
+  String _detectSourceLanguageFromPrompt(String prompt) {
+    final hasHiragana = RegExp(r'[\u3040-\u309F]').hasMatch(prompt);
+    final hasKatakana = RegExp(r'[\u30A0-\u30FF]').hasMatch(prompt);
+    final hasKanji = RegExp(r'[\u4E00-\u9FFF]').hasMatch(prompt);
+    if (hasHiragana || hasKatakana || hasKanji) {
+      return 'Japanese';
+    }
+    // If contains Chinese-only Han and typical Chinese punctuation, consider Chinese
+    final chinesePunct = RegExp(r'[，。！？；：（）《》“”]');
+    if (!hasHiragana && !hasKatakana && hasKanji && chinesePunct.hasMatch(prompt)) {
+      return 'Chinese';
+    }
+    return 'English';
+  }
+
+  String _detectTargetLanguageFromAnswer(List<String> senses, String answer) {
+    bool containsChinese(String s) => RegExp(r'[\u4E00-\u9FFF]').hasMatch(s);
+    bool containsKana(String s) => RegExp(r'[\u3040-\u309F\u30A0-\u30FF]').hasMatch(s);
+
+    if (containsChinese(answer) || senses.any(containsChinese)) {
+      return 'Chinese';
+    }
+    if (senses.any(containsKana)) {
+      // If meanings are in Japanese, default translation to English unless otherwise specified
+      return 'English';
+    }
+    return 'English';
   }
 }
