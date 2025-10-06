@@ -1323,23 +1323,57 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         await svc.deleteByWordId(word.id!);
       }
 
+      // 线性进度（按词义分步/并行）
+      final senses = req.answer
+          .split(RegExp(r'[;；]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      final total = senses.length;
+      final progress = ValueNotifier<int>(0);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('正在生成例句'),
+          content: ValueListenableBuilder<int>(
+            valueListenable: progress,
+            builder: (context, done, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: total == 0 ? 0 : done / total),
+                const SizedBox(height: 8),
+                Text('进度：$done / $total'),
+              ],
+            ),
+          ),
+        ),
+      );
+
       final ai = await AIExampleService.getInstance();
-      final examples = await ai.generateExamples(
+      final examples = await ai.generateExamplesProgress(
         prompt: req.prompt,
         answer: req.answer,
         sourceLanguage: req.sourceLanguage,
         targetLanguage: req.targetLanguage,
+        parallel: 2,
+        onProgress: (done, _) => progress.value = done,
       );
 
       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
       await svc.insertExamples(withWordId);
 
       if (mounted) {
+        Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
         );
       }
     } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('生成失败：$e')),

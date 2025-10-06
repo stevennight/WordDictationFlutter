@@ -134,6 +134,138 @@ class AIExampleService {
     return result;
   }
 
+  /// 支持分步/并行生成：按词义逐条生成例句，并通过 onProgress 回调报告进度
+  /// parallel 指并行度（>=1），默认 1 串行；返回所有生成的例句列表
+  Future<List<ExampleSentence>> generateExamplesProgress({
+    required String prompt,
+    required String answer,
+    String? sourceLanguage,
+    String? targetLanguage,
+    int parallel = 1,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final endpoint = await _configService.getAIEndpoint();
+    final apiKey = await _configService.getAIApiKey();
+    final model = await _configService.getAIModel();
+
+    if (apiKey.isEmpty) {
+      throw Exception('AI API key is not set');
+    }
+
+    final senses = _splitSenses(answer);
+    final total = senses.length;
+    if (total == 0) return [];
+
+    // 语言处理（与 generateExamples 保持一致）
+    final autoSource = _detectSourceLanguageFromPrompt(prompt);
+    final autoTarget = _detectTargetLanguageFromAnswer(senses, answer);
+    final langSource = (sourceLanguage?.trim().isNotEmpty ?? false) ? sourceLanguage!.trim() : autoSource;
+    final langTarget = (targetLanguage?.trim().isNotEmpty ?? false) ? targetLanguage!.trim() : autoTarget;
+
+    // 构造通用的系统提示与规则
+    final system = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
+        '只返回一个合法的 JSON 对象，必须包含以下键：'
+        'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
+        '不要返回 Markdown、额外解释或任何非 JSON 内容。'
+        'textTranslation 必须与该词义语义一致，为整句完整译文；'
+        'grammarNote 指出句子使用到的语法，用译文语言编写，多个语法之间换行。单个语法说明的格式为：【语法内容，如...です】<语法说明>'
+        '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。'
+        '如果原文是中文，需要为整句所有「汉字」标注拼音（ruby），格式同上：<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>，允许多组 <rb>/<rt>。';
+
+    final List<String> rules = [];
+    if (langSource.isNotEmpty) {
+      rules.add('textPlain 与 textHtml 使用 '+langSource+'。');
+      final ls = langSource.toLowerCase();
+      if (ls.startsWith('jap')) {
+        rules.add('为整句所有汉字添加日文假名 ruby（<ruby><rb>..</rb><rt>..</rt></ruby>，rt 用平假名）。');
+      } else if (ls.startsWith('chinese')) {
+        rules.add('为整句所有汉字添加中文拼音 ruby（<ruby><rb>..</rb><rt>pinyin</rt></ruby>）。');
+      }
+    } else {
+      rules.add('自动识别原文语言并用于 textPlain 与 textHtml。');
+      rules.add('若识别为日文：为整句所有汉字添加假名 ruby；若识别为中文：为整句所有汉字添加拼音 ruby。');
+    }
+    if (langTarget.isNotEmpty) {
+      rules.add('textTranslation 使用 '+langTarget+'，提供完整句子译文。');
+      rules.add('grammarNote 使用 '+langTarget+'，格式：【<语法>】：语法解释。');
+    } else {
+      rules.add('自动识别最合适的译文语言，并提供完整句子译文。');
+      rules.add('grammarNote 使用译文语言，格式：【<语法>】：语法解释。');
+    }
+
+    final uri = Uri.parse(_normalizeEndpoint(endpoint, path: '/chat/completions'));
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $apiKey',
+    };
+
+    final ts = DateTime.now();
+    int done = 0;
+    final List<ExampleSentence> result = [];
+
+    Future<void> worker(int index, String sense) async {
+      final user = '原词：'+prompt+
+          '。当前词义索引：' + index.toString() + '，词义内容：' + sense + '。'
+          + rules.join(' ')+
+          ' 请严格仅返回一个 JSON 对象，包含 senseIndex（'+index.toString()+'）、textPlain、textHtml、textTranslation、grammarNote。'
+          ' 要求：基于该词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；'
+          ' textHtml 在整句范围对所有汉字提供 ruby（根据语言选择假名或拼音），允许一个 ruby 中包含多组 <rb>/<rt>；'
+          ' 并提供 grammarNote（译文语言），格式为【<语法>】：语法解释。';
+
+      final body = jsonEncode({
+        'model': model,
+        'messages': [
+          {'role': 'system', 'content': system},
+          {'role': 'user', 'content': user},
+        ],
+        'temperature': 0.7,
+      });
+
+      final resp = await http.post(uri, headers: headers, body: body);
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw Exception('AI request failed: ${resp.statusCode} ${resp.body}');
+      }
+
+      final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+      final content = decoded['choices']?[0]?['message']?['content'] as String? ?? '';
+      final objJson = _extractJsonObject(content);
+      if (objJson == null) {
+        throw Exception('AI response does not contain a valid JSON object');
+      }
+      final item = jsonDecode(objJson) as Map<String, dynamic>;
+      result.add(ExampleSentence(
+        id: null,
+        wordId: 0,
+        senseIndex: index,
+        textPlain: (item['textPlain'] ?? '').toString(),
+        textHtml: (item['textHtml'] ?? '').toString(),
+        textTranslation: (item['textTranslation'] ?? '').toString(),
+        grammarNote: (item['grammarNote'] ?? '').toString(),
+        sourceModel: model,
+        createdAt: ts,
+        updatedAt: ts,
+      ));
+
+      done += 1;
+      if (onProgress != null) onProgress(done, total);
+    }
+
+    // 并行度控制（分批 Future.wait）
+    final concurrency = parallel <= 0 ? 1 : parallel;
+    for (int start = 0; start < total; start += concurrency) {
+      final end = (start + concurrency) > total ? total : (start + concurrency);
+      final futures = <Future<void>>[];
+      for (int i = start; i < end; i++) {
+        futures.add(worker(i, senses[i]));
+      }
+      await Future.wait(futures);
+    }
+
+    // 按索引排序，保证结果稳定
+    result.sort((a, b) => a.senseIndex.compareTo(b.senseIndex));
+    return result;
+  }
+
   List<String> _splitSenses(String answer) {
     return answer
         .split(RegExp(r'[;；]+'))
@@ -154,6 +286,15 @@ class AIExampleService {
     if (start >= 0 && end > start) {
       final jsonPart = content.substring(start, end + 1);
       return jsonPart;
+    }
+    return null;
+  }
+
+  String? _extractJsonObject(String content) {
+    final start = content.indexOf('{');
+    final end = content.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return content.substring(start, end + 1);
     }
     return null;
   }
