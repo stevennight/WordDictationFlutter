@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_word_dictation/features/word/word_detail_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/database/database_helper.dart';
@@ -74,6 +75,13 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     } catch (e) {
       // 静默处理错误，不影响页面加载
     }
+  }
+  
+  void _openWordDetail(Word word) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => WordDetailScreen(word: word)),
+    );
   }
   
 
@@ -788,6 +796,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
+                  onTap: () => _openWordDetail(word),
                   leading: CircleAvatar(
                     backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
@@ -1200,18 +1209,37 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                       final ok = await _ensureAIConfiguredOrRedirect();
                       if (!ok) return;
 
-                      // 选择覆盖/追加策略
-                      final overwrite = await showDialog<bool>(
+                      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
+                      final chosen = await showDialog<String>(
                         context: context,
                         builder: (context) => AlertDialog(
                           title: const Text('生成策略'),
-                          content: const Text('选择生成策略：覆盖现有例句或在现有基础上追加。'),
+                          content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
                           actions: [
-                            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('追加')),
-                            TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('覆盖')),
+                            TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
+                            TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
+                            TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
                           ],
                         ),
-                      ) ?? false;
+                      ) ?? 'append';
+
+                      final svc = ExampleSentenceService();
+                      if (chosen == 'skip') {
+                        final existing = await svc.getExamplesByWordId(word.id!);
+                        if (existing.isNotEmpty) {
+                          if (mounted) {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
+                            );
+                          }
+                          return;
+                        }
+                      }
+
+                      if (chosen == 'overwrite') {
+                        await svc.deleteByWordId(word.id!);
+                      }
 
                       final examples = await ai.generateExamples(
                         prompt: prompt,
@@ -1222,10 +1250,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
                       // 绑定wordId并保存
                       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
-                      final svc = ExampleSentenceService();
-                      if (overwrite) {
-                        await svc.deleteByWordId(word.id!);
-                      }
                       await svc.insertExamples(withWordId);
 
                       if (mounted) {
@@ -1519,25 +1543,29 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: unitWords.length,
-                itemBuilder: (context, index) {
-                  final word = unitWords[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Theme.of(context).colorScheme.surface,
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          ),
+              itemBuilder: (context, index) {
+                final word = unitWords[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  color: Theme.of(context).colorScheme.surface,
+                  child: ListTile(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openWordDetail(word);
+                    },
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      child: Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                       ),
-                      title: Text(
-                        word.prompt,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                    ),
+                    title: Text(
+                      word.prompt,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1847,19 +1875,21 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     }
 
     // 覆盖/追加策略选择
-    bool overwrite = false;
-    final strategy = await showDialog<bool>(
+    // 选择覆盖/追加/跳过策略
+    String strategy = 'append';
+    final selectedStrategy = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('生成策略'),
-        content: const Text('选择生成策略：覆盖现有例句或在现有基础上追加。'),
+        content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('追加')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('覆盖')),
+          TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
+          TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
+          TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
         ],
       ),
     );
-    overwrite = strategy ?? false;
+    strategy = selectedStrategy ?? 'append';
 
     // 进度与可中断对话框
     bool cancelRequested = false;
@@ -1898,6 +1928,14 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     final exService = ExampleSentenceService();
     try {
       for (final w in unitWords) {
+        if (strategy == 'skip') {
+          final existing = await exService.getExamplesByWordId(w.id!);
+          if (existing.isNotEmpty) {
+            progress.value = progress.value + 1;
+            if (cancelRequested) break;
+            continue;
+          }
+        }
         final examples = await ai.generateExamples(
           prompt: w.prompt,
           answer: w.answer,
@@ -1906,7 +1944,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
 
         final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
-        if (overwrite) {
+        if (strategy == 'overwrite') {
           await exService.deleteByWordId(w.id!);
         }
         await exService.insertExamples(withWordId);

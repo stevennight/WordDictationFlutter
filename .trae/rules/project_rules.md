@@ -1,1 +1,1 @@
-1. 测试运行时，请以windows版运行进行测试（-d windows）
+1. 运行debug时，请以windows平台进行运行（flutter run -d windows）

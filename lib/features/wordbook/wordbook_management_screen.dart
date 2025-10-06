@@ -440,7 +440,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
 
     // 选择目标词书与策略
     Wordbook? selected = _wordbooks.first;
-    bool overwrite = false;
+    String strategy = 'append';
     final proceed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -468,14 +468,20 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                       Expanded(child: const Text('策略：')),
                       ChoiceChip(
                         label: const Text('追加'),
-                        selected: !overwrite,
-                        onSelected: (_) => setState(() => overwrite = false),
+                        selected: strategy == 'append',
+                        onSelected: (_) => setState(() => strategy = 'append'),
                       ),
                       const SizedBox(width: 8),
                       ChoiceChip(
                         label: const Text('覆盖'),
-                        selected: overwrite,
-                        onSelected: (_) => setState(() => overwrite = true),
+                        selected: strategy == 'overwrite',
+                        onSelected: (_) => setState(() => strategy = 'overwrite'),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('跳过'),
+                        selected: strategy == 'skip',
+                        onSelected: (_) => setState(() => strategy = 'skip'),
                       ),
                     ],
                   ),
@@ -547,12 +553,20 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
     final exService = ExampleSentenceService();
 
     try {
-      if (overwrite) {
+      if (strategy == 'overwrite') {
         final ids = words.map((w) => w.id!).toList();
         await exService.deleteByWordIds(ids);
       }
 
       for (final w in words) {
+        if (strategy == 'skip') {
+          final existing = await exService.getExamplesByWordId(w.id!);
+          if (existing.isNotEmpty) {
+            progress.value = progress.value + 1;
+            if (cancelRequested) break;
+            continue;
+          }
+        }
         final examples = await ai.generateExamples(
           prompt: w.prompt,
           answer: w.answer,
