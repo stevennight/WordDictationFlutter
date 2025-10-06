@@ -10,6 +10,7 @@ import '../../core/services/unit_service.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/ai_example_service.dart';
 import '../../core/services/example_sentence_service.dart';
+import '../../core/services/config_service.dart';
 import '../../shared/models/unit.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
@@ -18,6 +19,7 @@ import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
+import '../settings/screens/settings_screen.dart';
 
 enum UnitSortType {
   nameAsc,
@@ -73,6 +75,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       // 静默处理错误，不影响页面加载
     }
   }
+  
 
   void _organizeWordsByUnit() {
     _unitWords.clear();
@@ -968,6 +971,15 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                            trailing: PopupMenuButton<String>(
                              onSelected: (value) => _handleUnitAction(value, unit, unitWords),
                               itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'generate_examples_unit',
+                                  child: const ListTile(
+                                    leading: Icon(Icons.auto_awesome),
+                                    title: Text('为该单元生成例句'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
                                 const PopupMenuItem(
                                   value: 'view',
                                   child: ListTile(
@@ -1184,6 +1196,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                       final tgtLang = tgtCustom.isNotEmpty
                           ? tgtCustom
                           : (targetDropdown == 'auto' ? null : targetDropdown);
+                      // 校验AI配置
+                      final ok = await _ensureAIConfiguredOrRedirect();
+                      if (!ok) return;
+
+                      // 选择覆盖/追加策略
+                      final overwrite = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('生成策略'),
+                          content: const Text('选择生成策略：覆盖现有例句或在现有基础上追加。'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('追加')),
+                            TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('覆盖')),
+                          ],
+                        ),
+                      ) ?? false;
+
                       final examples = await ai.generateExamples(
                         prompt: prompt,
                         answer: answer,
@@ -1194,6 +1223,9 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                       // 绑定wordId并保存
                       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
                       final svc = ExampleSentenceService();
+                      if (overwrite) {
+                        await svc.deleteByWordId(word.id!);
+                      }
                       await svc.insertExamples(withWordId);
 
                       if (mounted) {
@@ -1216,6 +1248,24 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
       },
     );
+  }
+
+  Future<bool> _ensureAIConfiguredOrRedirect() async {
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return false;
+    }
+    return true;
   }
 
   Future<void> _createNewUnit() async {
@@ -1244,6 +1294,9 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
   void _handleUnitAction(String action, Unit unit, List<Word> unitWords) {
     switch (action) {
+      case 'generate_examples_unit':
+        _generateExamplesForUnit(unit, unitWords);
+        break;
       case 'view':
         _showUnitWords(unit.name, unitWords);
         break;
@@ -1769,6 +1822,114 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
           SnackBar(content: Text('更新单元描述失败: $e')),
         );
       }
+    }
+  }
+
+  // 注意：保持在类内定义，便于使用 context/mounted
+  
+  
+// }
+  Future<void> _generateExamplesForUnit(Unit unit, List<Word> unitWords) async {
+    // 校验API配置
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return;
+    }
+
+    // 覆盖/追加策略选择
+    bool overwrite = false;
+    final strategy = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('生成策略'),
+        content: const Text('选择生成策略：覆盖现有例句或在现有基础上追加。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('追加')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('覆盖')),
+        ],
+      ),
+    );
+    overwrite = strategy ?? false;
+
+    // 进度与可中断对话框
+    bool cancelRequested = false;
+    final progress = ValueNotifier<int>(0);
+    final total = unitWords.length;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('为单元「${unit.name}」生成例句'),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (context, processed, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
+              const SizedBox(height: 8),
+              Text('进度：$processed / $total'),
+            ],
+          ),
+        ),
+        actions: [
+          StatefulBuilder(
+            builder: (context, setState) => TextButton(
+              onPressed: cancelRequested
+                  ? null
+                  : () => setState(() => cancelRequested = true),
+              child: const Text('中断'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final ai = await AIExampleService.getInstance();
+    final exService = ExampleSentenceService();
+    try {
+      for (final w in unitWords) {
+        final examples = await ai.generateExamples(
+          prompt: w.prompt,
+          answer: w.answer,
+          sourceLanguage: null, // 批量默认自动识别
+          targetLanguage: null,
+        );
+
+        final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
+        if (overwrite) {
+          await exService.deleteByWordId(w.id!);
+        }
+        await exService.insertExamples(withWordId);
+
+        progress.value = progress.value + 1;
+
+        if (cancelRequested) break;
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('单元「${unit.name}」生成完成：${progress.value}/$total')),
+      );
     }
   }
 }

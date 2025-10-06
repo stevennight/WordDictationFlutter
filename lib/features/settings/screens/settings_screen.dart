@@ -87,6 +87,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             
             const SizedBox(height: 16),
+            // AI settings section
+            SettingsSection(
+              title: 'AI 设置',
+              icon: Icons.auto_awesome,
+              children: [
+                SettingsTile(
+                  title: 'API Key',
+                  subtitle: '配置调用服务所需的密钥',
+                  leading: const Icon(Icons.vpn_key),
+                  onTap: () => _showAIKeyDialog(),
+                ),
+                SettingsTile(
+                  title: 'Endpoint',
+                  subtitle: '配置 API 接口地址',
+                  leading: const Icon(Icons.link),
+                  onTap: () => _showAIEndpointDialog(),
+                ),
+                SettingsTile(
+                  title: 'Model',
+                  subtitle: '配置模型名称',
+                  leading: const Icon(Icons.memory),
+                  onTap: () => _showAIModelDialog(),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
             
             // Data management section
             SettingsSection(
@@ -254,6 +281,124 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showAIKeyDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIApiKey();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 API Key'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'API Key',
+            hintText: '请输入密钥',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+          obscureText: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIApiKey(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('API Key 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIEndpointDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIEndpoint();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Endpoint'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Endpoint',
+            hintText: '例如：https://api.openai.com/v1',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIEndpoint(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Endpoint 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIModelDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIModel();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Model'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Model',
+            hintText: '例如：gpt-4o-mini',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIModel(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Model 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
       ),
     );
   }

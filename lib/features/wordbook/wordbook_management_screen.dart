@@ -4,10 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
+import '../../core/services/ai_example_service.dart';
+import '../../core/services/example_sentence_service.dart';
+import '../../core/services/config_service.dart';
+import '../../shared/models/word.dart';
 import 'wordbook_detail_screen.dart';
 import 'wordbook_create_screen.dart';
 import 'wordbook_import_screen.dart';
 import '../sync/sync_settings_screen.dart';
+import '../settings/screens/settings_screen.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -225,6 +230,8 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                 if (result == true) {
                   _loadWordbooks();
                 }
+              } else if (value == 'generate_examples_wordbook') {
+                await _generateExamplesForWholeWordbook();
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -233,6 +240,14 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                 child: ListTile(
                   leading: Icon(Icons.upload),
                   title: Text('导入词书'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'generate_examples_wordbook',
+                child: ListTile(
+                  leading: Icon(Icons.auto_awesome),
+                  title: Text('为整本生成例句'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -395,6 +410,178 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         ],
       ),
     );
+  }
+
+  Future<bool> _ensureAIConfiguredOrRedirect() async {
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _generateExamplesForWholeWordbook() async {
+    if (_wordbooks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可用的词书')),
+      );
+      return;
+    }
+
+    // 选择目标词书与策略
+    Wordbook? selected = _wordbooks.first;
+    bool overwrite = false;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('为整本生成例句'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButton<Wordbook>(
+                    value: selected,
+                    isExpanded: true,
+                    items: _wordbooks.map((wb) {
+                      return DropdownMenuItem<Wordbook>(
+                        value: wb,
+                        child: Text(wb.name),
+                      );
+                    }).toList(),
+                    onChanged: (wb) => setState(() => selected = wb),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: const Text('策略：')),
+                      ChoiceChip(
+                        label: const Text('追加'),
+                        selected: !overwrite,
+                        onSelected: (_) => setState(() => overwrite = false),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('覆盖'),
+                        selected: overwrite,
+                        onSelected: (_) => setState(() => overwrite = true),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('开始'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (proceed != true || selected == null) return;
+
+    final ok = await _ensureAIConfiguredOrRedirect();
+    if (!ok) return;
+
+    final words = await _wordbookService.getWordbookWords(selected!.id!);
+    if (words.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('词书「${selected!.name}」没有单词')),
+      );
+      return;
+    }
+
+    // 进度与可中断对话框
+    bool cancelRequested = false;
+    final progress = ValueNotifier<int>(0);
+    final total = words.length;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('为词书「${selected!.name}」生成例句'),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (context, processed, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
+              const SizedBox(height: 8),
+              Text('进度：$processed / $total'),
+            ],
+          ),
+        ),
+        actions: [
+          StatefulBuilder(
+            builder: (context, setState) => TextButton(
+              onPressed: cancelRequested
+                  ? null
+                  : () => setState(() => cancelRequested = true),
+              child: const Text('中断'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final ai = await AIExampleService.getInstance();
+    final exService = ExampleSentenceService();
+
+    try {
+      if (overwrite) {
+        final ids = words.map((w) => w.id!).toList();
+        await exService.deleteByWordIds(ids);
+      }
+
+      for (final w in words) {
+        final examples = await ai.generateExamples(
+          prompt: w.prompt,
+          answer: w.answer,
+          sourceLanguage: null,
+          targetLanguage: null,
+        );
+
+        final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
+        await exService.insertExamples(withWordId);
+
+        progress.value = progress.value + 1;
+        if (cancelRequested) break;
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('词书「${selected!.name}」生成完成：${progress.value}/$total')),
+      );
+    }
   }
 
   String _formatDate(DateTime date) {
