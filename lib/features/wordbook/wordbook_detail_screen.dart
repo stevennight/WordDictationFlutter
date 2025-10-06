@@ -496,11 +496,26 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       appBar: AppBar(
         title: Text(widget.wordbook.name),
         actions: [
+                    // 在单元列表页面右上角提供“导入单元”入口
+          if (!_isWordView)
+            IconButton(
+              icon: const Icon(Icons.upload),
+              onPressed: _createNewUnit,
+              tooltip: '导入单元',
+            ),
           IconButton(
             icon: const Icon(Icons.download),
             onPressed: _exportWordbook,
             tooltip: '导出词书',
           ),
+
+          if (_words.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.play_arrow),
+              onPressed: _showDictationOptions,
+              tooltip: '开始默写',
+            ),
+
           IconButton(
             icon: Icon(_isWordView ? Icons.view_list : Icons.view_module),
             onPressed: () {
@@ -516,13 +531,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
             },
             tooltip: _isWordView ? '切换到单元视图' : '切换到单词视图',
           ),
-
-          if (_words.isNotEmpty && _isWordView)
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: _showDictationOptions,
-              tooltip: '开始默写',
-            ),
         ],
       ),
       body: Column(
@@ -738,13 +746,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
           ),
         ],
       ),
-      floatingActionButton: _words.isNotEmpty && _isWordView
-          ? FloatingActionButton.extended(
-              onPressed: _showDictationOptions,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('开始默写'),
-            )
-          : null,
     );
   }
 
@@ -869,22 +870,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
   Widget _buildUnitsList() {
     return Column(
       children: [
-        // 创建单元按钮
-        if (_searchQuery.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _createNewUnit,
-                icon: const Icon(Icons.file_upload),
-                label: const Text('导入文件创建单元'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ),
         // 单元列表
         Expanded(
           child: _filteredUnits.isEmpty
