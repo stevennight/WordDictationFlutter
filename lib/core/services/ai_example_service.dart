@@ -54,42 +54,39 @@ class AIExampleService {
         ? targetLanguage!.trim()
         : autoTarget;
 
-    final system = 'You are a helpful assistant generating example sentences. '
-        'Return ONLY a valid JSON array. Each item MUST have keys: '
-        'senseIndex (number), '
-        'textPlain (string), '
-        'textHtml (string), '
-        'textTranslation (string). '
-        'Do NOT include markdown fences, extra text, or explanations. '
-        'For each item, ensure senseIndex strictly matches the meaning index provided. '
-        'textTranslation MUST be the full-sentence translation aligned to that meaning. '
-        'If the original sentence is Japanese, include ruby for ALL kanji across the entire sentence, not just the target word. '
-        'Use <ruby><rb>漢字</rb><rt>かな</rt></ruby> markup and allow multiple rb/rt pairs within a single ruby block. '
-        'Use hiragana for rt; do not use romaji.';
+    final system = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
+        '只返回一个合法的 JSON 数组，每一项必须包含以下键：'
+        'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）。'
+        '不要返回 Markdown、额外解释或任何非 JSON 内容。'
+        '每个条目的 senseIndex 必须严格对应给定词义索引；textTranslation 必须与该词义语义一致，为整句完整译文。'
+        '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。'
+        '如果原文是中文，需要为整句所有「汉字」标注拼音（ruby），格式同上：<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>，允许多组 <rb>/<rt>。';
 
     final List<String> rules = [];
     if (langSource.isNotEmpty) {
-      rules.add('Use '+langSource+' for textPlain and textHtml.');
-      if (langSource.toLowerCase().startsWith('jap')) {
-        rules.add('Add ruby for all kanji characters throughout the sentence using <ruby><rb>..</rb><rt>..</rt></ruby>.');
+      rules.add('textPlain 与 textHtml 使用 '+langSource+'。');
+      final ls = langSource.toLowerCase();
+      if (ls.startsWith('jap')) {
+        rules.add('为整句所有汉字添加日文假名 ruby（<ruby><rb>..</rb><rt>..</rt></ruby>，rt 用平假名）。');
+      } else if (ls.startsWith('chinese')) {
+        rules.add('为整句所有汉字添加中文拼音 ruby（<ruby><rb>..</rb><rt>pinyin</rt></ruby>）。');
       }
     } else {
-      rules.add('Auto-detect the original sentence language from the "Original word" and use it for textPlain and textHtml.');
-      rules.add('If Japanese is detected, include ruby for all kanji across the sentence.');
+      rules.add('自动识别原文语言并用于 textPlain 与 textHtml。');
+      rules.add('若识别为日文：为整句所有汉字添加假名 ruby；若识别为中文：为整句所有汉字添加拼音 ruby。');
     }
     if (langTarget.isNotEmpty) {
-      rules.add('Provide textTranslation in '+langTarget+' as a complete translation.');
+      rules.add('textTranslation 使用 '+langTarget+'，提供完整句子译文。');
     } else {
-      rules.add('Auto-detect the translation language from the meanings or the most appropriate target, and provide a complete translation in that language.');
+      rules.add('自动识别最合适的译文语言，并提供完整句子译文。');
     }
 
-    final user = 'Original word: '+prompt+
-        '. Meanings (indexed): '+
-        List.generate(senses.length, (i) => '[$i] '+senses[i]).join('; ')+
-        '. Generate exactly '+expectedCount.toString()+' example sentences, one per meaning index. '
+    final user = '原词：'+prompt+
+        '。词义（带索引）：'+
+        List.generate(senses.length, (i) => '【'+i.toString()+'】'+senses[i]).join('；')+
+        '。请严格按索引生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义索引。'
         + rules.join(' ')+
-        ' For each item: use the meaning at senseIndex to guide context, and make textTranslation consistent with that meaning. '
-        ' Keep textPlain concise and natural. If the original is Japanese, provide textHtml with ruby markup for ALL kanji (multiple <rb>/<rt> pairs allowed in a single <ruby>).';
+        ' 每条例句需：基于 senseIndex 对应词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；textHtml 在整句范围对所有汉字提供 ruby（根据语言选择假名或拼音），允许一个 ruby 中包含多组 <rb>/<rt>。';
 
     final body = jsonEncode({
       'model': model,
