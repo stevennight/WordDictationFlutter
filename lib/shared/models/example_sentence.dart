@@ -5,6 +5,7 @@ class ExampleSentence {
   final String textPlain; // 纯文本
   final String textHtml; // 包含 ruby 的HTML
   final String textTranslation; // 句子整体译文
+  final String grammarNote; // 语法说明，格式：【<语法>】：语法解释。
   final String? sourceModel; // 生成来源模型
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -16,6 +17,7 @@ class ExampleSentence {
     required this.textPlain,
     required this.textHtml,
     required this.textTranslation,
+    required this.grammarNote,
     this.sourceModel,
     required this.createdAt,
     required this.updatedAt,
@@ -28,6 +30,7 @@ class ExampleSentence {
     String? textPlain,
     String? textHtml,
     String? textTranslation,
+    String? grammarNote,
     String? sourceModel,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -39,6 +42,7 @@ class ExampleSentence {
       textPlain: textPlain ?? this.textPlain,
       textHtml: textHtml ?? this.textHtml,
       textTranslation: textTranslation ?? this.textTranslation,
+      grammarNote: grammarNote ?? this.grammarNote,
       sourceModel: sourceModel ?? this.sourceModel,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -53,6 +57,7 @@ class ExampleSentence {
       'text_plain': textPlain,
       'text_html': textHtml,
       'text_translation': textTranslation,
+       'grammar_note': grammarNote,
       'source_model': sourceModel,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
@@ -67,6 +72,7 @@ class ExampleSentence {
       textPlain: map['text_plain'] ?? '',
       textHtml: map['text_html'] ?? '',
       textTranslation: map['text_translation'] ?? '',
+      grammarNote: map['grammar_note'] ?? '',
       sourceModel: map['source_model'],
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] ?? DateTime.now().millisecondsSinceEpoch),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] ?? DateTime.now().millisecondsSinceEpoch),

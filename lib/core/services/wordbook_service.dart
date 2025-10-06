@@ -461,6 +461,7 @@ class WordbookService {
                 'text_plain': (ex['textPlain'] ?? '') as String,
                 'text_html': (ex['textHtml'] ?? '') as String,
                 'text_translation': (ex['textTranslation'] ?? '') as String,
+                'grammar_note': (ex['grammarNote'] ?? '') as String,
                 'source_model': ex['sourceModel'],
                 'created_at': ts,
                 'updated_at': ts,

@@ -35,6 +35,8 @@ class JsonDataService {
                   'senseIndex': ex.senseIndex,
                   'textPlain': ex.textPlain,
                   'textHtml': ex.textHtml,
+                  'textTranslation': ex.textTranslation,
+                  'grammarNote': ex.grammarNote,
                   'sourceModel': ex.sourceModel,
                   'createdAt': ex.createdAt.toIso8601String(),
                 })
@@ -69,6 +71,8 @@ class JsonDataService {
                     'senseIndex': ex.senseIndex,
                     'textPlain': ex.textPlain,
                     'textHtml': ex.textHtml,
+                    'textTranslation': ex.textTranslation,
+                    'grammarNote': ex.grammarNote,
                     'sourceModel': ex.sourceModel,
                     'createdAt': ex.createdAt.toIso8601String(),
                   })
@@ -154,6 +158,8 @@ class JsonDataService {
                       'senseIndex': e['senseIndex'] ?? 0,
                       'textPlain': e['textPlain'] ?? '',
                       'textHtml': e['textHtml'] ?? '',
+                      'textTranslation': e['textTranslation'] ?? '',
+                      'grammarNote': e['grammarNote'] ?? '',
                       'sourceModel': e['sourceModel'],
                     })
                 .toList();

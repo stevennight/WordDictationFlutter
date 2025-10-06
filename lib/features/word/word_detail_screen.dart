@@ -153,6 +153,13 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                             ex.textTranslation,
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
+                          if (ex.grammarNote.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              ex.grammarNote,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
+                          ],
                         ],
                       ),
                     ),

@@ -56,9 +56,10 @@ class AIExampleService {
 
     final system = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
         '只返回一个合法的 JSON 数组，每一项必须包含以下键：'
-        'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）。'
+        'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
         '不要返回 Markdown、额外解释或任何非 JSON 内容。'
-        '每个条目的 senseIndex 必须严格对应给定词义索引；textTranslation 必须与该词义语义一致，为整句完整译文。'
+        '每个条目的 senseIndex 必须严格对应给定词义索引；textTranslation 必须与该词义语义一致，为整句完整译文；'
+        'grammarNote 指出句子使用到的语法，用译文语言编写，多个语法换行。单个语法说明的格式为：【<语法内容，如...です>】<语法说明>'
         '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。'
         '如果原文是中文，需要为整句所有「汉字」标注拼音（ruby），格式同上：<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>，允许多组 <rb>/<rt>。';
 
@@ -77,8 +78,10 @@ class AIExampleService {
     }
     if (langTarget.isNotEmpty) {
       rules.add('textTranslation 使用 '+langTarget+'，提供完整句子译文。');
+      rules.add('grammarNote 使用 '+langTarget+'，格式：【<语法>】：语法解释。');
     } else {
       rules.add('自动识别最合适的译文语言，并提供完整句子译文。');
+      rules.add('grammarNote 使用译文语言，格式：【<语法>】：语法解释。');
     }
 
     final user = '原词：'+prompt+
@@ -86,7 +89,7 @@ class AIExampleService {
         List.generate(senses.length, (i) => '【'+i.toString()+'】'+senses[i]).join('；')+
         '。请严格按索引生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义索引。'
         + rules.join(' ')+
-        ' 每条例句需：基于 senseIndex 对应词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；textHtml 在整句范围对所有汉字提供 ruby（根据语言选择假名或拼音），允许一个 ruby 中包含多组 <rb>/<rt>。';
+        ' 每条例句需：基于 senseIndex 对应词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；textHtml 在整句范围对所有汉字提供 ruby（根据语言选择假名或拼音），允许一个 ruby 中包含多组 <rb>/<rt>；并提供 grammarNote（译文语言），格式为【<语法>】：语法解释。';
 
     final body = jsonEncode({
       'model': model,
@@ -120,6 +123,7 @@ class AIExampleService {
           textPlain: (item['textPlain'] ?? '').toString(),
           textHtml: (item['textHtml'] ?? '').toString(),
           textTranslation: (item['textTranslation'] ?? '').toString(),
+          grammarNote: (item['grammarNote'] ?? '').toString(),
           sourceModel: model,
           createdAt: ts,
           updatedAt: ts,

@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 12,
+      version: 13,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -154,6 +154,7 @@ class DatabaseHelper {
         text_plain TEXT NOT NULL,
         text_html TEXT NOT NULL,
         text_translation TEXT,
+        grammar_note TEXT,
         source_model TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -439,6 +440,11 @@ class DatabaseHelper {
     if (oldVersion < 12 && newVersion >= 12) {
       // Add text_translation column to example_sentences
       await db.execute('ALTER TABLE example_sentences ADD COLUMN text_translation TEXT');
+    }
+
+    if (oldVersion < 13 && newVersion >= 13) {
+      // Add grammar_note column to example_sentences
+      await db.execute('ALTER TABLE example_sentences ADD COLUMN grammar_note TEXT');
     }
   }
 
