@@ -18,6 +18,7 @@ import '../../shared/models/wordbook.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_dialog.dart';
+import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
@@ -1293,18 +1294,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       if (!ok) return;
 
       // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
-      final chosen = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('生成策略'),
-          content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
-            TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
-            TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
-          ],
-        ),
-      ) ?? 'append';
+      final chosen = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
 
       final svc = ExampleSentenceService();
       if (chosen == 'skip') {
@@ -1984,20 +1974,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
     // 覆盖/追加策略选择
     // 选择覆盖/追加/跳过策略
-    String strategy = 'append';
-    final selectedStrategy = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('生成策略'),
-        content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
-          TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
-          TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
-        ],
-      ),
-    );
-    strategy = selectedStrategy ?? 'append';
+    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
 
     // 进度与可中断对话框
     bool cancelRequested = false;
@@ -2079,3 +2056,4 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     }
   }
 }
+// 统一导入已移至顶部，删除中部重复导入

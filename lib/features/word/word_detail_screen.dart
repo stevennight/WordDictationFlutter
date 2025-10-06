@@ -4,6 +4,7 @@ import 'package:flutter_word_dictation/core/services/example_sentence_service.da
 import 'package:flutter_word_dictation/shared/models/example_sentence.dart';
 import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_dialog.dart';
+import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_strategy_dialog.dart';
 
 class WordDetailScreen extends StatefulWidget {
   final Word word;
@@ -298,6 +299,26 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     if (req == null) return;
 
     try {
+      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
+      final chosen = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+
+      final svc = ExampleSentenceService();
+      if (chosen == 'skip') {
+        final existing = await svc.getExamplesByWordId(word.id!);
+        if (existing.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (chosen == 'overwrite') {
+        await svc.deleteByWordId(word.id!);
+      }
+
       // 线性进度（按词义分步/并行）
       final senses = req.answer
           .split(RegExp(r'[;；]+'))
@@ -327,7 +348,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
 
       final ai = await AIExampleService.getInstance();
-      final svc = ExampleSentenceService();
       final examples = await ai.generateExamplesProgress(
         prompt: req.prompt,
         answer: req.answer,
@@ -357,3 +377,4 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     }
   }
 }
+// 移至文件顶部统一导入（见上），删除中部重复导入

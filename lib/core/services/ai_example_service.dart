@@ -59,9 +59,9 @@ class AIExampleService {
         'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
         '不要返回 Markdown、额外解释或任何非 JSON 内容。'
         '每个条目的 senseIndex 必须严格对应给定词义索引；textTranslation 必须与该词义语义一致，为整句完整译文；'
-        'grammarNote 指出句子使用到的语法，用译文语言编写，多个语法之间换行。单个语法说明的格式为：【语法内容，如...です】<语法说明>'
-        '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。例如：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」'
-        '如果原文是中文，需要为整句所有「汉字」标注拼音（ruby），格式同上：<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>，允许多组 <rb>/<rt>。';
+        'grammarNote 必须仅列出句子中真实出现的语法点（必须能在 textPlain 或 textHtml 中找到对应的词或形态），未出现的语法不得列出（例如未使用「です」就不得写「です」）。用译文语言编写，多个语法之间换行。单个语法说明的格式为：【语法内容，如...です】语法说明'
+        '如果原文是日文：仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；为整句所有出现的汉字序列都添加 ruby，不得漏标；使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，rt 使用平假名，不要使用罗马音。例如：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」'
+        '如果原文是中文：为整句所有汉字添加拼音 ruby（<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>），不要对拉丁字符或符号添加 ruby；允许一个 ruby 中包含多组 <rb>/<rt>。';
 
     final List<String> rules = [];
     if (langSource.isNotEmpty) {
@@ -89,7 +89,7 @@ class AIExampleService {
         List.generate(senses.length, (i) => '【'+i.toString()+'】'+senses[i]).join('；')+
         '。请严格按索引生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义索引。'
         + rules.join(' ')+
-        ' 每条例句需：基于 senseIndex 对应词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；textHtml 在整句范围对所有汉字提供 ruby（根据语言选择假名或拼音），允许一个 ruby 中包含多组 <rb>/<rt>；并提供 grammarNote（译文语言），格式为【<语法>】：语法解释。';
+        ' 每条例句需：基于 senseIndex 对应词义设定语境；textTranslation 与该词义保持一致；textPlain 简洁自然；textHtml 在整句范围对所有汉字提供 ruby（仅对汉字添加，假名不加），允许一个 ruby 中包含多组 <rb>/<rt>；grammarNote（译文语言）仅列出句中真实出现的语法，格式为【<语法>】：语法解释。';
 
     final body = jsonEncode({
       'model': model,
@@ -97,7 +97,7 @@ class AIExampleService {
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': user},
       ],
-      'temperature': 0.7,
+      'temperature': 0.2,
     });
 
     final resp = await http.post(uri, headers: headers, body: body);
