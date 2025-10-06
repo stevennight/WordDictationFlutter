@@ -87,6 +87,30 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Restore release keystore and write key.properties for signing (if secrets provided)
+      - name: Restore Android keystore
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Restoring upload-keystore.jks"
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          else
+            echo "ANDROID_KEYSTORE_BASE64 is empty; will fall back to debug signing"
+          fi
+
+      - name: Create key.properties
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ]; then
+            cat <<EOF > key.properties
+storeFile=android/app/upload-keystore.jks
+storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+EOF
+            echo "key.properties created"
+          else
+            echo "Android signing secrets missing; will fall back to debug signing"
+          fi
+
       - name: Build Android APK
         run: flutter build apk --release --no-shrink
 
