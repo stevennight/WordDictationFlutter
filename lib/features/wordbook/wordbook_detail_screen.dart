@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../../core/database/database_helper.dart';
 import '../../core/services/unit_service.dart';
 import '../../core/services/wordbook_service.dart';
+import '../../core/services/ai_example_service.dart';
+import '../../core/services/example_sentence_service.dart';
 import '../../shared/models/unit.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
@@ -843,6 +845,11 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                         onPressed: () => _startWordCopying(word),
                         tooltip: '抄写',
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.auto_awesome),
+                        onPressed: () => _showAIGenerateExamplesDialog(word),
+                        tooltip: 'AI生成例句',
+                      ),
                       if (word.category != null)
                         Chip(
                           label: Text(
@@ -1046,6 +1053,169 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
       }
     }
+  }
+
+  void _showAIGenerateExamplesDialog(Word word) async {
+    final promptController = TextEditingController(text: word.prompt);
+    final answerController = TextEditingController(text: word.answer);
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final sourceCustomController = TextEditingController();
+    final targetCustomController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('AI生成例句'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: promptController,
+                      decoration: const InputDecoration(
+                        labelText: '原文',
+                        hintText: '请输入原文文本',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: answerController,
+                      decoration: const InputDecoration(
+                        labelText: '译文（多义用;或；分隔）',
+                        hintText: '示例：意思1;意思2;意思3',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(
+                              labelText: '原文语言（常用）',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(
+                              labelText: '译文语言（常用）',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: sourceCustomController,
+                            decoration: const InputDecoration(
+                              labelText: '自定义原文语言代码（可选）',
+                              hintText: '如 ja, zh-CN, en-US，留空则使用上方选择或自动',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: targetCustomController,
+                            decoration: const InputDecoration(
+                              labelText: '自定义译文语言代码（可选）',
+                              hintText: '如 zh, en-GB，留空则使用上方选择或自动',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('取消'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final prompt = promptController.text.trim();
+                    final answer = answerController.text.trim();
+                    if (prompt.isEmpty || answer.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请填写原文与译文')),
+                      );
+                      return;
+                    }
+
+                    try {
+                      final ai = await AIExampleService.getInstance();
+                      final srcCustom = sourceCustomController.text.trim();
+                      final tgtCustom = targetCustomController.text.trim();
+                      final srcLang = srcCustom.isNotEmpty
+                          ? srcCustom
+                          : (sourceDropdown == 'auto' ? null : sourceDropdown);
+                      final tgtLang = tgtCustom.isNotEmpty
+                          ? tgtCustom
+                          : (targetDropdown == 'auto' ? null : targetDropdown);
+                      final examples = await ai.generateExamples(
+                        prompt: prompt,
+                        answer: answer,
+                        sourceLanguage: srcLang,
+                        targetLanguage: tgtLang,
+                      );
+
+                      // 绑定wordId并保存
+                      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+                      final svc = ExampleSentenceService();
+                      await svc.insertExamples(withWordId);
+
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('生成失败：$e')),
+                      );
+                    }
+                  },
+                  child: const Text('生成并保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _createNewUnit() async {

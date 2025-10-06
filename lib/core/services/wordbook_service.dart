@@ -60,6 +60,11 @@ class WordbookService {
     
     // Delete in transaction to ensure data consistency
     return await db.transaction((txn) async {
+      // 删除该词书下所有单词的例句
+      await txn.rawDelete(
+        'DELETE FROM example_sentences WHERE word_id IN (SELECT id FROM words WHERE wordbook_id = ?)',
+        [wordbookId],
+      );
       // Delete all words in this wordbook
       await txn.delete(
         'words',
@@ -338,6 +343,7 @@ class WordbookService {
     String? description,
     String? originalFileName,
     List<Map<String, dynamic>>? units,
+    Map<String, List<Map<String, dynamic>>>? wordExamples,
   }) async {
     final db = await _dbHelper.database;
     final now = DateTime.now();
@@ -431,6 +437,37 @@ class WordbookService {
           await txn.insert('words', wordMap);
         } else {
           await txn.insert('words', wordWithBookId.toMap());
+        }
+
+        // 插入例句（按 prompt 关联）
+        final examples = wordExamples?[word.prompt];
+        if (examples != null && examples.isNotEmpty) {
+          // 获取刚插入/更新后的该词的ID
+          final insertedWordMaps = await txn.query(
+            'words',
+            columns: ['id'],
+            where: 'wordbook_id = ? AND prompt = ?',
+            whereArgs: [wordbookId, word.prompt],
+            orderBy: 'created_at DESC',
+            limit: 1,
+          );
+          if (insertedWordMaps.isNotEmpty) {
+            final wordId = insertedWordMaps.first['id'] as int;
+            final ts = now.millisecondsSinceEpoch;
+            for (final ex in examples) {
+              final map = {
+                'word_id': wordId,
+                'sense_index': (ex['senseIndex'] ?? 0) as int,
+                'text_plain': (ex['textPlain'] ?? '') as String,
+                'text_html': (ex['textHtml'] ?? '') as String,
+                'text_translation': (ex['textTranslation'] ?? '') as String,
+                'source_model': ex['sourceModel'],
+                'created_at': ts,
+                'updated_at': ts,
+              };
+              await txn.insert('example_sentences', map);
+            }
+          }
         }
       }
       

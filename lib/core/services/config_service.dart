@@ -171,4 +171,29 @@ class ConfigService {
   Future<void> setSetting<T>(String key, T value) async {
     await _localConfig!.setSetting(key, value);
   }
+
+  // AI example generation settings
+  Future<String> getAIEndpoint() async {
+    return await _localConfig!.getSetting<String>('ai_endpoint') ?? 'https://api.openai.com/v1';
+  }
+
+  Future<void> setAIEndpoint(String endpoint) async {
+    await _localConfig!.setSetting<String>('ai_endpoint', endpoint);
+  }
+
+  Future<String> getAIApiKey() async {
+    return await _localConfig!.getSetting<String>('ai_api_key') ?? '';
+  }
+
+  Future<void> setAIApiKey(String key) async {
+    await _localConfig!.setSetting<String>('ai_api_key', key);
+  }
+
+  Future<String> getAIModel() async {
+    return await _localConfig!.getSetting<String>('ai_model') ?? 'gpt-4o-mini';
+  }
+
+  Future<void> setAIModel(String model) async {
+    await _localConfig!.setSetting<String>('ai_model', model);
+  }
 }

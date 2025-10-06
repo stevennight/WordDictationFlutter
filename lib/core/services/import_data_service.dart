@@ -6,6 +6,7 @@ import '../../shared/models/wordbook.dart';
 import 'json_data_service.dart';
 import 'unit_service.dart';
 import 'wordbook_service.dart';
+import '../database/database_helper.dart';
 
 /// 统一的数据导入服务
 /// 封装JSON导入和同步导入的读取JSON、更新数据库逻辑
@@ -64,6 +65,7 @@ class ImportDataService {
 
       final wordbookInfo = _jsonDataService.extractWordbookInfo(jsonData);
       final words = wordbookInfo['words'] as List<Word>;
+      final wordExamples = wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?;
       final units = wordbookInfo['units'] as List<Map<String, dynamic>>?;
 
       if (existingWordbookId != null && unitName != null) {
@@ -72,6 +74,7 @@ class ImportDataService {
           wordbookId: existingWordbookId,
           unitName: unitName,
           words: words,
+          wordExamples: wordExamples,
         );
       } else {
         // 创建新词书或更新现有同名词书
@@ -81,6 +84,7 @@ class ImportDataService {
           description: description,
           originalFileName: filePath.split('/').last.split('\\').last,
           units: units,
+          wordExamples: wordExamples,
         );
         
         return ImportResult.success(
@@ -143,6 +147,7 @@ class ImportDataService {
         description: wordbookInfo['description'],
         originalFileName: filePath?.split('/').last.split('\\').last ?? 
                          'import-${DateTime.now().millisecondsSinceEpoch}.json',
+        wordExamples: wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?,
       );
       importedWordbooks.add(wordbook);
     }
@@ -160,6 +165,7 @@ class ImportDataService {
     required int wordbookId,
     required String unitName,
     required List<Word> words,
+    Map<String, List<Map<String, dynamic>>>? wordExamples,
   }) async {
     final now = DateTime.now();
     
@@ -188,6 +194,43 @@ class ImportDataService {
       unitName: unitName,
       importedWords: words,
     );
+
+    // 写入例句：按 prompt 查到对应词ID，替换其例句
+    if (wordExamples != null && wordExamples.isNotEmpty) {
+      final db = await DatabaseHelper.instance.database;
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      for (final w in words) {
+        final examples = wordExamples[w.prompt];
+        if (examples == null || examples.isEmpty) continue;
+
+        final maps = await db.query(
+          'words',
+          columns: ['id'],
+          where: 'wordbook_id = ? AND unit_id = ? AND prompt = ?',
+          whereArgs: [wordbookId, targetUnit.id, w.prompt],
+          limit: 1,
+        );
+        if (maps.isEmpty) continue;
+        final wordId = maps.first['id'] as int;
+
+        // 替换例句
+        await db.delete('example_sentences', where: 'word_id = ?', whereArgs: [wordId]);
+        final batch = db.batch();
+        for (final ex in examples) {
+          batch.insert('example_sentences', {
+            'word_id': wordId,
+            'sense_index': (ex['senseIndex'] ?? 0) as int,
+            'text_plain': (ex['textPlain'] ?? '') as String,
+            'text_html': (ex['textHtml'] ?? '') as String,
+            'text_translation': (ex['textTranslation'] ?? '') as String,
+            'source_model': ex['sourceModel'],
+            'created_at': ts,
+            'updated_at': ts,
+          });
+        }
+        await batch.commit(noResult: true);
+      }
+    }
 
     return ImportResult.success(
       message: '已按导入文件同步单元"$unitName"的单词并重排顺序',

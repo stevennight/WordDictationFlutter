@@ -61,6 +61,13 @@ class WordService {
   /// Delete a word
   Future<int> deleteWord(int id) async {
     final db = await _dbHelper.database;
+    // 先删除关联例句，避免孤儿数据
+    await db.delete(
+      'example_sentences',
+      where: 'word_id = ?',
+      whereArgs: [id],
+    );
+
     return await db.delete(
       'words',
       where: 'id = ?',

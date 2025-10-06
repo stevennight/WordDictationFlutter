@@ -311,6 +311,34 @@ class LocalConfigService {
     await _saveConfig();
   }
 
+  // AI settings
+  Future<String> getAIEndpoint() async {
+    return _config?['ai_endpoint'] ?? 'https://api.openai.com/v1';
+  }
+
+  Future<void> setAIEndpoint(String endpoint) async {
+    _config!['ai_endpoint'] = endpoint;
+    await _saveConfig();
+  }
+
+  Future<String> getAIApiKey() async {
+    return _config?['ai_api_key'] ?? '';
+  }
+
+  Future<void> setAIApiKey(String key) async {
+    _config!['ai_api_key'] = key;
+    await _saveConfig();
+  }
+
+  Future<String> getAIModel() async {
+    return _config?['ai_model'] ?? 'gpt-4o-mini';
+  }
+
+  Future<void> setAIModel(String model) async {
+    _config!['ai_model'] = model;
+    await _saveConfig();
+  }
+
   // Generic setting methods
   Future<void> setSetting<T>(String key, T value) async {
     _config![key] = value;

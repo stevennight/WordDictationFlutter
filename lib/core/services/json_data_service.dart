@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../shared/models/word.dart';
+import 'example_sentence_service.dart';
 import 'unit_service.dart';
 import 'wordbook_service.dart';
 
@@ -11,6 +12,7 @@ class JsonDataService {
   
   final WordbookService _wordbookService = WordbookService();
   final UnitService _unitService = UnitService();
+  final ExampleSentenceService _exampleService = ExampleSentenceService();
 
   /// 导出单个词书为JSON格式
   Future<Map<String, dynamic>> exportSingleWordbook(int wordbookId) async {
@@ -23,7 +25,23 @@ class JsonDataService {
     final units = await _unitService.getUnitsByWordbookId(wordbookId);
     
     final wordbookMap = wordbook.toMap();
-    wordbookMap['words'] = words.map((w) => w.toMap()).toList();
+    // 每个词附加 examples 数组
+    wordbookMap['words'] = await Future.wait(words.map((w) async {
+      final map = w.toMap();
+      if (w.id != null) {
+        final examples = await _exampleService.getExamplesByWordId(w.id!);
+        map['examples'] = examples
+            .map((ex) => {
+                  'senseIndex': ex.senseIndex,
+                  'textPlain': ex.textPlain,
+                  'textHtml': ex.textHtml,
+                  'sourceModel': ex.sourceModel,
+                  'createdAt': ex.createdAt.toIso8601String(),
+                })
+            .toList();
+      }
+      return map;
+    }));
     wordbookMap['units'] = units.map((u) => u.toMap()).toList();
 
     return {
@@ -42,7 +60,22 @@ class JsonDataService {
       final words = await _wordbookService.getWordbookWords(wordbook.id!);
       final units = await _unitService.getUnitsByWordbookId(wordbook.id!);
       final wordbookMap = wordbook.toMap();
-      wordbookMap['words'] = words.map((w) => w.toMap()).toList();
+      wordbookMap['words'] = await Future.wait(words.map((w) async {
+        final map = w.toMap();
+        if (w.id != null) {
+          final examples = await _exampleService.getExamplesByWordId(w.id!);
+          map['examples'] = examples
+              .map((ex) => {
+                    'senseIndex': ex.senseIndex,
+                    'textPlain': ex.textPlain,
+                    'textHtml': ex.textHtml,
+                    'sourceModel': ex.sourceModel,
+                    'createdAt': ex.createdAt.toIso8601String(),
+                  })
+              .toList();
+        }
+        return map;
+      }));
       wordbookMap['units'] = units.map((u) => u.toMap()).toList();
       exportData.add(wordbookMap);
     }
@@ -105,11 +138,27 @@ class JsonDataService {
 
     final wordbookData = wordbooksData[index];
     final List<Word> words = [];
+    final Map<String, List<Map<String, dynamic>>> wordExamples = {};
     
     if (wordbookData['words'] != null && wordbookData['words'] is List) {
       final List<dynamic> wordsData = wordbookData['words'];
       for (final wordData in wordsData) {
-        words.add(Word.fromMap(wordData));
+        if (wordData is Map<String, dynamic>) {
+          words.add(Word.fromMap(wordData));
+          // 收集例句（按 prompt 关联）
+          final examples = wordData['examples'];
+          if (examples is List) {
+            wordExamples[wordData['prompt'] ?? ''] = examples
+                .whereType<Map<String, dynamic>>()
+                .map((e) => {
+                      'senseIndex': e['senseIndex'] ?? 0,
+                      'textPlain': e['textPlain'] ?? '',
+                      'textHtml': e['textHtml'] ?? '',
+                      'sourceModel': e['sourceModel'],
+                    })
+                .toList();
+          }
+        }
       }
     }
 
@@ -129,6 +178,7 @@ class JsonDataService {
       'units': units,
       'version': jsonData['version'],
       'createdAt': jsonData['createdAt'],
+      'wordExamples': wordExamples,
     };
   }
 
@@ -156,6 +206,7 @@ class JsonDataService {
       await _wordbookService.importAndUpdateWordbook(
         name: wordbookInfo['name'],
         words: wordbookInfo['words'],
+        wordExamples: (wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?),
         units: wordbookInfo['units'],
         description: wordbookInfo['description'],
         originalFileName: 'import-${DateTime.now().millisecondsSinceEpoch}.json',
