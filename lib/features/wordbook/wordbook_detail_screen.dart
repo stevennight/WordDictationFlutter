@@ -17,6 +17,7 @@ import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
+import '../../shared/widgets/ai_generate_examples_dialog.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
@@ -859,7 +860,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.auto_awesome),
-                        onPressed: () => _showAIGenerateExamplesDialog(word),
+                        onPressed: () => _showAIGenerateExamplesDialogShared(word),
                         tooltip: 'AI生成例句',
                       ),
                       if (word.category != null)
@@ -1272,6 +1273,79 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
       },
     );
+  }
+
+  // 共享对话框版本：统一两处的参数收集与生成逻辑
+  void _showAIGenerateExamplesDialogShared(Word word) async {
+    final req = await showDialog<AIGenerateExamplesRequest>(
+      context: context,
+      builder: (context) => AIGenerateExamplesDialog(
+        initialPrompt: word.prompt,
+        initialAnswer: word.answer,
+      ),
+    );
+
+    if (req == null) return;
+
+    try {
+      // 校验AI配置
+      final ok = await _ensureAIConfiguredOrRedirect();
+      if (!ok) return;
+
+      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
+      final chosen = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('生成策略'),
+          content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
+            TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
+            TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
+          ],
+        ),
+      ) ?? 'append';
+
+      final svc = ExampleSentenceService();
+      if (chosen == 'skip') {
+        final existing = await svc.getExamplesByWordId(word.id!);
+        if (existing.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (chosen == 'overwrite') {
+        await svc.deleteByWordId(word.id!);
+      }
+
+      final ai = await AIExampleService.getInstance();
+      final examples = await ai.generateExamples(
+        prompt: req.prompt,
+        answer: req.answer,
+        sourceLanguage: req.sourceLanguage,
+        targetLanguage: req.targetLanguage,
+      );
+
+      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+      await svc.insertExamples(withWordId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    }
   }
 
   Future<bool> _ensureAIConfiguredOrRedirect() async {

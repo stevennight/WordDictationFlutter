@@ -59,8 +59,8 @@ class AIExampleService {
         'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
         '不要返回 Markdown、额外解释或任何非 JSON 内容。'
         '每个条目的 senseIndex 必须严格对应给定词义索引；textTranslation 必须与该词义语义一致，为整句完整译文；'
-        'grammarNote 指出句子使用到的语法，用译文语言编写，多个语法换行。单个语法说明的格式为：【<语法内容，如...です>】<语法说明>'
-        '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。'
+        'grammarNote 指出句子使用到的语法，用译文语言编写，多个语法之间换行。单个语法说明的格式为：【语法内容，如...です】<语法说明>'
+        '如果原文是日文，整句所有「汉字」都需要标注假名（ruby），不仅仅是目标词：使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby>，可在一个 ruby 中包含多组 <rb>/<rt> 配对，rt 使用平假名，不要使用罗马音。例如：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」'
         '如果原文是中文，需要为整句所有「汉字」标注拼音（ruby），格式同上：<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>，允许多组 <rb>/<rt>。';
 
     final List<String> rules = [];

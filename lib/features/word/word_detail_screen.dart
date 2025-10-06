@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
 import 'package:flutter_word_dictation/core/services/example_sentence_service.dart';
 import 'package:flutter_word_dictation/shared/models/example_sentence.dart';
+import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
+import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_dialog.dart';
 
 class WordDetailScreen extends StatefulWidget {
   final Word word;
@@ -55,44 +57,56 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 基本信息
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      word.prompt,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      word.answer,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (word.partOfSpeech != null)
-                          Chip(
-                            label: Text(word.partOfSpeech!),
-                            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                          ),
-                        if (word.level != null)
-                          Chip(
-                            label: Text(word.level!),
-                            backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-                          ),
-                        if (word.category != null)
-                          Chip(
-                            label: Text(word.category!),
-                            backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
-                          ),
-                      ],
-                    ),
-                  ],
+            SizedBox(
+              width: double.infinity,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        word.prompt,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        word.answer,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (word.partOfSpeech != null)
+                            Chip(
+                              label: Text(word.partOfSpeech!),
+                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                            ),
+                          if (word.level != null)
+                            Chip(
+                              label: Text(word.level!),
+                              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                            ),
+                          if (word.category != null)
+                            Chip(
+                              label: Text(word.category!),
+                              backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: () => _showAIGenerateExamplesDialog(word),
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('AI生成例句'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -270,5 +284,42 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       return senses[senseIndex];
     }
     return '含义 ${senseIndex + 1}';
+  }
+
+  void _showAIGenerateExamplesDialog(Word word) async {
+    final req = await showDialog<AIGenerateExamplesRequest>(
+      context: context,
+      builder: (context) => AIGenerateExamplesDialog(
+        initialPrompt: word.prompt,
+        initialAnswer: word.answer,
+      ),
+    );
+
+    if (req == null) return;
+
+    try {
+      final ai = await AIExampleService.getInstance();
+      final svc = ExampleSentenceService();
+      final examples = await ai.generateExamples(
+        prompt: req.prompt,
+        answer: req.answer,
+        sourceLanguage: req.sourceLanguage,
+        targetLanguage: req.targetLanguage,
+      );
+
+      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+      await svc.insertExamples(withWordId);
+      await _loadExamples();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已为 "${word.prompt}" 生成 ${withWordId.length} 条例句')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('生成失败：$e')),
+      );
+    }
   }
 }
