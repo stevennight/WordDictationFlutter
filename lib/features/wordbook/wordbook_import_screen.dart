@@ -264,29 +264,17 @@ class _WordbookImportScreenState extends State<WordbookImportScreen> {
           targetUnit = newUnit.copyWith(id: unitId);
         }
         
-        // 为单词设置单元ID、单元名称和词书ID
-        final wordsWithUnit = _importedWords.map((word) => word.copyWith(
-          unitId: targetUnit!.id,
-          category: unitName,
+        // 按原文合并导入并重排顺序
+        await _wordbookService.mergeUnitWordsByPrompt(
           wordbookId: widget.wordbook!.id!,
-          createdAt: now,
-          updatedAt: now,
-        )).toList();
-
-        // 保存单词到数据库
-        for (final word in wordsWithUnit) {
-          await _wordbookService.addWordToWordbook(word);
-        }
-
-        // 更新单元的单词数量
-        await unitService.updateUnitWordCount(targetUnit.id!);
-        
-        // 更新词书的单词数量
-        await _wordbookService.updateWordbookWordCount(widget.wordbook!.id!);
+          unitId: targetUnit!.id!,
+          unitName: unitName,
+          importedWords: _importedWords,
+        );
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('成功添加 ${_importedWords.length} 个单词到单元"$unitName"')),
+            const SnackBar(content: Text('已同步该单元的单词并按导入顺序重排')),
           );
           Navigator.of(context).pop(true);
         }

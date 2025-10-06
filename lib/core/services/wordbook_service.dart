@@ -1,3 +1,4 @@
+import 'package:flutter_word_dictation/core/services/unit_service.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../shared/models/word.dart';
@@ -232,6 +233,95 @@ class WordbookService {
   Future<int> addWordToWordbook(Word word) async {
     final db = await _dbHelper.database;
     return await db.insert('words', word.toMap());
+  }
+
+  /// Merge words into a unit by prompt (original word text).
+  ///
+  /// Behavior:
+  /// - Delete words that are NOT present in the imported list (by `prompt`).
+  /// - Add words that are NEW in the imported list.
+  /// - For words present in both, update fields provided by import (answer/category/part_of_speech/level)
+  ///   and preserve any existing fields when the import does not provide them.
+  /// - Reorder words to match the imported list order by re-sequencing `created_at` timestamps.
+  Future<void> mergeUnitWordsByPrompt({
+    required int wordbookId,
+    required int unitId,
+    required String unitName,
+    required List<Word> importedWords,
+  }) async {
+    final db = await _dbHelper.database;
+
+    await db.transaction((txn) async {
+      // Load existing words in the unit
+      final existingMaps = await txn.query(
+        'words',
+        where: 'unit_id = ?',
+        whereArgs: [unitId],
+      );
+
+      final Map<String, Map<String, dynamic>> existingByPrompt = {
+        for (final m in existingMaps) (m['prompt'] as String): m,
+      };
+
+      // Build imported prompt list (keeps order)
+      final List<String> importedPrompts = importedWords.map((w) => w.prompt).toList();
+
+      // Delete words that are not in imported list
+      for (final m in existingMaps) {
+        final prompt = m['prompt'] as String;
+        if (!importedPrompts.contains(prompt)) {
+          await txn.delete('words', where: 'id = ?', whereArgs: [m['id']]);
+        }
+      }
+
+      // Upsert and reorder according to imported list
+      final baseTime = DateTime.now().millisecondsSinceEpoch;
+      for (int i = 0; i < importedWords.length; i++) {
+        final imported = importedWords[i];
+        final existing = existingByPrompt[imported.prompt];
+        final ts = baseTime + i; // ensure ascending order
+
+        if (existing != null) {
+          // Update only provided fields; preserve others
+          final Map<String, Object?> updateMap = {
+            'answer': imported.answer,
+            'category': unitName,
+            'part_of_speech': imported.partOfSpeech ?? existing['part_of_speech'],
+            'level': imported.level ?? existing['level'],
+            'updated_at': ts,
+            'created_at': ts, // use created_at to reflect new order
+            'wordbook_id': wordbookId,
+            'unit_id': unitId,
+          };
+
+          await txn.update(
+            'words',
+            updateMap,
+            where: 'id = ?',
+            whereArgs: [existing['id']],
+          );
+        } else {
+          // Insert new
+          final Map<String, Object?> insertMap = {
+            'prompt': imported.prompt,
+            'answer': imported.answer,
+            'category': unitName,
+            'part_of_speech': imported.partOfSpeech,
+            'level': imported.level,
+            'wordbook_id': wordbookId,
+            'unit_id': unitId,
+            'created_at': ts,
+            'updated_at': ts,
+          };
+          await txn.insert('words', insertMap);
+        }
+      }
+    });
+
+    // Update counts
+    final unitService = UnitService();
+    await unitService.updateUnitWordCount(unitId);
+    await updateWordbookWordCount(wordbookId);
   }
 
   /// Export a single wordbook and its words to a JSON string

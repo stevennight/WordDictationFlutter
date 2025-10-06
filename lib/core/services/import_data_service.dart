@@ -181,29 +181,17 @@ class ImportDataService {
       targetUnit = newUnit.copyWith(id: unitId);
     }
     
-    // 为单词设置单元ID、单元名称和词书ID
-    final wordsWithUnit = words.map((word) => word.copyWith(
-      unitId: targetUnit!.id,
-      category: unitName,
+    // 合并导入：按原文（prompt）增删改并重排顺序
+    await _wordbookService.mergeUnitWordsByPrompt(
       wordbookId: wordbookId,
-      createdAt: now,
-      updatedAt: now,
-    )).toList();
-
-    // 保存单词到数据库
-    for (final word in wordsWithUnit) {
-      await _wordbookService.addWordToWordbook(word);
-    }
-
-    // 更新单元的单词数量
-    await _unitService.updateUnitWordCount(targetUnit.id!);
-    
-    // 更新词书的单词数量
-    await _wordbookService.updateWordbookWordCount(wordbookId);
+      unitId: targetUnit!.id!,
+      unitName: unitName,
+      importedWords: words,
+    );
 
     return ImportResult.success(
-      message: '成功添加 ${words.length} 个单词到单元"$unitName"',
-      data: {'unit': targetUnit, 'wordsCount': words.length},
+      message: '已按导入文件同步单元"$unitName"的单词并重排顺序',
+      data: {'unit': targetUnit},
     );
   }
 }
