@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
 import 'wordbook_detail_screen.dart';
@@ -339,6 +342,9 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                                     case 'edit':
                                       _editWordbookName(wordbook);
                                       break;
+                                    case 'export':
+                                      _exportWordbook(wordbook);
+                                      break;
                                     case 'delete':
                                       _deleteWordbook(wordbook);
                                       break;
@@ -350,6 +356,14 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                                     child: ListTile(
                                       leading: Icon(Icons.edit),
                                       title: Text('编辑'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'export',
+                                    child: ListTile(
+                                      leading: Icon(Icons.download),
+                                      title: Text('导出词书'),
                                       contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
@@ -385,5 +399,38 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _exportWordbook(Wordbook wordbook) async {
+    try {
+      final jsonString = await _wordbookService.exportSingleWordbook(wordbook.id!);
+
+      final now = DateTime.now();
+      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+      final String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: '请选择保存导出的文件',
+        fileName: '${wordbook.name}_export_$timestamp.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: utf8.encode(jsonString),
+      );
+
+      if (outputFile != null) {
+        final file = File(outputFile);
+        await file.writeAsString(jsonString);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('词书「${wordbook.name}」已成功导出到: $outputFile')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
   }
 }

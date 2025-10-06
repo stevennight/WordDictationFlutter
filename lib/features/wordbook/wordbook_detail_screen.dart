@@ -503,11 +503,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               onPressed: _createNewUnit,
               tooltip: '导入单元',
             ),
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _exportWordbook,
-            tooltip: '导出词书',
-          ),
 
           if (_words.isNotEmpty)
             IconButton(
