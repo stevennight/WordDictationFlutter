@@ -33,6 +33,7 @@ class JsonDataService {
         map['examples'] = examples
             .map((ex) => {
                   'senseIndex': ex.senseIndex,
+                  'senseText': ex.senseText,
                   'textPlain': ex.textPlain,
                   'textHtml': ex.textHtml,
                   'textTranslation': ex.textTranslation,
@@ -69,6 +70,7 @@ class JsonDataService {
           map['examples'] = examples
               .map((ex) => {
                     'senseIndex': ex.senseIndex,
+                    'senseText': ex.senseText,
                     'textPlain': ex.textPlain,
                     'textHtml': ex.textHtml,
                     'textTranslation': ex.textTranslation,
