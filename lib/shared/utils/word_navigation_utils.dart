@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/services/word_service.dart';
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../features/word/word_detail_screen.dart';
 
 /// 统一的“按原文查找并打开单词详情”工具

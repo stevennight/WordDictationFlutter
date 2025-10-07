@@ -7,7 +7,7 @@ import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 import 'package:path/path.dart' as path;
 
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import 'import_data_service.dart';
 import 'json_data_service.dart';
 

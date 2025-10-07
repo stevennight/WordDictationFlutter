@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import '../../shared/models/unit.dart';
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import 'json_data_service.dart';
 import 'unit_service.dart';

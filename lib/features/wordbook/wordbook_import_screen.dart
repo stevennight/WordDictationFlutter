@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/models/unit.dart';
 import '../../core/services/wordbook_service.dart';

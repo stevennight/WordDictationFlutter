@@ -8,7 +8,7 @@ import '../../../core/services/session_file_service.dart';
 import '../../../core/services/image_cache_service.dart';
 
 import '../../../shared/models/dictation_result.dart';
-import '../../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../dictation/screens/copying_screen.dart';
 import '../../../shared/utils/word_navigation_utils.dart';

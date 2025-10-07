@@ -1,4 +1,4 @@
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../database/database_helper.dart';
 
 class WordService {

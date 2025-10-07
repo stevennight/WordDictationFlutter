@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import 'example_sentence_service.dart';
 import 'word_explanation_service.dart';
 import 'unit_service.dart';

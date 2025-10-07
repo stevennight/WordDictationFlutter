@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../shared/models/dictation_session.dart';
-import '../../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../../shared/providers/app_state_provider.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/providers/history_provider.dart';

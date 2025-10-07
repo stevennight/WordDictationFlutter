@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
-import '../models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../models/dictation_session.dart';
 import '../models/dictation_result.dart';
 import '../utils/path_utils.dart';

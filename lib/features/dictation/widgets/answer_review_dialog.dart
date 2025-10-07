@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 
-import '../../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 
 class AnswerReviewDialog extends StatelessWidget {
   final Word word;

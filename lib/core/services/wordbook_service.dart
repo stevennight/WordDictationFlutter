@@ -1,7 +1,7 @@
 import 'package:flutter_word_dictation/core/services/unit_service.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../../shared/models/word.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../database/database_helper.dart';
 import 'json_data_service.dart';
