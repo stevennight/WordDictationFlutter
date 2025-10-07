@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
 import '../../shared/models/wordbook.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/ai_example_service.dart';
 import '../../core/services/example_sentence_service.dart';
 import '../../core/services/config_service.dart';
 import '../../core/services/word_explanation_batch_service.dart';
+import '../../core/services/ai_word_explanation_service.dart';
+import '../../core/services/word_explanation_service.dart';
 import '../../shared/models/word.dart';
 import 'wordbook_detail_screen.dart';
 import 'wordbook_create_screen.dart';
@@ -553,6 +556,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
     final total = wordsForCount.length;
     final processed = ValueNotifier<int>(0);
     final currentWord = ValueNotifier<String>('');
+    bool cancelRequested = false;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -573,31 +577,82 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
               builder: (context, value, _) => Text('进度：$value/$total'),
             ),
             const SizedBox(height: 8),
-            ValueListenableBuilder<String>(
-              valueListenable: currentWord,
-              builder: (context, w, _) => Text(w.isEmpty ? '正在生成...' : '正在生成：$w'),
-            ),
+            const Text('正在生成...'),
           ],
         ),
+        actions: [
+          StatefulBuilder(
+            builder: (context, setState) => TextButton(
+              onPressed: cancelRequested
+                  ? null
+                  : () => setState(() => cancelRequested = true),
+              child: const Text('中断'),
+            ),
+          ),
+        ],
       ),
     );
 
     try {
-      final svc = WordExplanationBatchService();
-      final summary = await svc.generateForWordbook(
-        wordbook.id!,
-        overwriteExisting: overwrite,
-        sourceLanguage: srcLangBulk,
-        targetLanguage: tgtLangBulk,
-        onProgress: (p) {
-          processed.value = p.current;
-          currentWord.value = p.word.prompt;
-        },
-      );
+      final ai = await AIWordExplanationService.getInstance();
+      final expService = WordExplanationService();
+      int ok = 0, skipped = 0, fail = 0;
+      final cfg = await ConfigService.getInstance();
+      final concurrency = await cfg.getAIConcurrency();
+      for (int start = 0; start < wordsForCount.length; start += concurrency) {
+        final end = (start + concurrency) > wordsForCount.length ? wordsForCount.length : (start + concurrency);
+        final futures = <Future<void>>[];
+        for (int i = start; i < end; i++) {
+          final w = wordsForCount[i];
+          futures.add(() async {
+            if (cancelRequested) return; // 请求中断后不再启动新的任务
+            currentWord.value = w.prompt;
+
+            // 跳过逻辑（若不覆盖且已存在）
+            if (!overwrite) {
+              final existing = await expService.getByWordId(w.id!);
+              if (existing != null) {
+                skipped++;
+                processed.value = processed.value + 1;
+                return;
+              }
+            }
+
+            try {
+              final html = await ai.generateExplanationHtml(
+                prompt: w.prompt,
+                answer: w.answer,
+                sourceLanguage: srcLangBulk,
+                targetLanguage: tgtLangBulk,
+              );
+
+              final now = DateTime.now();
+              final exp = WordExplanation(
+                id: null,
+                wordId: w.id!,
+                html: html,
+                sourceModel: null,
+                createdAt: now,
+                updatedAt: now,
+              );
+
+              await expService.upsertForWord(exp);
+              ok++;
+            } catch (_) {
+              fail++;
+            } finally {
+              processed.value = processed.value + 1;
+            }
+          }());
+        }
+        await Future.wait(futures);
+        if (cancelRequested) break; // 完成已开始的后结束
+      }
+
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('词解生成完成：成功 ${summary.succeeded}，跳过 ${summary.skippedExisting}，失败 ${summary.failed}')),
+          SnackBar(content: Text('词解生成完成：成功 $ok，跳过 $skipped，失败 $fail')),
         );
       }
     } catch (e) {
