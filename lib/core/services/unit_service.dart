@@ -185,9 +185,13 @@ class UnitService {
     
     final wordbookId = unitResult.first['wordbook_id'] as int;
     
-    // 先删除关联的例句，避免孤儿数据
+    // 先删除关联的例句与词解，避免孤儿数据
     await db.rawDelete(
       'DELETE FROM example_sentences WHERE word_id IN (SELECT id FROM words WHERE unit_id = ?)',
+      [unitId],
+    );
+    await db.rawDelete(
+      'DELETE FROM word_explanations WHERE word_id IN (SELECT id FROM words WHERE unit_id = ?)',
       [unitId],
     );
 

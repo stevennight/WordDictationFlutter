@@ -66,6 +66,7 @@ class ImportDataService {
       final wordbookInfo = _jsonDataService.extractWordbookInfo(jsonData);
       final words = wordbookInfo['words'] as List<Word>;
       final wordExamples = wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?;
+      final wordExplanations = wordbookInfo['wordExplanations'] as Map<String, Map<String, dynamic>>?;
       final units = wordbookInfo['units'] as List<Map<String, dynamic>>?;
 
       if (existingWordbookId != null && unitName != null) {
@@ -75,6 +76,7 @@ class ImportDataService {
           unitName: unitName,
           words: words,
           wordExamples: wordExamples,
+          wordExplanations: wordExplanations,
         );
       } else {
         // 创建新词书或更新现有同名词书
@@ -85,6 +87,7 @@ class ImportDataService {
           originalFileName: filePath.split('/').last.split('\\').last,
           units: units,
           wordExamples: wordExamples,
+          wordExplanations: wordExplanations,
         );
         
         return ImportResult.success(
@@ -166,6 +169,7 @@ class ImportDataService {
     required String unitName,
     required List<Word> words,
     Map<String, List<Map<String, dynamic>>>? wordExamples,
+    Map<String, Map<String, dynamic>>? wordExplanations,
   }) async {
     final now = DateTime.now();
     
@@ -231,6 +235,43 @@ class ImportDataService {
           });
         }
         await batch.commit(noResult: true);
+      }
+    }
+
+    // 写入词解：按 prompt 查到对应词ID，替换其词解
+    if (wordExplanations != null && wordExplanations.isNotEmpty) {
+      final db = await DatabaseHelper.instance.database;
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      int parseTs(dynamic v) {
+        if (v is int) return v;
+        if (v is String) {
+          try { return DateTime.parse(v).millisecondsSinceEpoch; } catch (_) {}
+        }
+        return ts;
+      }
+      for (final w in words) {
+        final exp = wordExplanations[w.prompt];
+        if (exp == null) continue;
+
+        final maps = await db.query(
+          'words',
+          columns: ['id'],
+          where: 'wordbook_id = ? AND unit_id = ? AND prompt = ?',
+          whereArgs: [wordbookId, targetUnit.id, w.prompt],
+          limit: 1,
+        );
+        if (maps.isEmpty) continue;
+        final wordId = maps.first['id'] as int;
+
+        // 替换词解
+        await db.delete('word_explanations', where: 'word_id = ?', whereArgs: [wordId]);
+        await db.insert('word_explanations', {
+          'word_id': wordId,
+          'html': (exp['html'] ?? '') as String,
+          'source_model': exp['sourceModel'],
+          'created_at': parseTs(exp['createdAt']),
+          'updated_at': parseTs(exp['updatedAt']),
+        });
       }
     }
 

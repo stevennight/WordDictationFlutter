@@ -65,6 +65,11 @@ class WordbookService {
         'DELETE FROM example_sentences WHERE word_id IN (SELECT id FROM words WHERE wordbook_id = ?)',
         [wordbookId],
       );
+      // 删除该词书下所有单词的词解
+      await txn.rawDelete(
+        'DELETE FROM word_explanations WHERE word_id IN (SELECT id FROM words WHERE wordbook_id = ?)',
+        [wordbookId],
+      );
       // Delete all words in this wordbook
       await txn.delete(
         'words',
@@ -344,6 +349,7 @@ class WordbookService {
     String? originalFileName,
     List<Map<String, dynamic>>? units,
     Map<String, List<Map<String, dynamic>>>? wordExamples,
+    Map<String, Map<String, dynamic>>? wordExplanations,
   }) async {
     final db = await _dbHelper.database;
     final now = DateTime.now();
@@ -364,6 +370,15 @@ class WordbookService {
         wordbookId = existingWordbooks.first['id'] as int;
         
         // Delete all existing words and units in this wordbook
+        // 先删除例句与词解，避免孤儿数据
+        await txn.rawDelete(
+          'DELETE FROM example_sentences WHERE word_id IN (SELECT id FROM words WHERE wordbook_id = ?)',
+          [wordbookId],
+        );
+        await txn.rawDelete(
+          'DELETE FROM word_explanations WHERE word_id IN (SELECT id FROM words WHERE wordbook_id = ?)',
+          [wordbookId],
+        );
         await txn.delete(
           'words',
           where: 'wordbook_id = ?',
@@ -490,6 +505,46 @@ class WordbookService {
                 };
                 await txn.insert('example_sentences', map);
               }
+            }
+          }
+
+          // 插入/更新词解（按 prompt 关联）
+          final exp = wordExplanations?[word.prompt];
+          if (exp != null) {
+            // 获取刚插入/更新后的该词的ID
+            final insertedWordMaps = await txn.query(
+              'words',
+              columns: ['id'],
+              where: 'wordbook_id = ? AND prompt = ?',
+              whereArgs: [wordbookId, word.prompt],
+              orderBy: 'created_at DESC',
+              limit: 1,
+            );
+            if (insertedWordMaps.isNotEmpty) {
+              final wordId = insertedWordMaps.first['id'] as int;
+              // 解析时间戳（支持字符串ISO或int毫秒）
+              final int fallbackTs = now.millisecondsSinceEpoch;
+              int parseTs(dynamic v) {
+                if (v is int) return v;
+                if (v is String) {
+                  try {
+                    return DateTime.parse(v).millisecondsSinceEpoch;
+                  } catch (_) {}
+                }
+                return fallbackTs;
+              }
+              final createdAtMs = parseTs(exp['createdAt']);
+              final updatedAtMs = parseTs(exp['updatedAt']);
+
+              // 先删除旧词解，后插入新词解
+              await txn.delete('word_explanations', where: 'word_id = ?', whereArgs: [wordId]);
+              await txn.insert('word_explanations', {
+                'word_id': wordId,
+                'html': (exp['html'] ?? '') as String,
+                'source_model': exp['sourceModel'],
+                'created_at': createdAtMs,
+                'updated_at': updatedAtMs,
+              });
             }
           }
         }

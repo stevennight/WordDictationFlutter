@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../shared/models/word.dart';
 import 'example_sentence_service.dart';
+import 'word_explanation_service.dart';
 import 'unit_service.dart';
 import 'wordbook_service.dart';
 
@@ -13,6 +14,7 @@ class JsonDataService {
   final WordbookService _wordbookService = WordbookService();
   final UnitService _unitService = UnitService();
   final ExampleSentenceService _exampleService = ExampleSentenceService();
+  final WordExplanationService _explanationService = WordExplanationService();
 
   /// 导出单个词书为JSON格式
   Future<Map<String, dynamic>> exportSingleWordbook(int wordbookId) async {
@@ -25,7 +27,7 @@ class JsonDataService {
     final units = await _unitService.getUnitsByWordbookId(wordbookId);
     
     final wordbookMap = wordbook.toMap();
-    // 每个词附加 examples 数组
+    // 每个词附加 examples 和 explanation
     wordbookMap['words'] = await Future.wait(words.map((w) async {
       final map = w.toMap();
       if (w.id != null) {
@@ -42,6 +44,16 @@ class JsonDataService {
                   'createdAt': ex.createdAt.toIso8601String(),
                 })
             .toList();
+
+        final explanation = await _explanationService.getByWordId(w.id!);
+        if (explanation != null) {
+          map['explanation'] = {
+            'html': explanation.html,
+            'sourceModel': explanation.sourceModel,
+            'createdAt': explanation.createdAt.toIso8601String(),
+            'updatedAt': explanation.updatedAt.toIso8601String(),
+          };
+        }
       }
       return map;
     }));
@@ -79,6 +91,16 @@ class JsonDataService {
                     'createdAt': ex.createdAt.toIso8601String(),
                   })
               .toList();
+
+          final explanation = await _explanationService.getByWordId(w.id!);
+          if (explanation != null) {
+            map['explanation'] = {
+              'html': explanation.html,
+              'sourceModel': explanation.sourceModel,
+              'createdAt': explanation.createdAt.toIso8601String(),
+              'updatedAt': explanation.updatedAt.toIso8601String(),
+            };
+          }
         }
         return map;
       }));
@@ -145,6 +167,7 @@ class JsonDataService {
     final wordbookData = wordbooksData[index];
     final List<Word> words = [];
     final Map<String, List<Map<String, dynamic>>> wordExamples = {};
+    final Map<String, Map<String, dynamic>> wordExplanations = {};
     
     if (wordbookData['words'] != null && wordbookData['words'] is List) {
       final List<dynamic> wordsData = wordbookData['words'];
@@ -167,6 +190,17 @@ class JsonDataService {
                     })
                 .toList();
           }
+
+          // 收集词解（按 prompt 关联）
+          final explanation = wordData['explanation'];
+          if (explanation is Map<String, dynamic>) {
+            wordExplanations[wordData['prompt'] ?? ''] = {
+              'html': explanation['html'] ?? '',
+              'sourceModel': explanation['sourceModel'],
+              'createdAt': explanation['createdAt'],
+              'updatedAt': explanation['updatedAt'],
+            };
+          }
         }
       }
     }
@@ -188,6 +222,7 @@ class JsonDataService {
       'version': jsonData['version'],
       'createdAt': jsonData['createdAt'],
       'wordExamples': wordExamples,
+      'wordExplanations': wordExplanations,
     };
   }
 
@@ -216,6 +251,7 @@ class JsonDataService {
         name: wordbookInfo['name'],
         words: wordbookInfo['words'],
         wordExamples: (wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?),
+        wordExplanations: (wordbookInfo['wordExplanations'] as Map<String, Map<String, dynamic>>?),
         units: wordbookInfo['units'],
         description: wordbookInfo['description'],
         originalFileName: 'import-${DateTime.now().millisecondsSinceEpoch}.json',
