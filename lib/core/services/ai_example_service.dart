@@ -67,15 +67,16 @@ class AIExampleService {
     }
 
     final baseSystem = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
+        '注意生成的例句需要是标准、地道的说法，避免生成中式英语等类似情况的例句。'
         '只返回一个合法的 JSON 数组，每一项必须包含以下键：'
         'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
         '不要返回 Markdown、额外解释或任何非 JSON 内容。'
         '每个条目的 senseIndex 必须严格对应给定词义索引。'
         'textTranslation 必须与该词义语义一致，为整句完整译文。'
-        'grammarNote 必须仅列出句子中真实出现的语法点（必须能在 textPlain 或 textHtml 中找到对应的词或形态），未出现的语法不得列出（例如未使用「です」就不得写「です」）；需要说明语法点以及语法点的简单说明，用译文语言编写，多个语法之间换行分隔。'
+        'grammarNote 文本格式；必须仅列出句子中真实出现的语法点（必须能在 textPlain 或 textHtml 中找到对应的词或形态），未出现的语法不得列出（例如未使用「です」就不得写「です」）；需要指出语法点以及简单讲解对应的语法点，用译文语言编写；如果有多个语法知识点，生成多个语法讲解，多个语法之间换行分隔。'
         'textPlain 是完整的例句，不包含任何额外文字。'
         'textHtml 是完整的例句，包含注音（ruby）；'
-        '如果例句是日文：仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；为例句中出现的汉字都添加 ruby，不得漏标；使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；例如：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」；'
+        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；使用 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；完整示例：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」；'
         '如果例句是中文：为整句所有汉字添加拼音 ruby（<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>），不要对拉丁字符或符号添加 ruby；允许一个 ruby 中包含多组 <rb>/<rt>。';
     final system = [baseSystem, ...rules].join(' ');
 
@@ -91,7 +92,7 @@ class AIExampleService {
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': user},
       ],
-      'temperature': 0.2,
+      'temperature': 0.7,
     });
 
     final resp = await http.post(uri, headers: headers, body: body);
