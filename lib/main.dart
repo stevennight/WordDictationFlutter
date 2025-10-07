@@ -33,33 +33,7 @@ void main() async {
     // For desktop platforms
     databaseFactory = databaseFactoryFfi;
   }
-  
-  // Initialize database
-  await DatabaseHelper.instance.database;
-  
-  // Initialize config service
-  await ConfigService.getInstance();
-  
-  // Initialize history sync service (this will create device_id.txt)
-  final historySyncService = HistorySyncService();
-  await historySyncService.initialize();
-  
-  // Clear inProgress sessions on app startup
-  final historyProvider = HistoryProvider();
-  await historyProvider.clearInProgressSessions();
-  
-  // Initialize auto sync manager
-  final autoSyncManager = AutoSyncManager();
-  await autoSyncManager.initialize();
-  
-  // Set preferred orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-  
+  // 立即渲染应用，避免在runApp之前做耗时初始化造成黑屏
   runApp(const WordDictationApp());
 }
 
@@ -79,12 +53,46 @@ class _WordDictationAppState extends State<WordDictationApp> {
   @override
   void initState() {
     super.initState();
-    _initializeTheme();
+    _initializeApp();
   }
 
-  Future<void> _initializeTheme() async {
+  Future<void> _initializeApp() async {
     _themeProvider = ThemeProvider();
     await _themeProvider.initialize();
+
+    // 将耗时初始化移到runApp之后执行，避免首帧延迟
+    try {
+      // Initialize database
+      await DatabaseHelper.instance.database;
+
+      // Initialize config service
+      await ConfigService.getInstance();
+
+      // Initialize history sync service (creates device_id.txt)
+      final historySyncService = HistorySyncService();
+      await historySyncService.initialize();
+
+      // Clear inProgress sessions on app startup
+      final historyProvider = HistoryProvider();
+      await historyProvider.clearInProgressSessions();
+
+      // Initialize auto sync manager
+      final autoSyncManager = AutoSyncManager();
+      await autoSyncManager.initialize();
+
+      // Preferred orientations (非阻塞，可不等待)
+      // ignore: unawaited_futures
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } catch (e) {
+      // 打印初始化错误，仍然继续显示应用以便可视化反馈
+      debugPrint('App initialization error: $e');
+    }
+
     if (mounted) {
       setState(() {
         _isInitialized = true;
