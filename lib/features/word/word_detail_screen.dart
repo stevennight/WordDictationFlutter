@@ -129,7 +129,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         children: [
                           OutlinedButton.icon(
                             onPressed: () => _generateExplanation(word),
-                            icon: const Icon(Icons.info_outline),
+                            icon: const Icon(Icons.psychology),
                             label: const Text('AI生成词解'),
                           ),
                           const SizedBox(width: 8),
@@ -150,7 +150,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
             // 词解/注意点/近义词（HTML）
             Text(
-              '词解 / 注意点 / 近义词',
+              '词解',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -160,40 +160,47 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                 child: CircularProgressIndicator(),
               ))
             else if (_explanation == null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.article, size: 18, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('暂无词解', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _generateExplanation(word),
-                                icon: const Icon(Icons.auto_awesome),
-                                label: const Text('使用AI生成词解'),
+              SizedBox(
+                width: double.infinity,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.article, size: 18, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('暂无词解', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _generateExplanation(word),
+                                  icon: const Icon(Icons.psychology),
+                                  label: const Text('使用AI生成词解'),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               )
             else
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: _buildExplanationHtml(context: context, html: _explanation!.html),
+              // 词解区域占满宽度
+              Container(
+                width: double.infinity,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: _buildExplanationHtml(context: context, html: _explanation!.html),
+                  ),
                 ),
               ),
 
@@ -454,6 +461,28 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   Future<void> _generateExplanation(Word word) async {
     if (word.id == null) return;
     try {
+      // 若已存在词解，提供策略选择（覆盖/跳过）
+      final existing = await _explanationService.getByWordId(word.id!);
+      if (existing != null) {
+        final choice = await showDialog<String>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('生成策略'),
+                content: const Text('检测到已存在词解，选择是否覆盖或跳过。'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
+                  TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
+                ],
+              ),
+            ) ?? 'skip';
+        if (choice == 'skip') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"${word.prompt}" 已有词解，已跳过')),
+          );
+          return;
+        }
+      }
+
       showDialog(
         context: context,
         barrierDismissible: false,

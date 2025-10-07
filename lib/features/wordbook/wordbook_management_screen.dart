@@ -7,12 +7,14 @@ import '../../core/services/wordbook_service.dart';
 import '../../core/services/ai_example_service.dart';
 import '../../core/services/example_sentence_service.dart';
 import '../../core/services/config_service.dart';
+import '../../core/services/word_explanation_batch_service.dart';
 import '../../shared/models/word.dart';
 import 'wordbook_detail_screen.dart';
 import 'wordbook_create_screen.dart';
 import 'wordbook_import_screen.dart';
 import '../sync/sync_settings_screen.dart';
 import '../settings/screens/settings_screen.dart';
+import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -230,8 +232,6 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                 if (result == true) {
                   _loadWordbooks();
                 }
-              } else if (value == 'generate_examples_wordbook') {
-                await _generateExamplesForWholeWordbook();
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -240,14 +240,6 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                 child: ListTile(
                   leading: Icon(Icons.upload),
                   title: Text('导入词书'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'generate_examples_wordbook',
-                child: ListTile(
-                  leading: Icon(Icons.auto_awesome),
-                  title: Text('为整本生成例句'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -352,13 +344,19 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                                 ],
                               ),
                               trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
+                                onSelected: (value) async {
                                   switch (value) {
                                     case 'edit':
                                       _editWordbookName(wordbook);
                                       break;
                                     case 'export':
                                       _exportWordbook(wordbook);
+                                      break;
+                                    case 'ai_generate_explanations':
+                                      await _generateExplanationsForWordbook(wordbook);
+                                      break;
+                                    case 'generate_examples_wordbook':
+                                      await _generateExamplesForWordbook(wordbook);
                                       break;
                                     case 'delete':
                                       _deleteWordbook(wordbook);
@@ -379,6 +377,22 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
                                     child: ListTile(
                                       leading: Icon(Icons.download),
                                       title: Text('导出词书'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'ai_generate_explanations',
+                                    child: ListTile(
+                                      leading: Icon(Icons.psychology),
+                                      title: Text('AI生成词解'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'generate_examples_wordbook',
+                                    child: ListTile(
+                                      leading: Icon(Icons.auto_awesome),
+                                      title: Text('为该词书生成例句'),
                                       contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
@@ -430,85 +444,11 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
     return true;
   }
 
-  Future<void> _generateExamplesForWholeWordbook() async {
-    if (_wordbooks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可用的词书')),
-      );
-      return;
-    }
-
-    // 选择目标词书与策略
-    Wordbook? selected = _wordbooks.first;
-    String strategy = 'append';
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('为整本生成例句'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButton<Wordbook>(
-                    value: selected,
-                    isExpanded: true,
-                    items: _wordbooks.map((wb) {
-                      return DropdownMenuItem<Wordbook>(
-                        value: wb,
-                        child: Text(wb.name),
-                      );
-                    }).toList(),
-                    onChanged: (wb) => setState(() => selected = wb),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: const Text('策略：')),
-                      ChoiceChip(
-                        label: const Text('追加'),
-                        selected: strategy == 'append',
-                        onSelected: (_) => setState(() => strategy = 'append'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('覆盖'),
-                        selected: strategy == 'overwrite',
-                        onSelected: (_) => setState(() => strategy = 'overwrite'),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('跳过'),
-                        selected: strategy == 'skip',
-                        onSelected: (_) => setState(() => strategy = 'skip'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('开始'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (proceed != true || selected == null) return;
-
+  Future<void> _generateExplanationsForWordbook(Wordbook wordbook) async {
     final ok = await _ensureAIConfiguredOrRedirect();
     if (!ok) return;
 
-    // 语言选择：自动识别或手动指定（整本生成）
+    // 语言选择：自动识别或手动指定（词解）
     String sourceDropdown = 'auto';
     String targetDropdown = 'auto';
     final TextEditingController sourceCustomController = TextEditingController();
@@ -518,7 +458,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
           builder: (context) {
             return StatefulBuilder(
               builder: (context, setState) => AlertDialog(
-                title: const Text('选择语言（整本生成）'),
+                title: const Text('选择语言（词解生成）'),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -596,15 +536,152 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
         : (targetDropdown == 'auto' ? null : targetDropdown);
 
-    final words = await _wordbookService.getWordbookWords(selected!.id!);
+    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+    final overwrite = strategy == 'overwrite';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('为词书「${wordbook.name}」生成词解'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(height: 8),
+            LinearProgressIndicator(),
+            SizedBox(height: 8),
+            Text('正在生成...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final svc = WordExplanationBatchService();
+      final summary = await svc.generateForWordbook(
+        wordbook.id!,
+        overwriteExisting: overwrite,
+        sourceLanguage: srcLangBulk,
+        targetLanguage: tgtLangBulk,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('词解生成完成：成功 ${summary.succeeded}，跳过 ${summary.skippedExisting}，失败 ${summary.failed}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateExamplesForWordbook(Wordbook wordbook) async {
+    final ok = await _ensureAIConfiguredOrRedirect();
+    if (!ok) return;
+
+    // 语言选择：自动识别或手动指定（例句）
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final TextEditingController sourceCustomController = TextEditingController();
+    final TextEditingController targetCustomController = TextEditingController();
+    final bool langProceed = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: const Text('选择语言（词书例句）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('原文自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '原文语言（常用）'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('译文自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '译文语言（常用）'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (sourceDropdown == 'custom')
+                      TextField(
+                        controller: sourceCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '原文语言（自定义代码，可选）',
+                          hintText: '如 ja, zh-CN, en-US，留空则自动或常用选择',
+                        ),
+                      ),
+                    if (targetDropdown == 'custom')
+                      TextField(
+                        controller: targetCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '译文语言（自定义代码，可选）',
+                          hintText: '如 zh, en-GB，留空则自动或常用选择',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('开始')),
+                ],
+              ),
+            );
+          },
+        ) ?? false;
+    if (!langProceed) return;
+    final srcLangBulk = sourceDropdown == 'custom'
+        ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
+        : (sourceDropdown == 'auto' ? null : sourceDropdown);
+    final tgtLangBulk = targetDropdown == 'custom'
+        ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
+        : (targetDropdown == 'auto' ? null : targetDropdown);
+
+    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+
+    final words = await _wordbookService.getWordbookWords(wordbook.id!);
     if (words.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('词书「${selected!.name}」没有单词')),
+        SnackBar(content: Text('词书「${wordbook.name}」没有单词')),
       );
       return;
     }
 
-    // 进度与可中断对话框
     bool cancelRequested = false;
     final progress = ValueNotifier<int>(0);
     final total = words.length;
@@ -612,7 +689,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text('为词书「${selected!.name}」生成例句'),
+        title: Text('为词书「${wordbook.name}」生成例句'),
         content: ValueListenableBuilder<int>(
           valueListenable: progress,
           builder: (context, processed, _) => Column(
@@ -639,15 +716,12 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
 
     final ai = await AIExampleService.getInstance();
     final exService = ExampleSentenceService();
-
     try {
       if (strategy == 'overwrite') {
         final ids = words.map((w) => w.id!).toList();
         await exService.deleteByWordIds(ids);
       }
 
-      // 按单词并行处理整本词书，按“单词”粒度更新进度
-      // 并行度：从设置读取，替代硬编码
       final cfg = await ConfigService.getInstance();
       final concurrency = await cfg.getAIConcurrency();
       for (int start = 0; start < words.length; start += concurrency) {
@@ -656,7 +730,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         for (int i = start; i < end; i++) {
           final w = words[i];
           futures.add(() async {
-            if (cancelRequested) return; // 用户请求中断时跳过后续任务
+            if (cancelRequested) return;
 
             if (strategy == 'skip') {
               final existing = await exService.getExamplesByWordId(w.id!);
@@ -672,10 +746,8 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
               sourceLanguage: srcLangBulk,
               targetLanguage: tgtLangBulk,
             );
-
             final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
             await exService.insertExamples(withWordId);
-
             progress.value = progress.value + 1;
           }());
         }
@@ -695,7 +767,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('词书「${selected!.name}」生成完成：${progress.value}/$total')),
+        SnackBar(content: Text('词书「${wordbook.name}」生成完成：${progress.value}/$total')),
       );
     }
   }
