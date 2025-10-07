@@ -76,7 +76,7 @@ class AIExampleService {
         '4）grammarNote 使用译文语言书写，仅说明句中真实出现的语法点；多个语法点用 \\n 分隔（JSON 中必须使用 \\n，而非实际换行或 \\r\\n）；'
         '5）避免重复或模板化的句式。'
         'textHtml 规则：若原文为日文或中文则使用 ruby 标注；否则令 textHtml 与 textPlain 相同，不包含任何 HTML 标签。'
-        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音。'
+        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；注意日文汉字的音读与训读，以及量词的音变（如10分应该看作一个整体，念じゅっぷん）等。'
         '如果例句是中文：为整句所有汉字添加拼音 ruby（<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>），不要对拉丁字符或符号添加 ruby；允许一个 ruby 中包含多组 <rb>/<rt>。';
     final system = [baseSystem, ...rules].join(' ');
 

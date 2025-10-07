@@ -151,6 +151,7 @@ class ImportDataService {
         originalFileName: filePath?.split('/').last.split('\\').last ?? 
                          'import-${DateTime.now().millisecondsSinceEpoch}.json',
         wordExamples: wordbookInfo['wordExamples'] as Map<String, List<Map<String, dynamic>>>?,
+        wordExplanations: wordbookInfo['wordExplanations'] as Map<String, Map<String, dynamic>>?,
       );
       importedWordbooks.add(wordbook);
     }

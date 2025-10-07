@@ -21,10 +21,9 @@ if not defined ANDROID_HOME (
 )
 echo.
 
-REM Clean project
-echo [3/5] Cleaning project cache...
-call flutter clean
-echo Project clean completed
+REM Clean project (skip global clean to preserve other platform builds)
+echo [3/5] Skipping global Flutter clean to avoid deleting non-Android builds...
+echo If you need a full clean, run: flutter clean
 echo.
 
 REM Get dependencies
