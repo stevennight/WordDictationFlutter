@@ -110,6 +110,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.memory),
                   onTap: () => _showAIModelDialog(),
                 ),
+                SettingsTile(
+                  title: '并发生成数',
+                  subtitle: '批量生成时的并发请求数量',
+                  leading: const Icon(Icons.tune),
+                  onTap: () => _showAIConcurrencyDialog(),
+                ),
               ],
             ),
 
@@ -393,6 +399,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Model 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIConcurrencyDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIConcurrency();
+    final controller = TextEditingController(text: current.toString());
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置并发生成数'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '并发数（1-8）',
+            hintText: '例如：2',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final parsed = int.tryParse(controller.text.trim()) ?? current;
+              final clamped = parsed.clamp(1, 8);
+              await config.setAIConcurrency(clamped);
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('并发生成数已保存：$clamped')),
                 );
               }
             },

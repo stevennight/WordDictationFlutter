@@ -559,7 +559,9 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
       }
 
       // 按单词并行处理整本词书，按“单词”粒度更新进度
-      final concurrency = 2; // 并行度，可按需调整
+      // 并行度：从设置读取，替代硬编码
+      final cfg = await ConfigService.getInstance();
+      final concurrency = await cfg.getAIConcurrency();
       for (int start = 0; start < words.length; start += concurrency) {
         final end = (start + concurrency) > words.length ? words.length : (start + concurrency);
         final futures = <Future<void>>[];

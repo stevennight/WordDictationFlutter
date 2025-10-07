@@ -196,4 +196,14 @@ class ConfigService {
   Future<void> setAIModel(String model) async {
     await _localConfig!.setSetting<String>('ai_model', model);
   }
+
+  // AI concurrency settings
+  Future<int> getAIConcurrency() async {
+    return await _localConfig!.getSetting<int>('ai_concurrency') ?? 2;
+  }
+
+  Future<void> setAIConcurrency(int value) async {
+    if (value < 1) value = 1;
+    await _localConfig!.setSetting<int>('ai_concurrency', value);
+  }
 }

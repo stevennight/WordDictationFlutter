@@ -2007,7 +2007,9 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     final exService = ExampleSentenceService();
     try {
       // 按单词并行处理，确保进度以“单词”为粒度
-      final concurrency = 2; // 并行度，可按需调整
+      // 并行度：从设置读取，替代硬编码
+      final cfg = await ConfigService.getInstance();
+      final concurrency = await cfg.getAIConcurrency();
       for (int start = 0; start < unitWords.length; start += concurrency) {
         final end = (start + concurrency) > unitWords.length ? unitWords.length : (start + concurrency);
         final futures = <Future<void>>[];
