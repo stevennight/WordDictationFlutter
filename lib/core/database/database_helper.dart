@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -177,6 +177,20 @@ class DatabaseHelper {
     // Note: session_words index removed
     await db.execute('CREATE INDEX idx_settings_key ON app_settings (key)');
     await db.execute('CREATE INDEX idx_examples_word_id ON example_sentences (word_id)');
+
+    // Create word_explanations table (HTML content)
+    await db.execute('''
+      CREATE TABLE word_explanations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER NOT NULL,
+        html TEXT NOT NULL,
+        source_model TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_word_explanations_word_id ON word_explanations (word_id)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -453,6 +467,22 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE example_sentences ADD COLUMN sense_text TEXT');
       // Optional: backfill sense_text with empty string; leave to application logic
       // Note: We intentionally avoid NOT NULL in migration to accommodate existing rows
+    }
+
+    if (oldVersion < 15 && newVersion >= 15) {
+      // Add word_explanations table to store AI-generated word explanations (HTML)
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS word_explanations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          word_id INTEGER NOT NULL,
+          html TEXT NOT NULL,
+          source_model TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (word_id) REFERENCES words (id)
+        )
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_word_explanations_word_id ON word_explanations (word_id)');
     }
   }
 
