@@ -426,7 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            labelText: '并发数（1-8）',
+            labelText: '并发数（1-32）',
             hintText: '例如：2',
             border: OutlineInputBorder(),
           ),
@@ -441,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(
             onPressed: () async {
               final parsed = int.tryParse(controller.text.trim()) ?? current;
-              final clamped = parsed.clamp(1, 8);
+              final clamped = parsed.clamp(1, 32);
               await config.setAIConcurrency(clamped);
               if (mounted) {
                 Navigator.of(context).pop();
