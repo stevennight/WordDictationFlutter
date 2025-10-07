@@ -67,33 +67,90 @@ class AIExampleService {
     }
 
     final baseSystem = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
-        '注意生成的例句需要是标准、地道的说法，避免生成中式英语等类似情况的例句。'
-        '只返回一个合法的 JSON 数组，每一项必须包含以下键：'
-        'senseIndex（数字）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
-        '不要返回 Markdown、额外解释或任何非 JSON 内容。'
-        '每个条目的 senseIndex 必须严格对应给定词义索引。'
-        'textTranslation 必须与该词义语义一致，为整句完整译文。'
-        'grammarNote 文本格式；必须仅列出句子中真实出现的语法点（必须能在 textPlain 或 textHtml 中找到对应的词或形态），未出现的语法不得列出（例如未使用「です」就不得写「です」）；需要指出语法点以及简单讲解对应的语法点，用译文语言编写；如果有多个语法知识点，生成多个语法讲解，多个语法之间换行分隔。'
-        'textPlain 是完整的例句，不包含任何额外文字。'
-        'textHtml 是完整的例句，包含注音（ruby）；'
-        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；完整示例：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」；'
+        '例句应地道、简洁、符合常用表达，避免生僻词或不自然的搭配。'
+        '严格只返回一个 JSON 数组（不包含任何额外文本或解释），数组每项必须包含：'
+        'senseIndex（数字）、senseText（字符串）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
+        '不要返回 Markdown 或除 JSON 之外的任意内容。'
+        '质量要求：'
+        '1）各例句之间语法结构与场景尽量差异化；'
+        '2）textPlain 长度适中（约10–40词或等效字数），语法正确、自然；'
+        '3）textTranslation 与该词义严格一致，为整句完整译文，避免意译导致语义偏离；'
+        '4）grammarNote 使用译文语言书写，仅说明句中真实出现的语法点；多个语法点用 \\n 分隔（JSON 中必须使用 \\n，而非实际换行或 \\r\\n）；'
+        '5）避免重复或模板化的句式。'
+        'textHtml 规则：若原文为日文或中文则使用 ruby 标注；否则令 textHtml 与 textPlain 相同，不包含任何 HTML 标签。'
+        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；示例：「<ruby><rb>私</rb><rt>わたし</rt></ruby>は<ruby><rb>学校</rb><rt>がっこう</rt></ruby>に<ruby><rb>行</rb><rt>い</rt></ruby>きました。」。'
         '如果例句是中文：为整句所有汉字添加拼音 ruby（<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>），不要对拉丁字符或符号添加 ruby；允许一个 ruby 中包含多组 <rb>/<rt>。';
     final system = [baseSystem, ...rules].join(' ');
 
     final user = '原词：'+prompt+
         '。词义（带索引）：'+
         List.generate(senses.length, (i) => '【'+i.toString()+'】'+senses[i]).join('；')+
-        '。请严格生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义，且返回时包含该词义的完整文本。'
-        '严格仅返回 JSON，字段包含 senseIndex/senseText/textPlain/textHtml/textTranslation/grammarNote，遵循系统规则；'
-        '其中 senseText 必须是对应词义的完整文本（不要编号），用于稳定关联。';
+        '。请严格生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义。'
+        '输出要求：仅输出一个 JSON 数组，长度为 '+expectedCount.toString()+'；'
+        '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
+        '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须「严格复制」对应词义文本（不要增删或改写）。';
+
+    // 简短 Few-shot 示例，用于稳定格式与风格（不长、但可示范）
+    final fewShotUser = '原词：light。词义（带索引）：【0】亮光；【1】轻的。请严格生成恰好 2 条例句，每条对应一个词义。'
+        '输出要求：仅输出一个 JSON 数组，长度为 2；'
+        '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
+        '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须严格复制对应词义文本（不要增删或改写）。';
+
+    final fewShotAssistant = '''[
+  {
+    "senseIndex": 0,
+    "senseText": "亮光",
+    "textPlain": "The room was filled with soft light.",
+    "textHtml": "The room was filled with soft light.",
+    "textTranslation": "房间里充满了柔和的光线。",
+    "grammarNote": "被动语态\r\n形容词修饰名词"
+  },
+  {
+    "senseIndex": 1,
+    "senseText": "轻的",
+    "textPlain": "The suitcase is light, so she carried it easily.",
+    "textHtml": "The suitcase is light, so she carried it easily.",
+    "textTranslation": "这个手提箱很轻，所以她轻松地提着它。",
+    "grammarNote": "形容词作表语\r\n并列句"
+  }
+]''';
+
+    // 超短的日文 ruby 示例 Few-shot（演示正确的 ruby 与键名）
+    final fewShotUserJa = '原词：明るい。词义（带索引）：【0】明亮的；【1】开朗的。请严格生成恰好 2 条例句，每条对应一个词义。'
+        '输出要求：仅输出一个 JSON 数组，长度为 2；'
+        '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
+        '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须严格复制对应词义文本（不要增删或改写）。';
+
+    final fewShotAssistantJa = '''[
+  {
+    "senseIndex": 0,
+    "senseText": "明亮的",
+    "textPlain": "この部屋はとても明るい。",
+    "textHtml": "この<ruby><rb>部屋</rb><rt>へや</rt></ruby>はとても<ruby><rb>明</rb><rt>あか</rt></ruby>るい。",
+    "textTranslation": "这个房间很明亮。",
+    "grammarNote": "主題助詞「は」标示主题\\n副词「とても」修饰形容词\\n形容词「明るい」作谓语"
+  },
+  {
+    "senseIndex": 1,
+    "senseText": "开朗的",
+    "textPlain": "彼は性格が明るい。",
+    "textHtml": "<ruby><rb>彼</rb><rt>かれ</rt></ruby>は<ruby><rb>性格</rb><rt>せいかく</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい。",
+    "textTranslation": "他性格开朗。",
+    "grammarNote": "主題助詞「は」标示主题\\n主格助词「が」标示『性格』为主语\\n形容词「明るい」作谓语"
+  }
+]''';
 
     final body = jsonEncode({
       'model': model,
       'messages': [
         {'role': 'system', 'content': system},
+        {'role': 'user', 'content': fewShotUser},
+        {'role': 'assistant', 'content': fewShotAssistant},
+        {'role': 'user', 'content': fewShotUserJa},
+        {'role': 'assistant', 'content': fewShotAssistantJa},
         {'role': 'user', 'content': user},
       ],
-      'temperature': 0.7,
+      'temperature': 0.3,
     });
 
     final resp = await http.post(uri, headers: headers, body: body);
