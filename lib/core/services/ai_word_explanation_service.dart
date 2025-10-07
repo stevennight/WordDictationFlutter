@@ -44,14 +44,14 @@ class AIWordExplanationService {
 
     final List<String> rules = [];
     if (langSource.isNotEmpty) {
-      rules.add('原文（含同义词例句的 textPlain/textHtml）统一使用 '+langSource+'。');
+      rules.add('原文（含同义词例句）统一使用 '+langSource+'。');
     } else {
-      rules.add('自动识别原文语言用于同义词例句的 textPlain/textHtml。');
+      rules.add('自动识别原文语言用于同义词例句的。');
     }
     if (langTarget.isNotEmpty) {
-      rules.add('如需译文，统一使用 '+langTarget+'。');
+      rules.add('如需译文或者说明，统一使用 '+langTarget+'。');
     } else {
-      rules.add('译文语言自动识别。');
+      rules.add('译文语言自动识别，译文与说明统一使用识别出来的语言生成。');
     }
 
     final system = [
@@ -60,30 +60,34 @@ class AIWordExplanationService {
       '风格：简洁、明确、围绕当前译文进行讲解。',
       '结构要求：严格使用以下文本标题开始各段，若内容为空则省略该段：',
       '【词解】、【重点】、【近义词】、【补充】。',
-      '词解中不需要生成例句，例句在另外的模块中生成',
-      '重点中可以包含：常用搭配/固定搭配、容易混淆的读音（如橋和箸）、正式用语说明、语境等。',
-      '近义词，如完全可互换则省略区别；如有细微区别也需说明',
+      '词解中不需要生成例句，例句在另外的模块中生成。',
+      '重点中可以包含：常用搭配、固定搭配、与其他单词容易混淆的读音、正式用语、语境等方面说明，常用搭配与固定搭配在括号内标注搭配词义，这些方面没有的部分可以省略，如果有其他方面也可以补充。',
+      '近义词，如完全可互换则省略区别部分内容；如有细微区别也需说明；近义根据区别着重生成对应的例句以及例句的译文，以帮助理解。',
+      '输出约束：仅输出一个 HTML 代码块，使用 ```html 起始与结束；不得在代码块外输出任何内容（包括说明、Markdown、JSON、标签等）。',
+      '严格遵循 Few-shot 的标题与顺序：仅使用【词解】【重点】【近义词】【补充】，不要新增标题。',
+      '如果某部分无内容，请完整省略该段标题与正文。',
+      '若无法遵守格式，请返回空字符串。',
       'HTML限制：除 ruby 外尽量使用纯文本；换行使用 <br>；不要使用 Markdown；不要包裹代码块。',
-      'ruby 规则：仅在日文例句中为汉字添加 ruby，使用 <ruby><rb>漢字</rb><rt>かな</rt></ruby>；不要为假名或拉丁字符添加 ruby。',
-      '如果除了当前词义，还有其他词义，需在【补充】中简单提及。',
+      'ruby 规则：凡出现「日文文本」且包含汉字的部分（包括【词解】【重点】【近义词】【补充】各段与示例），均为涉及汉字的词添加 ruby，使用 <ruby><rb>漢字</rb><rt>かな</rt></ruby>；不要为假名或拉丁字符添加 ruby。',
+      '如果除了当前词义，还有其他词义，需在【补充】中简单提及，若没有则完整删除这部分内容。',
       ...rules,
     ].join(' ');
 
-    final user = '原文：'+prompt+'。译文：'+answer+'。请生成遵循上述结构与格式的 HTML。';
+    final user = '原文：'+prompt+'。译文：'+answer+'。请生成遵循上述结构与格式的 HTML，并严格将完整内容置于 ```html 代码块中输出。';
 
     // Few-shot：英文与日文示例，确保结构稳定
     final fewShotUserEn = '原文：bank。译文：银行；堤岸。请生成遵循结构的 HTML。';
     final fewShotAssistantEn = [
-      '【词解】<br>名词：指提供金融服务的机构。也可指「河岸/堤岸」。在「堤岸」这一译文下的讲解侧重地理义。<br><br>',
-      '【重点】<br>与「岸边」相关的含义不常见于商业语境，注意区分。<br><br>',
+      '【词解】<br>名词：指提供金融服务的机构；也可指「河岸/堤岸」（地理义）。<br><br>',
+      '【重点】<br>常用搭配：<br>- bank account（在银行开立的账户，金融义）<br>- bank loan（由银行发放的贷款，金融义）<br>- river bank（河岸，地理义）<br>固定搭配（分别说明其词义）：<br>- bank on（固定搭配：依赖/指望；动词短语，语义与名词用法不同）<br>- bank holiday（固定搭配：法定假日；指银行及多数机构休息日，常见于英式用法）<br>常见为意义混淆（金融 vs 地理）。<br>正式用语说明：financial institution 较正式，多见于法规或文书。<br>语境：商业语境倾向金融义；自然地理语境倾向河岸义。<br><br>',
       '【近义词】<br><b>financial institution</b><br>用于正式语境，强调机构属性。<br>区别：<br>1. bank 更常用：例句：I deposited money in the bank.<br>2. financial institution 较为正式：例句：The financial institution approved my loan.<br><br>',
       '<b>shore</b><br>表示「岸」，与 bank 的地理义近。<br>区别：<br>1. bank 通常指河岸：例句：They picnicked on the bank of the river.<br>2. shore 通常指海岸：例句：We walked along the shore at sunset.'
     ].join('');
 
     final fewShotUserJa = '原文：明るい。译文：明亮的。请生成遵循结构的 HTML。';
     final fewShotAssistantJa = [
-      '【词解】<br>形容词：表示环境或物体光线充足、明度高。<br>例句：この<ruby><rb>部屋</rb><rt>へや</rt></ruby>はとても<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br><br>',
-      '【重点】<br>用于物理亮度语境；与自身发光的「<ruby><rb>輝</rb><rt>かがや</rt></ruby>く」区分，后者强调主体发光。<br><br>',
+      '【词解】<br>形容词：表示环境或物体光线充足、明度高。<br><br>',
+      '【重点】<br>常用搭配：<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>色</rb><rt>いろ</rt></ruby>（物理亮度高：环境/表面明亮）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>性格</rb><rt>せいかく</rt></ruby>（开朗、阳气：性格上的明朗）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>声</rb><rt>こえ</rt></ruby>（快活、轻快：比喻用法）<br>固定搭配：<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>未来</rb><rt>みらい</rt></ruby>（比喻：前景乐观、充满希望）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>笑顔</rb><rt>えがお</rt></ruby>（神情开朗、积极）<br>- 明るいニュース（积极向上的消息）<br>正式用语说明：书面语可用「<ruby><rb>明朗</rb><rt>めいろう</rt></ruby>」。<br>语境：区分物理亮度与性格开朗的不同用法。<br><br>',
       '【近义词】<br><b><ruby><rb>輝</rb><rt>かがや</rt></ruby>く</b><br>表示闪耀、发光。<br>区别：<br>1. 「明るい」描述环境或表面明亮：例句：<ruby><rb>道</rb><rt>みち</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>2. 「輝く」强调主体发光：例句：<ruby><rb>星</rb><rt>ほし</rt></ruby>が<ruby><rb>空</rb><rt>そら</rt></ruby>に<ruby><rb>輝</rb><rt>かがや</rt></ruby>いている。<br><br>',
       '<b><ruby><rb>光</rb><rt>ひか</rt></ruby>る</b><br>表示发光、闪耀，多用于点状或瞬时发光。<br>区别：<br>1. 「明るい」偏静态的亮度：例句：<ruby><rb>教室</rb><rt>きょうしつ</rt></ruby>は<ruby><rb>照明</rb><rt>しょうめい</rt></ruby>で<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>2. 「光る」偏动作或瞬时：例句：<ruby><rb>蛍</rb><rt>ほたる</rt></ruby>が<ruby><rb>光</rb><rt>ひか</rt></ruby>っている。<br><br>',
       '【补充】<br>在另一词义下，「明るい」可指性格开朗（例：彼は<ruby><rb>性格</rb><rt>せいかく</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい）。'
