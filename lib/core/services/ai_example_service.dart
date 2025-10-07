@@ -101,7 +101,7 @@ class AIExampleService {
     "textPlain": "The room was filled with soft light.",
     "textHtml": "The room was filled with soft light.",
     "textTranslation": "房间里充满了柔和的光线。",
-    "grammarNote": "被动语态\r\n形容词修饰名词"
+    "grammarNote": "被动语态\\n形容词修饰名词"
   },
   {
     "senseIndex": 1,
@@ -109,7 +109,7 @@ class AIExampleService {
     "textPlain": "The suitcase is light, so she carried it easily.",
     "textHtml": "The suitcase is light, so she carried it easily.",
     "textTranslation": "这个手提箱很轻，所以她轻松地提着它。",
-    "grammarNote": "形容词作表语\r\n并列句"
+    "grammarNote": "形容词作表语\\n并列句"
   }
 ]''';
 

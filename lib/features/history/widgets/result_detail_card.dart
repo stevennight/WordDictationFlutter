@@ -10,6 +10,7 @@ import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../dictation/screens/copying_screen.dart';
+import '../../../shared/utils/word_navigation_utils.dart';
 
 class ResultDetailCard extends StatefulWidget {
   final DictationResult result;
@@ -164,6 +165,44 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Detail button
+                    InkWell(
+                      onTap: () => WordNavigationUtils.openWordDetailByText(
+                        context,
+                        widget.result.prompt,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.deepPurple.withOpacity(0.3),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 14,
+                              color: Colors.deepPurple,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              '详情',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.deepPurple,
                               ),
                             ),
                           ],

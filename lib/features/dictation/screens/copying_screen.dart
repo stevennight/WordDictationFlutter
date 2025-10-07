@@ -5,6 +5,7 @@ import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
 import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
+import '../../../shared/utils/word_navigation_utils.dart';
 class CopyingScreen extends StatefulWidget {
   const CopyingScreen({super.key});
 
@@ -338,6 +339,21 @@ class _CopyingScreenState extends State<CopyingScreen> {
           ),
         
         if (provider.currentIndex > 0) const SizedBox(width: 12),
+
+        // Word detail button
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () {
+              final word = provider.currentWord;
+              if (word != null) {
+                WordNavigationUtils.openWordDetailByText(context, word.prompt);
+              }
+            },
+            icon: const Icon(Icons.info_outline),
+            label: const Text('单词详情'),
+          ),
+        ),
+        const SizedBox(width: 12),
         
         // Next/Finish button
         Expanded(
