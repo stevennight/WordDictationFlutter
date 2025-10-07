@@ -180,8 +180,8 @@ flutter_word_dictation/
 
 ## 词书示例与下载链接
 
-- 示例目录：`assets/workboook_example`
-- 示例文件：`assets/workboook_example/全能日语听说读写教程（初级下）_export_20251007_184312.json`
+ - 示例目录：[assets/workboook_example](assets/workboook_example)
+ - 示例文件：[全能日语听说读写教程（初级下）_export_20251007_184312.json](assets/workboook_example/全能日语听说读写教程（初级下）_export_20251007_184312.json)
 - 使用方法：在应用内选择“导入词书”，直接导入该 JSON 文件；或使用智能导入功能。
 - 内容说明：示例 JSON 包含单词、单元、AI生成例句与AI生成词解（GPT-5）信息。
 
