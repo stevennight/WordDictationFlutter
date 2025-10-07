@@ -21,6 +21,26 @@ class WordExplanationBatchSummary {
   });
 }
 
+class WordExplanationProgress {
+  final int current; // 已处理数量（含跳过/成功/失败）
+  final int total; // 总数
+  final Word word; // 当前处理的单词
+  final int skippedExisting; // 累计跳过数
+  final int succeeded; // 累计成功数
+  final int failed; // 累计失败数
+  final String status; // 'skipped' | 'succeeded' | 'failed'
+
+  const WordExplanationProgress({
+    required this.current,
+    required this.total,
+    required this.word,
+    required this.skippedExisting,
+    required this.succeeded,
+    required this.failed,
+    required this.status,
+  });
+}
+
 class WordExplanationBatchService {
   final WordbookService _wordbookService = WordbookService();
   final WordService _wordService = WordService();
@@ -31,6 +51,7 @@ class WordExplanationBatchService {
     bool overwriteExisting = false,
     String? sourceLanguage,
     String? targetLanguage,
+    void Function(WordExplanationProgress)? onProgress,
   }) async {
     final words = await _wordbookService.getWordbookWords(wordbookId);
     return _generateForWords(
@@ -38,6 +59,7 @@ class WordExplanationBatchService {
       overwriteExisting: overwriteExisting,
       sourceLanguage: sourceLanguage,
       targetLanguage: targetLanguage,
+      onProgress: onProgress,
     );
   }
 
@@ -46,6 +68,7 @@ class WordExplanationBatchService {
     bool overwriteExisting = false,
     String? sourceLanguage,
     String? targetLanguage,
+    void Function(WordExplanationProgress)? onProgress,
   }) async {
     final words = await _wordService.getWordsByUnitId(unitId);
     return _generateForWords(
@@ -53,6 +76,7 @@ class WordExplanationBatchService {
       overwriteExisting: overwriteExisting,
       sourceLanguage: sourceLanguage,
       targetLanguage: targetLanguage,
+      onProgress: onProgress,
     );
   }
 
@@ -61,11 +85,13 @@ class WordExplanationBatchService {
     required bool overwriteExisting,
     String? sourceLanguage,
     String? targetLanguage,
+    void Function(WordExplanationProgress)? onProgress,
   }) async {
     final ai = await AIWordExplanationService.getInstance();
     int skipped = 0;
     int ok = 0;
     int fail = 0;
+    final total = words.length;
 
     for (final w in words) {
       try {
@@ -74,6 +100,15 @@ class WordExplanationBatchService {
           final existing = await _explanationService.getByWordId(w.id!);
           if (existing != null) {
             skipped++;
+            onProgress?.call(WordExplanationProgress(
+              current: skipped + ok + fail,
+              total: total,
+              word: w,
+              skippedExisting: skipped,
+              succeeded: ok,
+              failed: fail,
+              status: 'skipped',
+            ));
             continue;
           }
         }
@@ -95,8 +130,26 @@ class WordExplanationBatchService {
         );
         await _explanationService.upsertForWord(explanation);
         ok++;
+        onProgress?.call(WordExplanationProgress(
+          current: skipped + ok + fail,
+          total: total,
+          word: w,
+          skippedExisting: skipped,
+          succeeded: ok,
+          failed: fail,
+          status: 'succeeded',
+        ));
       } catch (_) {
         fail++;
+        onProgress?.call(WordExplanationProgress(
+          current: skipped + ok + fail,
+          total: total,
+          word: w,
+          skippedExisting: skipped,
+          succeeded: ok,
+          failed: fail,
+          status: 'failed',
+        ));
       }
     }
 

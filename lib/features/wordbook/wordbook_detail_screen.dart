@@ -2273,7 +2273,10 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     final strategy = await pickAIGenerateExplanationsStrategy(context, defaultValue: 'skip');
     final overwrite = strategy == 'overwrite';
 
-    // 处理对话框（简化为不显示具体进度）
+    // 显示按单词的进度
+    final total = unitWords.length;
+    final processed = ValueNotifier<int>(0);
+    final currentWord = ValueNotifier<String>('');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -2281,11 +2284,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         title: Text('为单元「${unit.name}」生成词解'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            SizedBox(height: 8),
-            LinearProgressIndicator(),
-            SizedBox(height: 8),
-            Text('正在生成...'),
+          children: [
+            ValueListenableBuilder<int>(
+              valueListenable: processed,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: total == 0 ? 0 : value / total,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<int>(
+              valueListenable: processed,
+              builder: (context, value, _) => Text('进度：$value/$total'),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<String>(
+              valueListenable: currentWord,
+              builder: (context, w, _) => Text(w.isEmpty ? '正在生成...' : '正在生成：$w'),
+            ),
           ],
         ),
       ),
@@ -2298,6 +2313,10 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         overwriteExisting: overwrite,
         sourceLanguage: srcLangBulk,
         targetLanguage: tgtLangBulk,
+        onProgress: (p) {
+          processed.value = p.current;
+          currentWord.value = p.word.prompt;
+        },
       );
       if (mounted) {
         Navigator.of(context).pop();
