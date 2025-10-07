@@ -77,19 +77,46 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GestureDetector(
-                        onTap: () => _showFullScreenText(
-                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
-                          '提示内容',
-                        ),
-                        child: Text(
-                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            decoration: TextDecoration.underline,
-                            decorationStyle: TextDecorationStyle.dotted,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.help_outline,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          // 详情入口：放在提示图标右侧，基于原文文本
+                          IconButton(
+                            onPressed: () => WordNavigationUtils.openWordDetailByText(
+                              context,
+                              widget.result.prompt,
+                            ),
+                            icon: const Icon(Icons.info_outline, size: 18),
+                            tooltip: '详情',
+                            style: IconButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(22, 22),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _showFullScreenText(
+                                widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                                '提示内容',
+                              ),
+                              child: Text(
+                                widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                  decorationStyle: TextDecorationStyle.dotted,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -171,44 +198,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // Detail button
-                    InkWell(
-                      onTap: () => WordNavigationUtils.openWordDetailByText(
-                        context,
-                        widget.result.prompt,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.deepPurple.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.deepPurple.withOpacity(0.3),
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 14,
-                              color: Colors.deepPurple,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              '详情',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.deepPurple,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    // 已移除右侧的详情按钮，详情入口已移动至提示图标右侧
                   ],
                 ),
               ],

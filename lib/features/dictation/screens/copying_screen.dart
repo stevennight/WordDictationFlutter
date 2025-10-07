@@ -171,6 +171,20 @@ class _CopyingScreenState extends State<CopyingScreen> {
                   size: 20,
                   color: Theme.of(context).colorScheme.primary,
                 ),
+                const SizedBox(width: 4),
+                // 详情入口：放在提示图标（？图标）右侧
+                IconButton(
+                  onPressed: () {
+                    WordNavigationUtils.openWordDetailByText(context, word.prompt);
+                  },
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  tooltip: '单词详情',
+                  style: IconButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(24, 24),
+                  ),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 
                 // 词性
@@ -339,21 +353,6 @@ class _CopyingScreenState extends State<CopyingScreen> {
           ),
         
         if (provider.currentIndex > 0) const SizedBox(width: 12),
-
-        // Word detail button
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () {
-              final word = provider.currentWord;
-              if (word != null) {
-                WordNavigationUtils.openWordDetailByText(context, word.prompt);
-              }
-            },
-            icon: const Icon(Icons.info_outline),
-            label: const Text('单词详情'),
-          ),
-        ),
-        const SizedBox(width: 12),
         
         // Next/Finish button
         Expanded(
