@@ -29,6 +29,7 @@ class AIExampleService {
     final endpoint = await _configService.getAIEndpoint();
     final apiKey = await _configService.getAIApiKey();
     final model = await _configService.getAIModel();
+    final temperature = await _configService.getAITemperature();
 
     if (apiKey.isEmpty) {
       throw Exception('AI API key is not set');
@@ -43,27 +44,24 @@ class AIExampleService {
     final senses = _splitSenses(answer);
     final expectedCount = senses.length;
 
-    // Auto-detect languages when not provided
-    final autoSource = _detectSourceLanguageFromPrompt(prompt);
-    final autoTarget = _detectTargetLanguageFromAnswer(senses, answer);
-
+    // 不在程序内做语言识别：当未指定语言时，让 AI 自行识别
     final langSource = (sourceLanguage?.trim().isNotEmpty ?? false)
         ? sourceLanguage!.trim()
-        : autoSource;
+        : '';
     final langTarget = (targetLanguage?.trim().isNotEmpty ?? false)
         ? targetLanguage!.trim()
-        : autoTarget;
+        : '';
 
     final List<String> rules = [];
     if (langSource.isNotEmpty) {
       rules.add('textPlain 与 textHtml 使用 '+langSource+'。');
     } else {
-      rules.add('自动识别原文语言并用于 textPlain 与 textHtml。');
+      rules.add('自动识别原词语言并用于 textPlain 与 textHtml。');
     }
     if (langTarget.isNotEmpty) {
       rules.add('textTranslation 使用 '+langTarget+'，提供完整句子译文。');
     } else {
-      rules.add('自动识别最合适的译文语言，并提供完整句子译文。');
+      rules.add('自动识别最合适的词义语言，并提供完整句子译文。');
     }
 
     final baseSystem = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
@@ -150,7 +148,7 @@ class AIExampleService {
         {'role': 'assistant', 'content': fewShotAssistantJa},
         {'role': 'user', 'content': user},
       ],
-      'temperature': 0.3,
+      'temperature': temperature,
     });
 
     final resp = await http.post(uri, headers: headers, body: body);
@@ -224,33 +222,4 @@ class AIExampleService {
     return null;
   }
 
-  // --- Language detection helpers ---
-  String _detectSourceLanguageFromPrompt(String prompt) {
-    final hasHiragana = RegExp(r'[\u3040-\u309F]').hasMatch(prompt);
-    final hasKatakana = RegExp(r'[\u30A0-\u30FF]').hasMatch(prompt);
-    final hasKanji = RegExp(r'[\u4E00-\u9FFF]').hasMatch(prompt);
-    if (hasHiragana || hasKatakana || hasKanji) {
-      return 'Japanese';
-    }
-    // If contains Chinese-only Han and typical Chinese punctuation, consider Chinese
-    final chinesePunct = RegExp(r'[，。！？；：（）《》“”]');
-    if (!hasHiragana && !hasKatakana && hasKanji && chinesePunct.hasMatch(prompt)) {
-      return 'Chinese';
-    }
-    return 'English';
-  }
-
-  String _detectTargetLanguageFromAnswer(List<String> senses, String answer) {
-    bool containsChinese(String s) => RegExp(r'[\u4E00-\u9FFF]').hasMatch(s);
-    bool containsKana(String s) => RegExp(r'[\u3040-\u309F\u30A0-\u30FF]').hasMatch(s);
-
-    if (containsChinese(answer) || senses.any(containsChinese)) {
-      return 'Chinese';
-    }
-    if (senses.any(containsKana)) {
-      // If meanings are in Japanese, default translation to English unless otherwise specified
-      return 'English';
-    }
-    return 'English';
-  }
 }

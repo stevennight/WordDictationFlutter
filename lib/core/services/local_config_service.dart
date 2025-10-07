@@ -339,6 +339,23 @@ class LocalConfigService {
     await _saveConfig();
   }
 
+  Future<double> getAITemperature() async {
+    final v = _config?['ai_temperature'];
+    if (v is num) return v.toDouble();
+    if (v is String) {
+      final parsed = double.tryParse(v);
+      if (parsed != null) return parsed.clamp(0.0, 1.0);
+    }
+    return 0.3; // default
+  }
+
+  Future<void> setAITemperature(double value) async {
+    if (value.isNaN) value = 0.3;
+    value = value.clamp(0.0, 1.0);
+    _config!['ai_temperature'] = value;
+    await _saveConfig();
+  }
+
   // Generic setting methods
   Future<void> setSetting<T>(String key, T value) async {
     _config![key] = value;

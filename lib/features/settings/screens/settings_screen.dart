@@ -116,6 +116,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.tune),
                   onTap: () => _showAIConcurrencyDialog(),
                 ),
+                SettingsTile(
+                  title: 'Temperature',
+                  subtitle: '控制生成的随机性（0.0–1.0）',
+                  leading: const Icon(Icons.thermostat),
+                  onTap: () => _showAITemperatureDialog(),
+                ),
               ],
             ),
 
@@ -441,6 +447,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('并发生成数已保存：$clamped')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAITemperatureDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAITemperature();
+    final controller = TextEditingController(text: current.toString());
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Temperature'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Temperature（0.0–1.0）',
+            hintText: '例如：0.3',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final txt = controller.text.trim();
+              final parsed = double.tryParse(txt);
+              final value = (parsed ?? current).clamp(0.0, 1.0);
+              await config.setAITemperature(value);
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Temperature 已保存：$value')),
                 );
               }
             },

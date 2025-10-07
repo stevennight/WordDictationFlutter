@@ -508,6 +508,94 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
     final ok = await _ensureAIConfiguredOrRedirect();
     if (!ok) return;
 
+    // 语言选择：自动识别或手动指定（整本生成）
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final TextEditingController sourceCustomController = TextEditingController();
+    final TextEditingController targetCustomController = TextEditingController();
+    final bool langProceed = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: const Text('选择语言（整本生成）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('原文自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '原文语言（常用）'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('译文自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '译文语言（常用）'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (sourceDropdown == 'custom')
+                      TextField(
+                        controller: sourceCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '原文语言（自定义代码，可选）',
+                          hintText: '如 ja, zh-CN, en-US，留空则自动或常用选择',
+                        ),
+                      ),
+                    if (targetDropdown == 'custom')
+                      TextField(
+                        controller: targetCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '译文语言（自定义代码，可选）',
+                          hintText: '如 zh, en-GB，留空则自动或常用选择',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('开始')),
+                ],
+              ),
+            );
+          },
+        ) ?? false;
+    if (!langProceed) return;
+    final srcLangBulk = sourceDropdown == 'custom'
+        ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
+        : (sourceDropdown == 'auto' ? null : sourceDropdown);
+    final tgtLangBulk = targetDropdown == 'custom'
+        ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
+        : (targetDropdown == 'auto' ? null : targetDropdown);
+
     final words = await _wordbookService.getWordbookWords(selected!.id!);
     if (words.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -581,8 +669,8 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
             final examples = await ai.generateExamples(
               prompt: w.prompt,
               answer: w.answer,
-              sourceLanguage: null,
-              targetLanguage: null,
+              sourceLanguage: srcLangBulk,
+              targetLanguage: tgtLangBulk,
             );
 
             final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
