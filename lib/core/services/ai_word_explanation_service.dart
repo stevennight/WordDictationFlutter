@@ -80,16 +80,16 @@ class AIWordExplanationService {
     final fewShotAssistantEn = [
       '【词解】<br>名词：指提供金融服务的机构；也可指「河岸/堤岸」（地理义）。<br><br>',
       '【重点】<br>常用搭配：<br>- bank account（在银行开立的账户，金融义）<br>- bank loan（由银行发放的贷款，金融义）<br>- river bank（河岸，地理义）<br>固定搭配（分别说明其词义）：<br>- bank on（固定搭配：依赖/指望；动词短语，语义与名词用法不同）<br>- bank holiday（固定搭配：法定假日；指银行及多数机构休息日，常见于英式用法）<br>常见为意义混淆（金融 vs 地理）。<br>正式用语说明：financial institution 较正式，多见于法规或文书。<br>语境：商业语境倾向金融义；自然地理语境倾向河岸义。<br><br>',
-      '【近义词】<br><b>financial institution</b><br>用于正式语境，强调机构属性。<br>区别：<br>1. bank 更常用：例句：I deposited money in the bank.<br>2. financial institution 较为正式：例句：The financial institution approved my loan.<br><br>',
-      '<b>shore</b><br>表示「岸」，与 bank 的地理义近。<br>区别：<br>1. bank 通常指河岸：例句：They picnicked on the bank of the river.<br>2. shore 通常指海岸：例句：We walked along the shore at sunset.'
+      '【近义词】<br><b>financial institution</b><br>用于正式语境，强调机构属性。<br>区别：<br>1. bank 更常用：<br>例句：I deposited money in the bank.<br>译文：我在银行存了钱。<br>2. financial institution 较为正式：<br>例句：The financial institution approved my loan.<br>译文：该金融机构批准了我的贷款。<br><br>',
+      '<b>shore</b><br>表示「岸」，与 bank 的地理义近。<br>区别：<br>1. bank 通常指河岸：<br>例句：They picnicked on the bank of the river.<br>译文：他们在河岸边野餐。<br>2. shore 通常指海岸：<br>例句：We walked along the shore at sunset.<br>译文：我们在日落时沿着海岸散步。'
     ].join('');
 
     final fewShotUserJa = '原文：明るい。译文：明亮的。请生成遵循结构的 HTML。';
     final fewShotAssistantJa = [
       '【词解】<br>形容词：表示环境或物体光线充足、明度高。<br><br>',
       '【重点】<br>常用搭配：<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>色</rb><rt>いろ</rt></ruby>（物理亮度高：环境/表面明亮）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>性格</rb><rt>せいかく</rt></ruby>（开朗、阳气：性格上的明朗）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>声</rb><rt>こえ</rt></ruby>（快活、轻快：比喻用法）<br>固定搭配：<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>未来</rb><rt>みらい</rt></ruby>（比喻：前景乐观、充满希望）<br>- <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>笑顔</rb><rt>えがお</rt></ruby>（神情开朗、积极）<br>- 明るいニュース（积极向上的消息）<br>正式用语说明：书面语可用「<ruby><rb>明朗</rb><rt>めいろう</rt></ruby>」。<br>语境：区分物理亮度与性格开朗的不同用法。<br><br>',
-      '【近义词】<br><b><ruby><rb>輝</rb><rt>かがや</rt></ruby>く</b><br>表示闪耀、发光。<br>区别：<br>1. 「明るい」描述环境或表面明亮：例句：<ruby><rb>道</rb><rt>みち</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>2. 「輝く」强调主体发光：例句：<ruby><rb>星</rb><rt>ほし</rt></ruby>が<ruby><rb>空</rb><rt>そら</rt></ruby>に<ruby><rb>輝</rb><rt>かがや</rt></ruby>いている。<br><br>',
-      '<b><ruby><rb>光</rb><rt>ひか</rt></ruby>る</b><br>表示发光、闪耀，多用于点状或瞬时发光。<br>区别：<br>1. 「明るい」偏静态的亮度：例句：<ruby><rb>教室</rb><rt>きょうしつ</rt></ruby>は<ruby><rb>照明</rb><rt>しょうめい</rt></ruby>で<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>2. 「光る」偏动作或瞬时：例句：<ruby><rb>蛍</rb><rt>ほたる</rt></ruby>が<ruby><rb>光</rb><rt>ひか</rt></ruby>っている。<br><br>',
+      '【近义词】<br><b><ruby><rb>輝</rb><rt>かがや</rt></ruby>く</b><br>表示闪耀、发光。<br>区别：<br>1. 「明るい」描述环境或表面明亮：<br>例句：<ruby><rb>道</rb><rt>みち</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>译文：这条路很明亮。<br>2. 「輝く」强调主体发光：<br>例句：<ruby><rb>星</rb><rt>ほし</rt></ruby>が<ruby><rb>空</rb><rt>そら</rt></ruby>に<ruby><rb>輝</rb><rt>かがや</rt></ruby>いている。<br>译文：星星在天空中闪耀。<br><br>',
+      '<b><ruby><rb>光</rb><rt>ひか</rt></ruby>る</b><br>表示发光、闪耀，多用于点状或瞬时发光。<br>区别：<br>1. 「明るい」偏静态的亮度：<br>例句：<ruby><rb>教室</rb><rt>きょうしつ</rt></ruby>は<ruby><rb>照明</rb><rt>しょうめい</rt></ruby>で<ruby><rb>明</rb><rt>あか</rt></ruby>るい。<br>译文：教室因照明而明亮。<br>2. 「光る」偏动作或瞬时：<br>例句：<ruby><rb>蛍</rb><rt>ほたる</rt></ruby>が<ruby><rb>光</rb><rt>ひか</rt></ruby>っている。<br>译文：萤火虫在发光。<br><br>'
       '【补充】<br>在另一词义下，「明るい」可指性格开朗（例：彼は<ruby><rb>性格</rb><rt>せいかく</rt></ruby>が<ruby><rb>明</rb><rt>あか</rt></ruby>るい）。'
     ].join('');
 
