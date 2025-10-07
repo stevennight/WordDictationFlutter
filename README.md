@@ -180,10 +180,17 @@ flutter_word_dictation/
 
 ## 词书示例与下载链接
 
- - 示例目录：[assets/workboook_example](assets/workboook_example)
- - 示例文件：[全能日语听说读写教程（初级下）_export_20251007_184312.json](assets/workboook_example/全能日语听说读写教程（初级下）_export_20251007_184312.json)
+- 示例目录：[assets/workboook_example](assets/workboook_example)
+
+### 词书示例
+- 示例文件：[全能日语听说读写教程（初级下）_export_20251007_203709.json](assets/workboook_example/全能日语听说读写教程（初级下）_export_20251007_203709.json)
 - 使用方法：在应用内选择“导入词书”，直接导入该 JSON 文件；或使用智能导入功能。
 - 内容说明：示例 JSON 包含单词、单元、AI生成例句与AI生成词解（GPT-5）信息。
+
+### 单元导入示例
+- 示例文件：[第01课（网上课程、网上教材 第13课）.xlsx](assets/workboook_example/%E7%AC%AC01%E8%AF%BE%EF%BC%88%E7%BD%91%E4%B8%8A%E8%AF%BE%E7%A8%8B%E3%80%81%E7%BD%91%E4%B8%8A%E6%95%99%E6%9D%90%20%E7%AC%AC13%E8%AF%BE%EF%BC%89.xlsx)
+- 使用方法：在应用内选择“导入单元”，直接导入该 Excel 文件。
+- 内容说明：示例 Excel 文件包含单词信息。
 
 ## 云同步功能说明
 
