@@ -452,11 +452,6 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_examples_word_id ON example_sentences (word_id)');
     }
 
-    if (oldVersion < 12 && newVersion >= 12) {
-      // Add text_translation column to example_sentences
-      await db.execute('ALTER TABLE example_sentences ADD COLUMN text_translation TEXT');
-    }
-
     if (oldVersion < 13 && newVersion >= 13) {
       // Add grammar_note column to example_sentences
       await db.execute('ALTER TABLE example_sentences ADD COLUMN grammar_note TEXT');
