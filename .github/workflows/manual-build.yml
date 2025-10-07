@@ -101,11 +101,12 @@ jobs:
       - name: Create key.properties
         run: |
           if [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -f android/app/upload-keystore.jks ]; then
-            echo "storeFile=android/app/upload-keystore.jks" > key.properties
-            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> key.properties
-            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
-            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
-            echo "key.properties created"
+            mkdir -p android
+            echo "storeFile=upload-keystore.jks" > android/key.properties
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> android/key.properties
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
+            echo "android/key.properties created"
           else
             echo "Android signing secrets missing or keystore not restored; aborting release build"
             exit 1

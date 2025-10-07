@@ -32,8 +32,13 @@ call flutter pub get
 echo Dependencies get completed
 echo.
 
+REM Show Gradle signing report to confirm which keystore is used
+echo [5/6] Printing Gradle signing report...
+call .\android\gradlew.bat -p android :app:signingReport
+echo.
+
 REM Build APK
-echo [5/5] Building Android APK...
+echo [6/6] Building Android APK...
 echo Building release APK, please wait...
 call flutter build apk --release
 echo.

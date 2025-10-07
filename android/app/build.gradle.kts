@@ -34,7 +34,10 @@ android {
     }
 
     // Load release signing config from key.properties when available
-    val keystorePropsFile = rootProject.file("key.properties")
+    // Prefer android/key.properties; fallback to project root key.properties if present
+    val keystorePropsFileAndroid = rootProject.file("key.properties")
+    val keystorePropsFileRoot = rootProject.rootDir.parentFile?.resolve("key.properties")
+    val keystorePropsFile = if (keystorePropsFileAndroid.exists()) keystorePropsFileAndroid else keystorePropsFileRoot ?: keystorePropsFileAndroid
     val keystoreProps = Properties().apply {
         if (keystorePropsFile.exists()) {
             load(FileInputStream(keystorePropsFile))
