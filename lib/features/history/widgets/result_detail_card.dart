@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../../../shared/utils/path_utils.dart';
 import '../../../core/services/session_file_service.dart';
+import '../../../core/services/image_cache_service.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
@@ -480,8 +481,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
   }
 
   Widget _buildImage(String imagePath) {
-    return FutureBuilder<File?>(
-      future: _getImageFile(imagePath),
+    return FutureBuilder<Uint8List?> (
+      future: ImageCacheService.loadBytesForPath(imagePath),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -491,9 +492,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
             ),
           );
         }
-        
-        final file = snapshot.data;
-        if (file == null || !file.existsSync()) {
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
           return Container(
             color: Colors.grey[200],
             child: const Center(
@@ -519,8 +519,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
           );
         }
 
-        return Image.file(
-          file,
+        return Image.memory(
+          bytes,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) {
             return Container(
