@@ -5,11 +5,13 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../../../shared/utils/path_utils.dart';
 import '../../../core/services/session_file_service.dart';
+import '../../../core/services/image_cache_service.dart';
 
 import '../../../shared/models/dictation_result.dart';
 import '../../../shared/models/word.dart';
 import '../../../shared/providers/dictation_provider.dart';
 import '../../dictation/screens/copying_screen.dart';
+import '../../../shared/utils/word_navigation_utils.dart';
 
 class ResultDetailCard extends StatefulWidget {
   final DictationResult result;
@@ -76,19 +78,46 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GestureDetector(
-                        onTap: () => _showFullScreenText(
-                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
-                          '提示内容',
-                        ),
-                        child: Text(
-                          widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            decoration: TextDecoration.underline,
-                            decorationStyle: TextDecorationStyle.dotted,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.help_outline,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          // 详情入口：放在提示图标右侧，基于原文文本
+                          IconButton(
+                            onPressed: () => WordNavigationUtils.openWordDetailByText(
+                              context,
+                              widget.result.prompt,
+                            ),
+                            icon: const Icon(Icons.info_outline, size: 18),
+                            tooltip: '详情',
+                            style: IconButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(22, 22),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _showFullScreenText(
+                                widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                                '提示内容',
+                              ),
+                              child: Text(
+                                widget.dictationDirection == 0 ? widget.result.prompt : widget.result.answer,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                  decorationStyle: TextDecorationStyle.dotted,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -170,6 +199,7 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
                         ),
                       ),
                     ),
+                    // 已移除右侧的详情按钮，详情入口已移动至提示图标右侧
                   ],
                 ),
               ],
@@ -451,8 +481,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
   }
 
   Widget _buildImage(String imagePath) {
-    return FutureBuilder<File?>(
-      future: _getImageFile(imagePath),
+    return FutureBuilder<Uint8List?> (
+      future: ImageCacheService.loadBytesForPath(imagePath),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -462,9 +492,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
             ),
           );
         }
-        
-        final file = snapshot.data;
-        if (file == null || !file.existsSync()) {
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
           return Container(
             color: Colors.grey[200],
             child: const Center(
@@ -490,8 +519,8 @@ class _ResultDetailCardState extends State<ResultDetailCard> {
           );
         }
 
-        return Image.file(
-          file,
+        return Image.memory(
+          bytes,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) {
             return Container(

@@ -5,6 +5,7 @@ import '../../../shared/providers/dictation_provider.dart';
 import '../../../shared/widgets/handwriting_canvas.dart';
 import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
 import '../widgets/dictation_progress.dart';
+import '../../../shared/utils/word_navigation_utils.dart';
 class CopyingScreen extends StatefulWidget {
   const CopyingScreen({super.key});
 
@@ -168,6 +169,20 @@ class _CopyingScreenState extends State<CopyingScreen> {
                 Icon(
                   Icons.quiz,
                   size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
+                // 详情入口：放在提示图标（？图标）右侧
+                IconButton(
+                  onPressed: () {
+                    WordNavigationUtils.openWordDetailByText(context, word.prompt);
+                  },
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  tooltip: '单词详情',
+                  style: IconButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(24, 24),
+                  ),
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(width: 8),

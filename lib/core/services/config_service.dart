@@ -171,4 +171,56 @@ class ConfigService {
   Future<void> setSetting<T>(String key, T value) async {
     await _localConfig!.setSetting(key, value);
   }
+
+  // AI example generation settings
+  Future<String> getAIEndpoint() async {
+    return await _localConfig!.getSetting<String>('ai_endpoint') ?? 'https://api.openai.com/v1';
+  }
+
+  Future<void> setAIEndpoint(String endpoint) async {
+    await _localConfig!.setSetting<String>('ai_endpoint', endpoint);
+  }
+
+  Future<String> getAIApiKey() async {
+    return await _localConfig!.getSetting<String>('ai_api_key') ?? '';
+  }
+
+  Future<void> setAIApiKey(String key) async {
+    await _localConfig!.setSetting<String>('ai_api_key', key);
+  }
+
+  Future<String> getAIModel() async {
+    return await _localConfig!.getSetting<String>('ai_model') ?? 'gpt-4o-mini';
+  }
+
+  Future<void> setAIModel(String model) async {
+    await _localConfig!.setSetting<String>('ai_model', model);
+  }
+
+  // AI concurrency settings
+  Future<int> getAIConcurrency() async {
+    return await _localConfig!.getSetting<int>('ai_concurrency') ?? 2;
+  }
+
+  Future<void> setAIConcurrency(int value) async {
+    if (value < 1) value = 1;
+    await _localConfig!.setSetting<int>('ai_concurrency', value);
+  }
+
+  // AI temperature setting
+  Future<double> getAITemperature() async {
+    final v = await _localConfig!.getSetting<dynamic>('ai_temperature');
+    if (v is num) return v.toDouble().clamp(0.0, 1.0);
+    if (v is String) {
+      final parsed = double.tryParse(v);
+      if (parsed != null) return parsed.clamp(0.0, 1.0);
+    }
+    return 0.3; // default
+  }
+
+  Future<void> setAITemperature(double value) async {
+    if (value.isNaN) value = 0.3;
+    value = value.clamp(0.0, 1.0);
+    await _localConfig!.setSetting<double>('ai_temperature', value);
+  }
 }

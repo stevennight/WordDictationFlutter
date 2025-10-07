@@ -87,6 +87,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             
             const SizedBox(height: 16),
+            // AI settings section
+            SettingsSection(
+              title: 'AI 设置',
+              icon: Icons.auto_awesome,
+              children: [
+                SettingsTile(
+                  title: 'API Key',
+                  subtitle: '配置调用服务所需的密钥',
+                  leading: const Icon(Icons.vpn_key),
+                  onTap: () => _showAIKeyDialog(),
+                ),
+                SettingsTile(
+                  title: 'Endpoint',
+                  subtitle: '配置 API 接口地址',
+                  leading: const Icon(Icons.link),
+                  onTap: () => _showAIEndpointDialog(),
+                ),
+                SettingsTile(
+                  title: 'Model',
+                  subtitle: '配置模型名称',
+                  leading: const Icon(Icons.memory),
+                  onTap: () => _showAIModelDialog(),
+                ),
+                SettingsTile(
+                  title: '并发生成数',
+                  subtitle: '批量生成时的并发请求数量',
+                  leading: const Icon(Icons.tune),
+                  onTap: () => _showAIConcurrencyDialog(),
+                ),
+                SettingsTile(
+                  title: 'Temperature',
+                  subtitle: '控制生成的随机性（0.0–1.0）',
+                  leading: const Icon(Icons.thermostat),
+                  onTap: () => _showAITemperatureDialog(),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
             
             // Data management section
             SettingsSection(
@@ -254,6 +293,209 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showAIKeyDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIApiKey();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 API Key'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'API Key',
+            hintText: '请输入密钥',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+          obscureText: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIApiKey(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('API Key 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIEndpointDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIEndpoint();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Endpoint'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Endpoint',
+            hintText: '例如：https://api.openai.com/v1',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIEndpoint(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Endpoint 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIModelDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIModel();
+    final controller = TextEditingController(text: current);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Model'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Model',
+            hintText: '例如：gpt-4o-mini',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await config.setAIModel(controller.text.trim());
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Model 已保存')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAIConcurrencyDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAIConcurrency();
+    final controller = TextEditingController(text: current.toString());
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置并发生成数'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '并发数（1-32）',
+            hintText: '例如：2',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final parsed = int.tryParse(controller.text.trim()) ?? current;
+              final clamped = parsed.clamp(1, 32);
+              await config.setAIConcurrency(clamped);
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('并发生成数已保存：$clamped')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAITemperatureDialog() async {
+    final config = await ConfigService.getInstance();
+    final current = await config.getAITemperature();
+    final controller = TextEditingController(text: current.toString());
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('设置 Temperature'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Temperature（0.0–1.0）',
+            hintText: '例如：0.3',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final txt = controller.text.trim();
+              final parsed = double.tryParse(txt);
+              final value = (parsed ?? current).clamp(0.0, 1.0);
+              await config.setAITemperature(value);
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Temperature 已保存：$value')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
       ),
     );
   }

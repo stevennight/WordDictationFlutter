@@ -3,7 +3,7 @@
 class AppVersion {
   /// 应用版本号
   /// 格式：major.minor.patch[-prerelease]
-  static const String version = '1.1.3';
+  static const String version = '1.2.0';
   
   /// 构建号
   /// 用于区分同一版本的不同构建

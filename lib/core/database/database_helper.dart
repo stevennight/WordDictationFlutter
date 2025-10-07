@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 10,
+      version: 15,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -129,7 +129,7 @@ class DatabaseHelper {
         wordbook_id INTEGER,
         unit_id INTEGER,
         FOREIGN KEY (session_id) REFERENCES dictation_sessions (session_id),
-        FOREIGN KEY (word_id) REFERENCES words (id)
+      FOREIGN KEY (word_id) REFERENCES words (id)
       )
     ''');
 
@@ -142,6 +142,24 @@ class DatabaseHelper {
         key TEXT UNIQUE NOT NULL,
         value TEXT NOT NULL,
         updated_at INTEGER NOT NULL
+      )
+    ''');
+
+    // Create example_sentences table
+    await db.execute('''
+      CREATE TABLE example_sentences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER NOT NULL,
+        sense_index INTEGER NOT NULL DEFAULT 0,
+        sense_text TEXT NOT NULL DEFAULT '',
+        text_plain TEXT NOT NULL,
+        text_html TEXT NOT NULL,
+        text_translation TEXT,
+        grammar_note TEXT,
+        source_model TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (word_id) REFERENCES words (id)
       )
     ''');
 
@@ -158,6 +176,21 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_results_word_id ON dictation_results (word_id)');
     // Note: session_words index removed
     await db.execute('CREATE INDEX idx_settings_key ON app_settings (key)');
+    await db.execute('CREATE INDEX idx_examples_word_id ON example_sentences (word_id)');
+
+    // Create word_explanations table (HTML content)
+    await db.execute('''
+      CREATE TABLE word_explanations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word_id INTEGER NOT NULL,
+        html TEXT NOT NULL,
+        source_model TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (word_id) REFERENCES words (id)
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_word_explanations_word_id ON word_explanations (word_id)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -397,6 +430,54 @@ class DatabaseHelper {
       // Add MD5 hash fields for image files
       await db.execute('ALTER TABLE dictation_results ADD COLUMN original_image_md5 TEXT');
       await db.execute('ALTER TABLE dictation_results ADD COLUMN annotated_image_md5 TEXT');
+    }
+
+    if (oldVersion < 11 && newVersion >= 11) {
+      // Add example_sentences table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS example_sentences (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          word_id INTEGER NOT NULL,
+          sense_index INTEGER NOT NULL DEFAULT 0,
+          text_plain TEXT NOT NULL,
+          text_html TEXT NOT NULL,
+          text_translation TEXT,
+          source_model TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (word_id) REFERENCES words (id)
+        )
+      ''');
+
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_examples_word_id ON example_sentences (word_id)');
+    }
+
+    if (oldVersion < 13 && newVersion >= 13) {
+      // Add grammar_note column to example_sentences
+      await db.execute('ALTER TABLE example_sentences ADD COLUMN grammar_note TEXT');
+    }
+
+    if (oldVersion < 14 && newVersion >= 14) {
+      // Add sense_text column to example_sentences for stable sense association
+      await db.execute('ALTER TABLE example_sentences ADD COLUMN sense_text TEXT');
+      // Optional: backfill sense_text with empty string; leave to application logic
+      // Note: We intentionally avoid NOT NULL in migration to accommodate existing rows
+    }
+
+    if (oldVersion < 15 && newVersion >= 15) {
+      // Add word_explanations table to store AI-generated word explanations (HTML)
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS word_explanations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          word_id INTEGER NOT NULL,
+          html TEXT NOT NULL,
+          source_model TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (word_id) REFERENCES words (id)
+        )
+      ''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_word_explanations_word_id ON word_explanations (word_id)');
     }
   }
 

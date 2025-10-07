@@ -61,6 +61,18 @@ class WordService {
   /// Delete a word
   Future<int> deleteWord(int id) async {
     final db = await _dbHelper.database;
+    // 先删除关联例句与词解，避免孤儿数据
+    await db.delete(
+      'example_sentences',
+      where: 'word_id = ?',
+      whereArgs: [id],
+    );
+    await db.delete(
+      'word_explanations',
+      where: 'word_id = ?',
+      whereArgs: [id],
+    );
+
     return await db.delete(
       'words',
       where: 'id = ?',
@@ -71,6 +83,9 @@ class WordService {
   /// Delete all words
   Future<int> deleteAllWords() async {
     final db = await _dbHelper.database;
+    // 清理所有单词的例句与词解
+    await db.delete('example_sentences');
+    await db.delete('word_explanations');
     return await db.delete('words');
   }
 
@@ -127,5 +142,17 @@ class WordService {
       [category],
     );
     return result.first['count'] as int;
+  }
+
+  /// Get words by unit id
+  Future<List<Word>> getWordsByUnitId(int unitId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'words',
+      where: 'unit_id = ?',
+      whereArgs: [unitId],
+      orderBy: 'created_at ASC',
+    );
+    return List.generate(maps.length, (i) => Word.fromMap(maps[i]));
   }
 }

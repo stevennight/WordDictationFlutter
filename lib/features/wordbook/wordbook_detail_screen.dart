@@ -3,19 +3,31 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_word_dictation/features/word/word_detail_screen.dart';
+import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/database/database_helper.dart';
 import '../../core/services/unit_service.dart';
 import '../../core/services/wordbook_service.dart';
+import '../../core/services/ai_example_service.dart';
+import '../../core/services/word_explanation_batch_service.dart';
+import '../../core/services/ai_word_explanation_service.dart';
+import '../../core/services/word_explanation_service.dart';
+import '../../core/services/example_sentence_service.dart';
+import '../../core/services/config_service.dart';
 import '../../shared/models/unit.dart';
 import '../../shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
+import '../../shared/widgets/ai_generate_examples_dialog.dart';
+import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
+import '../../shared/widgets/ai_generate_explanations_strategy_dialog.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
+import '../settings/screens/settings_screen.dart';
 
 enum UnitSortType {
   nameAsc,
@@ -71,6 +83,14 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       // 静默处理错误，不影响页面加载
     }
   }
+  
+  void _openWordDetail(Word word) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => WordDetailScreen(word: word)),
+    );
+  }
+  
 
   void _organizeWordsByUnit() {
     _unitWords.clear();
@@ -783,6 +803,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
+                  onTap: () => _openWordDetail(word),
                   leading: CircleAvatar(
                     backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
@@ -842,6 +863,11 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                         icon: const Icon(Icons.edit),
                         onPressed: () => _startWordCopying(word),
                         tooltip: '抄写',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.auto_awesome),
+                        onPressed: () => _showAIGenerateExamplesDialogShared(word),
+                        tooltip: 'AI生成例句',
                       ),
                       if (word.category != null)
                         Chip(
@@ -961,6 +987,23 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                            trailing: PopupMenuButton<String>(
                              onSelected: (value) => _handleUnitAction(value, unit, unitWords),
                               itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'generate_explanations_unit',
+                                  child: const ListTile(
+                                    leading: Icon(Icons.psychology),
+                                    title: Text('AI生成词解'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'generate_examples_unit',
+                                  child: const ListTile(
+                                    leading: Icon(Icons.auto_awesome),
+                                    title: Text('为该单元生成例句'),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                                const PopupMenuDivider(),
                                 const PopupMenuItem(
                                   value: 'view',
                                   child: ListTile(
@@ -1048,6 +1091,312 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     }
   }
 
+  void _showAIGenerateExamplesDialog(Word word) async {
+    final promptController = TextEditingController(text: word.prompt);
+    final answerController = TextEditingController(text: word.answer);
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final sourceCustomController = TextEditingController();
+    final targetCustomController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('AI生成例句'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: promptController,
+                      decoration: const InputDecoration(
+                        labelText: '原文',
+                        hintText: '请输入原文文本',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: answerController,
+                      decoration: const InputDecoration(
+                        labelText: '译文（多义用;或；分隔）',
+                        hintText: '示例：意思1;意思2;意思3',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(
+                              labelText: '原文语言（常用）',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(
+                              labelText: '译文语言（常用）',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: sourceCustomController,
+                            decoration: const InputDecoration(
+                              labelText: '自定义原文语言代码（可选）',
+                              hintText: '如 ja, zh-CN, en-US，留空则使用上方选择或自动',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: targetCustomController,
+                            decoration: const InputDecoration(
+                              labelText: '自定义译文语言代码（可选）',
+                              hintText: '如 zh, en-GB，留空则使用上方选择或自动',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('取消'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final prompt = promptController.text.trim();
+                    final answer = answerController.text.trim();
+                    if (prompt.isEmpty || answer.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请填写原文与译文')),
+                      );
+                      return;
+                    }
+
+                    try {
+                      final ai = await AIExampleService.getInstance();
+                      final srcCustom = sourceCustomController.text.trim();
+                      final tgtCustom = targetCustomController.text.trim();
+                      final srcLang = srcCustom.isNotEmpty
+                          ? srcCustom
+                          : (sourceDropdown == 'auto' ? null : sourceDropdown);
+                      final tgtLang = tgtCustom.isNotEmpty
+                          ? tgtCustom
+                          : (targetDropdown == 'auto' ? null : targetDropdown);
+                      // 校验AI配置
+                      final ok = await _ensureAIConfiguredOrRedirect();
+                      if (!ok) return;
+
+                      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
+                      final chosen = await showDialog<String>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('生成策略'),
+                          content: const Text('选择生成策略：追加、覆盖或在已存在例句时跳过。'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.of(context).pop('append'), child: const Text('追加')),
+                            TextButton(onPressed: () => Navigator.of(context).pop('overwrite'), child: const Text('覆盖')),
+                            TextButton(onPressed: () => Navigator.of(context).pop('skip'), child: const Text('跳过')),
+                          ],
+                        ),
+                      ) ?? 'append';
+
+                      final svc = ExampleSentenceService();
+                      if (chosen == 'skip') {
+                        final existing = await svc.getExamplesByWordId(word.id!);
+                        if (existing.isNotEmpty) {
+                          if (mounted) {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
+                            );
+                          }
+                          return;
+                        }
+                      }
+
+                      if (chosen == 'overwrite') {
+                        await svc.deleteByWordId(word.id!);
+                      }
+
+                      final examples = await ai.generateExamples(
+                        prompt: prompt,
+                        answer: answer,
+                        sourceLanguage: srcLang,
+                        targetLanguage: tgtLang,
+                      );
+
+                      // 绑定wordId并保存
+                      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+                      await svc.insertExamples(withWordId);
+
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
+                        );
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('生成失败：$e')),
+                      );
+                    }
+                  },
+                  child: const Text('生成并保存'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 共享对话框版本：统一两处的参数收集与生成逻辑
+  void _showAIGenerateExamplesDialogShared(Word word) async {
+    final req = await showDialog<AIGenerateExamplesRequest>(
+      context: context,
+      builder: (context) => AIGenerateExamplesDialog(
+        initialPrompt: word.prompt,
+        initialAnswer: word.answer,
+      ),
+    );
+
+    if (req == null) return;
+
+    try {
+      // 校验AI配置
+      final ok = await _ensureAIConfiguredOrRedirect();
+      if (!ok) return;
+
+      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
+      final chosen = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+
+      final svc = ExampleSentenceService();
+      if (chosen == 'skip') {
+        final existing = await svc.getExamplesByWordId(word.id!);
+        if (existing.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (chosen == 'overwrite') {
+        await svc.deleteByWordId(word.id!);
+      }
+
+      // 线性进度（单词粒度，单个词 total=1）
+      final total = 1;
+      final progress = ValueNotifier<int>(0);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('正在生成例句'),
+          content: ValueListenableBuilder<int>(
+            valueListenable: progress,
+            builder: (context, done, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: total == 0 ? 0 : done / total),
+                const SizedBox(height: 8),
+                Text('进度：$done / $total'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final ai = await AIExampleService.getInstance();
+      final examples = await ai.generateExamples(
+        prompt: req.prompt,
+        answer: req.answer,
+        sourceLanguage: req.sourceLanguage,
+        targetLanguage: req.targetLanguage,
+      );
+      progress.value = 1;
+
+      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+      await svc.insertExamples(withWordId);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    }
+  }
+
+  Future<bool> _ensureAIConfiguredOrRedirect() async {
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _createNewUnit() async {
     final result = await Navigator.push<bool>(
       context,
@@ -1074,6 +1423,12 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
   void _handleUnitAction(String action, Unit unit, List<Word> unitWords) {
     switch (action) {
+      case 'generate_explanations_unit':
+        _generateExplanationsForUnit(unit, unitWords);
+        break;
+      case 'generate_examples_unit':
+        _generateExamplesForUnit(unit, unitWords);
+        break;
       case 'view':
         _showUnitWords(unit.name, unitWords);
         break;
@@ -1296,25 +1651,29 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: unitWords.length,
-                itemBuilder: (context, index) {
-                  final word = unitWords[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    color: Theme.of(context).colorScheme.surface,
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                        child: Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          ),
+              itemBuilder: (context, index) {
+                final word = unitWords[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  color: Theme.of(context).colorScheme.surface,
+                  child: ListTile(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openWordDetail(word);
+                    },
+                    leading: CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      child: Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                       ),
-                      title: Text(
-                        word.prompt,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                    ),
+                    title: Text(
+                      word.prompt,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1601,4 +1960,433 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       }
     }
   }
+
+  // 注意：保持在类内定义，便于使用 context/mounted
+  
+  
+// }
+  Future<void> _generateExamplesForUnit(Unit unit, List<Word> unitWords) async {
+    // 校验API配置
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return;
+    }
+
+    // 语言选择：自动识别或手动指定
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final TextEditingController sourceCustomController = TextEditingController();
+    final TextEditingController targetCustomController = TextEditingController();
+    final bool langProceed = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: const Text('选择语言（单元生成）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('原文自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '原文语言（常用）'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('译文自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '译文语言（常用）'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (sourceDropdown == 'custom')
+                      TextField(
+                        controller: sourceCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '原文语言（自定义代码，可选）',
+                          hintText: '如 ja, zh-CN, en-US，留空则自动或常用选择',
+                        ),
+                      ),
+                    if (targetDropdown == 'custom')
+                      TextField(
+                        controller: targetCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '译文语言（自定义代码，可选）',
+                          hintText: '如 zh, en-GB，留空则自动或常用选择',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('开始')),
+                ],
+              ),
+            );
+          },
+        ) ?? false;
+    if (!langProceed) return;
+    final srcLangBulk = sourceDropdown == 'custom'
+        ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
+        : (sourceDropdown == 'auto' ? null : sourceDropdown);
+    final tgtLangBulk = targetDropdown == 'custom'
+        ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
+        : (targetDropdown == 'auto' ? null : targetDropdown);
+
+    // 覆盖/追加策略选择
+    // 选择覆盖/追加/跳过策略
+    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+
+    // 进度与可中断对话框
+    bool cancelRequested = false;
+    final progress = ValueNotifier<int>(0);
+    final total = unitWords.length;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('为单元「${unit.name}」生成例句'),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (context, processed, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
+              const SizedBox(height: 8),
+              Text('进度：$processed / $total'),
+            ],
+          ),
+        ),
+        actions: [
+          StatefulBuilder(
+            builder: (context, setState) => TextButton(
+              onPressed: cancelRequested
+                  ? null
+                  : () => setState(() => cancelRequested = true),
+              child: const Text('中断'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final ai = await AIExampleService.getInstance();
+    final exService = ExampleSentenceService();
+    try {
+      // 按单词并行处理，确保进度以“单词”为粒度
+      // 并行度：从设置读取，替代硬编码
+      final cfg = await ConfigService.getInstance();
+      final concurrency = await cfg.getAIConcurrency();
+      for (int start = 0; start < unitWords.length; start += concurrency) {
+        final end = (start + concurrency) > unitWords.length ? unitWords.length : (start + concurrency);
+        final futures = <Future<void>>[];
+        for (int i = start; i < end; i++) {
+          final w = unitWords[i];
+          futures.add(() async {
+            if (cancelRequested) return; // 用户请求中断时跳过后续任务
+
+            if (strategy == 'skip') {
+              final existing = await exService.getExamplesByWordId(w.id!);
+              if (existing.isNotEmpty) {
+                progress.value = progress.value + 1;
+                return;
+              }
+            }
+
+            final examples = await ai.generateExamples(
+              prompt: w.prompt,
+              answer: w.answer,
+              sourceLanguage: srcLangBulk,
+              targetLanguage: tgtLangBulk,
+            );
+
+            final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
+            if (strategy == 'overwrite') {
+              await exService.deleteByWordId(w.id!);
+            }
+            await exService.insertExamples(withWordId);
+
+            progress.value = progress.value + 1;
+          }());
+        }
+        await Future.wait(futures);
+        if (cancelRequested) break;
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('单元「${unit.name}」生成完成：${progress.value}/$total')),
+      );
+    }
+  }
+
+  Future<void> _generateExplanationsForUnit(Unit unit, List<Word> unitWords) async {
+    // 校验API配置
+    final config = await ConfigService.getInstance();
+    final apiKey = await config.getAIApiKey();
+    final endpoint = await config.getAIEndpoint();
+    if (apiKey.isEmpty || endpoint.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置页配置 AI 的 API Key 和 Endpoint')),
+        );
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      return;
+    }
+
+    // 语言选择：自动识别或手动指定（词解）
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final TextEditingController sourceCustomController = TextEditingController();
+    final TextEditingController targetCustomController = TextEditingController();
+    final bool langProceed = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: const Text('选择语言（单元词解）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('原文自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '原文语言（常用）'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('译文自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '译文语言（常用）'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (sourceDropdown == 'custom')
+                      TextField(
+                        controller: sourceCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '原文语言（自定义代码，可选）',
+                          hintText: '如 ja, zh-CN, en-US，留空则自动或常用选择',
+                        ),
+                      ),
+                    if (targetDropdown == 'custom')
+                      TextField(
+                        controller: targetCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '译文语言（自定义代码，可选）',
+                          hintText: '如 zh, en-GB，留空则自动或常用选择',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('开始')),
+                ],
+              ),
+            );
+          },
+        ) ?? false;
+    if (!langProceed) return;
+    final srcLangBulk = sourceDropdown == 'custom'
+        ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
+        : (sourceDropdown == 'auto' ? null : sourceDropdown);
+    final tgtLangBulk = targetDropdown == 'custom'
+        ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
+        : (targetDropdown == 'auto' ? null : targetDropdown);
+
+    // 策略选择（词解仅支持覆盖/跳过）
+    final strategy = await pickAIGenerateExplanationsStrategy(context, defaultValue: 'skip');
+    final overwrite = strategy == 'overwrite';
+
+    // 显示按单词的进度（支持取消）
+    final total = unitWords.length;
+    final processed = ValueNotifier<int>(0);
+    final currentWord = ValueNotifier<String>('');
+    bool cancelRequested = false;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('为单元「${unit.name}」生成词解'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ValueListenableBuilder<int>(
+              valueListenable: processed,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: total == 0 ? 0 : value / total,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<int>(
+              valueListenable: processed,
+              builder: (context, value, _) => Text('进度：$value/$total'),
+            ),
+            const SizedBox(height: 8),
+            const Text('正在生成...'),
+          ],
+        ),
+        actions: [
+          StatefulBuilder(
+            builder: (context, setState) => TextButton(
+              onPressed: cancelRequested
+                  ? null
+                  : () => setState(() => cancelRequested = true),
+              child: const Text('中断'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    try {
+      final ai = await AIWordExplanationService.getInstance();
+      final expService = WordExplanationService();
+      int ok = 0, skipped = 0, fail = 0;
+      final cfg = await ConfigService.getInstance();
+      final concurrency = await cfg.getAIConcurrency();
+      for (int start = 0; start < unitWords.length; start += concurrency) {
+        final end = (start + concurrency) > unitWords.length ? unitWords.length : (start + concurrency);
+        final futures = <Future<void>>[];
+        for (int i = start; i < end; i++) {
+          final w = unitWords[i];
+          futures.add(() async {
+            if (cancelRequested) return; // 请求中断后不再启动新的任务
+            currentWord.value = w.prompt;
+
+            // 跳过逻辑（若不覆盖且已存在）
+            if (!overwrite) {
+              final existing = await expService.getByWordId(w.id!);
+              if (existing != null) {
+                skipped++;
+                processed.value = processed.value + 1;
+                return;
+              }
+            }
+
+            try {
+              final html = await ai.generateExplanationHtml(
+                prompt: w.prompt,
+                answer: w.answer,
+                sourceLanguage: srcLangBulk,
+                targetLanguage: tgtLangBulk,
+              );
+
+              final now = DateTime.now();
+              final exp = WordExplanation(
+                id: null,
+                wordId: w.id!,
+                html: html,
+                sourceModel: null,
+                createdAt: now,
+                updatedAt: now,
+              );
+
+              await expService.upsertForWord(exp);
+              ok++;
+            } catch (_) {
+              fail++;
+            } finally {
+              processed.value = processed.value + 1;
+            }
+          }());
+        }
+        await Future.wait(futures);
+        if (cancelRequested) break; // 完成已开始的后结束
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('词解生成完成：成功 $ok，跳过 $skipped，失败 $fail')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('生成失败：$e')),
+        );
+      }
+    }
+  }
 }
+// 统一导入已移至顶部，删除中部重复导入

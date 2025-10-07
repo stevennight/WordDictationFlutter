@@ -94,20 +94,28 @@ jobs:
             echo "Restoring upload-keystore.jks"
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
           else
-            echo "ANDROID_KEYSTORE_BASE64 is empty; will fall back to debug signing"
+            echo "ANDROID_KEYSTORE_BASE64 is empty; aborting release build"
+            exit 1
           fi
 
       - name: Create key.properties
         run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ]; then
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ] && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -f android/app/upload-keystore.jks ]; then
             echo "storeFile=android/app/upload-keystore.jks" > key.properties
             echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> key.properties
             echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
             echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
             echo "key.properties created"
           else
-            echo "Android signing secrets missing; will fall back to debug signing"
+            echo "Android signing secrets missing or keystore not restored; aborting release build"
+            exit 1
           fi
+
+      - name: Print keystore fingerprint (SHA1/SHA256)
+        run: |
+          keytool -list -v -keystore android/app/upload-keystore.jks \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -alias "${{ secrets.ANDROID_KEY_ALIAS }}" | grep -E 'SHA1:|SHA-256:' || true
 
       - name: Build Android APK
         run: flutter build apk --release --no-shrink
@@ -121,6 +129,11 @@ jobs:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Verify APK signing certificate (SHA1/SHA256)
+        if: ${{ github.event.inputs.build_android == 'true' }}
+        run: |
+          jarsigner -verify -verbose -certs build/app/outputs/flutter-apk/app-release.apk | grep -E 'SHA256 digest|SHA1 digest' || true
 
       - name: Upload Android App Bundle
         uses: actions/upload-artifact@v4

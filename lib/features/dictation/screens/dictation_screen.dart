@@ -8,6 +8,7 @@ import '../../../shared/widgets/handwriting_canvas.dart';
 import '../../../shared/widgets/collapsible_canvas_toolbar.dart';
 import '../../../shared/widgets/collapsible_progress_bar.dart';
 import 'dictation_result_screen.dart';
+import '../../../shared/utils/word_navigation_utils.dart';
 
 class DictationScreen extends StatefulWidget {
   const DictationScreen({super.key});
@@ -189,6 +190,21 @@ class _DictationScreenState extends State<DictationScreen> {
                   size: 24,
                   color: Theme.of(context).colorScheme.primary,
                 ),
+                const SizedBox(width: 4),
+                // 批改状态下显示详情入口（基于原文文本）
+                if (answerText != null)
+                  IconButton(
+                    onPressed: () {
+                      WordNavigationUtils.openWordDetailByText(context, currentWord.prompt);
+                    },
+                    icon: const Icon(Icons.info_outline, size: 20),
+                    tooltip: '单词详情',
+                    style: IconButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(24, 24),
+                    ),
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 const SizedBox(width: 12),
                 
                 // 显示词性和等级信息

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../../shared/models/dictation_result.dart';
 import '../../shared/models/dictation_session.dart';
 import '../../shared/utils/path_utils.dart';
+import 'image_cache_service.dart';
 
 /// 会话文件服务
 /// 将每次默写的手写图片打包到一个 `.session` 文件中，
@@ -90,6 +91,11 @@ class SessionFileService {
     bool annotated = false,
   }) async {
     try {
+      // 先尝试从缓存获取
+      final cacheKey = 'session:$sessionId:$wordIndex:${annotated ? '1' : '0'}';
+      final cached = ImageCacheService.get(cacheKey);
+      if (cached != null) return cached;
+
       final filePath = await getSessionFilePath(sessionId);
       final file = File(filePath);
       if (!await file.exists()) return null;
@@ -109,7 +115,9 @@ class SessionFileService {
           : entry['original'] as String?;
       if (b64 == null || b64.isEmpty) return null;
 
-      return Uint8List.fromList(base64Decode(b64));
+      final bytes = Uint8List.fromList(base64Decode(b64));
+      ImageCacheService.set(cacheKey, bytes);
+      return bytes;
     } catch (e) {
       debugPrint('读取session图片失败: $e');
       return null;
