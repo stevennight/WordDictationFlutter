@@ -135,4 +135,16 @@ class WordService {
     );
     return result.first['count'] as int;
   }
+
+  /// Get words by unit id
+  Future<List<Word>> getWordsByUnitId(int unitId) async {
+    final db = await _dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'words',
+      where: 'unit_id = ?',
+      whereArgs: [unitId],
+      orderBy: 'created_at ASC',
+    );
+    return List.generate(maps.length, (i) => Word.fromMap(maps[i]));
+  }
 }
