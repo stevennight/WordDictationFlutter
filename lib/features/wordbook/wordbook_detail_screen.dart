@@ -20,6 +20,7 @@ import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
+import '../../shared/widgets/ai_generate_explanations_strategy_dialog.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
@@ -2268,8 +2269,8 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
         : (targetDropdown == 'auto' ? null : targetDropdown);
 
-    // 策略选择（复用例句策略对话框）
-    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+    // 策略选择（词解仅支持覆盖/跳过）
+    final strategy = await pickAIGenerateExplanationsStrategy(context, defaultValue: 'skip');
     final overwrite = strategy == 'overwrite';
 
     // 处理对话框（简化为不显示具体进度）

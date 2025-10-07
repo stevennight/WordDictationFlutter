@@ -15,6 +15,7 @@ import 'wordbook_import_screen.dart';
 import '../sync/sync_settings_screen.dart';
 import '../settings/screens/settings_screen.dart';
 import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
+import '../../shared/widgets/ai_generate_explanations_strategy_dialog.dart';
 
 class WordbookManagementScreen extends StatefulWidget {
   const WordbookManagementScreen({super.key});
@@ -536,7 +537,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
         : (targetDropdown == 'auto' ? null : targetDropdown);
 
-    final strategy = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
+    final strategy = await pickAIGenerateExplanationsStrategy(context, defaultValue: 'skip');
     final overwrite = strategy == 'overwrite';
 
     showDialog(
