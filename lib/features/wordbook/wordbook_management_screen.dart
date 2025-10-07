@@ -558,26 +558,38 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
         await exService.deleteByWordIds(ids);
       }
 
-      for (final w in words) {
-        if (strategy == 'skip') {
-          final existing = await exService.getExamplesByWordId(w.id!);
-          if (existing.isNotEmpty) {
+      // 按单词并行处理整本词书，按“单词”粒度更新进度
+      final concurrency = 2; // 并行度，可按需调整
+      for (int start = 0; start < words.length; start += concurrency) {
+        final end = (start + concurrency) > words.length ? words.length : (start + concurrency);
+        final futures = <Future<void>>[];
+        for (int i = start; i < end; i++) {
+          final w = words[i];
+          futures.add(() async {
+            if (cancelRequested) return; // 用户请求中断时跳过后续任务
+
+            if (strategy == 'skip') {
+              final existing = await exService.getExamplesByWordId(w.id!);
+              if (existing.isNotEmpty) {
+                progress.value = progress.value + 1;
+                return;
+              }
+            }
+
+            final examples = await ai.generateExamples(
+              prompt: w.prompt,
+              answer: w.answer,
+              sourceLanguage: null,
+              targetLanguage: null,
+            );
+
+            final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
+            await exService.insertExamples(withWordId);
+
             progress.value = progress.value + 1;
-            if (cancelRequested) break;
-            continue;
-          }
+          }());
         }
-        final examples = await ai.generateExamples(
-          prompt: w.prompt,
-          answer: w.answer,
-          sourceLanguage: null,
-          targetLanguage: null,
-        );
-
-        final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
-        await exService.insertExamples(withWordId);
-
-        progress.value = progress.value + 1;
+        await Future.wait(futures);
         if (cancelRequested) break;
       }
     } catch (e) {

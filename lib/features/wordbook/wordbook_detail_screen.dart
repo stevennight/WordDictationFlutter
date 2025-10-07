@@ -1313,13 +1313,8 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         await svc.deleteByWordId(word.id!);
       }
 
-      // 线性进度（按词义分步/并行）
-      final senses = req.answer
-          .split(RegExp(r'[;；]+'))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-      final total = senses.length;
+      // 线性进度（单词粒度，单个词 total=1）
+      final total = 1;
       final progress = ValueNotifier<int>(0);
 
       showDialog(
@@ -1342,14 +1337,13 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       );
 
       final ai = await AIExampleService.getInstance();
-      final examples = await ai.generateExamplesProgress(
+      final examples = await ai.generateExamples(
         prompt: req.prompt,
         answer: req.answer,
         sourceLanguage: req.sourceLanguage,
         targetLanguage: req.targetLanguage,
-        parallel: 2,
-        onProgress: (done, _) => progress.value = done,
       );
+      progress.value = 1;
 
       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
       await svc.insertExamples(withWordId);
@@ -2012,30 +2006,41 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     final ai = await AIExampleService.getInstance();
     final exService = ExampleSentenceService();
     try {
-      for (final w in unitWords) {
-        if (strategy == 'skip') {
-          final existing = await exService.getExamplesByWordId(w.id!);
-          if (existing.isNotEmpty) {
+      // 按单词并行处理，确保进度以“单词”为粒度
+      final concurrency = 2; // 并行度，可按需调整
+      for (int start = 0; start < unitWords.length; start += concurrency) {
+        final end = (start + concurrency) > unitWords.length ? unitWords.length : (start + concurrency);
+        final futures = <Future<void>>[];
+        for (int i = start; i < end; i++) {
+          final w = unitWords[i];
+          futures.add(() async {
+            if (cancelRequested) return; // 用户请求中断时跳过后续任务
+
+            if (strategy == 'skip') {
+              final existing = await exService.getExamplesByWordId(w.id!);
+              if (existing.isNotEmpty) {
+                progress.value = progress.value + 1;
+                return;
+              }
+            }
+
+            final examples = await ai.generateExamples(
+              prompt: w.prompt,
+              answer: w.answer,
+              sourceLanguage: null, // 批量默认自动识别
+              targetLanguage: null,
+            );
+
+            final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
+            if (strategy == 'overwrite') {
+              await exService.deleteByWordId(w.id!);
+            }
+            await exService.insertExamples(withWordId);
+
             progress.value = progress.value + 1;
-            if (cancelRequested) break;
-            continue;
-          }
+          }());
         }
-        final examples = await ai.generateExamples(
-          prompt: w.prompt,
-          answer: w.answer,
-          sourceLanguage: null, // 批量默认自动识别
-          targetLanguage: null,
-        );
-
-        final withWordId = examples.map((e) => e.copyWith(wordId: w.id)).toList();
-        if (strategy == 'overwrite') {
-          await exService.deleteByWordId(w.id!);
-        }
-        await exService.insertExamples(withWordId);
-
-        progress.value = progress.value + 1;
-
+        await Future.wait(futures);
         if (cancelRequested) break;
       }
     } catch (e) {

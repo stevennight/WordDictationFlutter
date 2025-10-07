@@ -242,17 +242,17 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
           final rt = i < rts.length ? rts[i] : '';
           spans.add(
             WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
+              alignment: PlaceholderAlignment.bottom,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 1),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (rt.isNotEmpty)
                       Text(rt, style: rubyStyle, textAlign: TextAlign.center),
                     if (rb.isNotEmpty)
-                      Text(rb, style: baseStyle, textAlign: TextAlign.center),
+                      Text(rb, style: baseStyle, textAlign: TextAlign.left),
                   ],
                 ),
               ),
@@ -319,13 +319,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         await svc.deleteByWordId(word.id!);
       }
 
-      // 线性进度（按词义分步/并行）
-      final senses = req.answer
-          .split(RegExp(r'[;；]+'))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-      final total = senses.length;
+      // 线性进度（单词粒度，单个词 total=1）
+      final total = 1;
       final progress = ValueNotifier<int>(0);
 
       showDialog(
@@ -348,14 +343,13 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
 
       final ai = await AIExampleService.getInstance();
-      final examples = await ai.generateExamplesProgress(
+      final examples = await ai.generateExamples(
         prompt: req.prompt,
         answer: req.answer,
         sourceLanguage: req.sourceLanguage,
         targetLanguage: req.targetLanguage,
-        parallel: 2,
-        onProgress: (done, _) => progress.value = done,
       );
+      progress.value = 1;
 
       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
       await svc.insertExamples(withWordId);
