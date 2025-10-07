@@ -213,13 +213,15 @@ class ImportDataService {
         if (maps.isEmpty) continue;
         final wordId = maps.first['id'] as int;
 
-        // 替换例句
+        // 替换例句（写入稳定的词义文本快照 sense_text，完全不依赖索引推断）
         await db.delete('example_sentences', where: 'word_id = ?', whereArgs: [wordId]);
         final batch = db.batch();
         for (final ex in examples) {
+          final senseText = (ex['senseText'] ?? '') as String;
           batch.insert('example_sentences', {
             'word_id': wordId,
             'sense_index': (ex['senseIndex'] ?? 0) as int,
+            'sense_text': senseText,
             'text_plain': (ex['textPlain'] ?? '') as String,
             'text_html': (ex['textHtml'] ?? '') as String,
             'text_translation': (ex['textTranslation'] ?? '') as String,

@@ -10,7 +10,8 @@ class ExampleSentenceService {
       'example_sentences',
       where: 'word_id = ?',
       whereArgs: [wordId],
-      orderBy: 'sense_index ASC, id ASC',
+      // 改为稳定顺序：按创建时间与ID排序，避免索引依赖
+      orderBy: 'created_at ASC, id ASC',
     );
     return maps.map((e) => ExampleSentence.fromMap(e)).toList();
   }

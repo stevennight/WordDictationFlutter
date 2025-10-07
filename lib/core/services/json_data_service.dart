@@ -156,6 +156,7 @@ class JsonDataService {
                 .whereType<Map<String, dynamic>>()
                 .map((e) => {
                       'senseIndex': e['senseIndex'] ?? 0,
+                      'senseText': e['senseText'] ?? '',
                       'textPlain': e['textPlain'] ?? '',
                       'textHtml': e['textHtml'] ?? '',
                       'textTranslation': e['textTranslation'] ?? '',

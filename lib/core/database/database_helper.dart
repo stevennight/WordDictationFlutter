@@ -31,7 +31,7 @@ class DatabaseHelper {
     
     return await openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -151,6 +151,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         word_id INTEGER NOT NULL,
         sense_index INTEGER NOT NULL DEFAULT 0,
+        sense_text TEXT NOT NULL DEFAULT '',
         text_plain TEXT NOT NULL,
         text_html TEXT NOT NULL,
         text_translation TEXT,
@@ -445,6 +446,13 @@ class DatabaseHelper {
     if (oldVersion < 13 && newVersion >= 13) {
       // Add grammar_note column to example_sentences
       await db.execute('ALTER TABLE example_sentences ADD COLUMN grammar_note TEXT');
+    }
+
+    if (oldVersion < 14 && newVersion >= 14) {
+      // Add sense_text column to example_sentences for stable sense association
+      await db.execute('ALTER TABLE example_sentences ADD COLUMN sense_text TEXT');
+      // Optional: backfill sense_text with empty string; leave to application logic
+      // Note: We intentionally avoid NOT NULL in migration to accommodate existing rows
     }
   }
 

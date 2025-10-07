@@ -439,7 +439,7 @@ class WordbookService {
           await txn.insert('words', wordWithBookId.toMap());
         }
 
-        // 插入例句（按 prompt 关联）
+        // 插入例句（按 prompt 关联，写入稳定的词义文本快照 sense_text，不做索引推断）
         final examples = wordExamples?[word.prompt];
         if (examples != null && examples.isNotEmpty) {
           // 获取刚插入/更新后的该词的ID
@@ -455,9 +455,11 @@ class WordbookService {
             final wordId = insertedWordMaps.first['id'] as int;
             final ts = now.millisecondsSinceEpoch;
             for (final ex in examples) {
+              final senseText = (ex['senseText'] ?? '') as String;
               final map = {
                 'word_id': wordId,
                 'sense_index': (ex['senseIndex'] ?? 0) as int,
+                'sense_text': senseText,
                 'text_plain': (ex['textPlain'] ?? '') as String,
                 'text_html': (ex['textHtml'] ?? '') as String,
                 'text_translation': (ex['textTranslation'] ?? '') as String,

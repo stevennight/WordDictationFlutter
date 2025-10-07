@@ -2,6 +2,7 @@ class ExampleSentence {
   final int? id;
   final int wordId;
   final int senseIndex; // 对应译文序号
+  final String senseText; // 词义文本快照，用于稳定关联
   final String textPlain; // 纯文本
   final String textHtml; // 包含 ruby 的HTML
   final String textTranslation; // 句子整体译文
@@ -14,6 +15,7 @@ class ExampleSentence {
     this.id,
     required this.wordId,
     required this.senseIndex,
+    required this.senseText,
     required this.textPlain,
     required this.textHtml,
     required this.textTranslation,
@@ -27,6 +29,7 @@ class ExampleSentence {
     int? id,
     int? wordId,
     int? senseIndex,
+    String? senseText,
     String? textPlain,
     String? textHtml,
     String? textTranslation,
@@ -39,6 +42,7 @@ class ExampleSentence {
       id: id ?? this.id,
       wordId: wordId ?? this.wordId,
       senseIndex: senseIndex ?? this.senseIndex,
+      senseText: senseText ?? this.senseText,
       textPlain: textPlain ?? this.textPlain,
       textHtml: textHtml ?? this.textHtml,
       textTranslation: textTranslation ?? this.textTranslation,
@@ -54,6 +58,7 @@ class ExampleSentence {
       'id': id,
       'word_id': wordId,
       'sense_index': senseIndex,
+      'sense_text': senseText,
       'text_plain': textPlain,
       'text_html': textHtml,
       'text_translation': textTranslation,
@@ -69,6 +74,7 @@ class ExampleSentence {
       id: map['id']?.toInt(),
       wordId: map['word_id']?.toInt() ?? 0,
       senseIndex: map['sense_index']?.toInt() ?? 0,
+      senseText: (map['sense_text'] ?? '').toString(),
       textPlain: map['text_plain'] ?? '',
       textHtml: map['text_html'] ?? '',
       textTranslation: map['text_translation'] ?? '',

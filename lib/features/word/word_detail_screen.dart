@@ -152,7 +152,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                               Icon(Icons.format_quote, size: 16, color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 6),
                               Text(
-                                _senseLabel(word.answer, ex.senseIndex),
+                                ex.senseText.isNotEmpty ? ex.senseText : '（未标注词义）',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -275,17 +275,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     return spans;
   }
 
-  String _senseLabel(String answer, int senseIndex) {
-    final senses = answer
-        .split(RegExp(r'[;；]+'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (senseIndex >= 0 && senseIndex < senses.length) {
-      return senses[senseIndex];
-    }
-    return '含义 ${senseIndex + 1}';
-  }
+  // 不再通过索引推断词义文本，例句标签仅使用例句中存储的 senseText。
 
   void _showAIGenerateExamplesDialog(Word word) async {
     final req = await showDialog<AIGenerateExamplesRequest>(
