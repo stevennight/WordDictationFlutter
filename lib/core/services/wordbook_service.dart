@@ -422,53 +422,74 @@ class WordbookService {
         }
       }
       
-      // Insert new words
-      for (final word in words) {
-        final wordWithBookId = word.copyWith(
-          wordbookId: wordbookId,
-          createdAt: now,
-          updatedAt: now,
-        );
-        
-        // 如果单词有category且对应的单元存在，设置unit_id
-        if (word.category != null && unitNameToIdMap.containsKey(word.category)) {
-          final wordMap = wordWithBookId.toMap();
-          wordMap['unit_id'] = unitNameToIdMap[word.category];
-          await txn.insert('words', wordMap);
-        } else {
-          await txn.insert('words', wordWithBookId.toMap());
-        }
+      // Insert new words，按原有单元中的顺序重排 created_at
+      // 为了保证按单元查看时的排序稳定性，这里依据导入列表的顺序
+      // 逐个设置递增的时间戳（created_at/updated_at）。
+      final int baseTime = now.millisecondsSinceEpoch;
+      // 先按 category 分组，保留出现顺序
+      final Map<String?, List<Word>> wordsByUnit = {};
+      for (final w in words) {
+        final key = (w.category != null && (w.category!.isNotEmpty)) ? w.category : null;
+        wordsByUnit.putIfAbsent(key, () => []);
+        wordsByUnit[key]!.add(w);
+      }
 
-        // 插入例句（按 prompt 关联，写入稳定的词义文本快照 sense_text，不做索引推断）
-        final examples = wordExamples?[word.prompt];
-        if (examples != null && examples.isNotEmpty) {
-          // 获取刚插入/更新后的该词的ID
-          final insertedWordMaps = await txn.query(
-            'words',
-            columns: ['id'],
-            where: 'wordbook_id = ? AND prompt = ?',
-            whereArgs: [wordbookId, word.prompt],
-            orderBy: 'created_at DESC',
-            limit: 1,
+      // 逐组写入，组内使用递增时间戳保证单元内顺序
+      for (final entry in wordsByUnit.entries) {
+        final unitName = entry.key; // 可能为 null（未分类）
+        final unitWords = entry.value;
+        int offset = 0;
+
+        for (final word in unitWords) {
+          final ts = baseTime + offset;
+          offset++;
+
+          final wordWithBookId = word.copyWith(
+            wordbookId: wordbookId,
+            createdAt: DateTime.fromMillisecondsSinceEpoch(ts),
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(ts),
           );
-          if (insertedWordMaps.isNotEmpty) {
-            final wordId = insertedWordMaps.first['id'] as int;
-            final ts = now.millisecondsSinceEpoch;
-            for (final ex in examples) {
-              final senseText = (ex['senseText'] ?? '') as String;
-              final map = {
-                'word_id': wordId,
-                'sense_index': (ex['senseIndex'] ?? 0) as int,
-                'sense_text': senseText,
-                'text_plain': (ex['textPlain'] ?? '') as String,
-                'text_html': (ex['textHtml'] ?? '') as String,
-                'text_translation': (ex['textTranslation'] ?? '') as String,
-                'grammar_note': (ex['grammarNote'] ?? '') as String,
-                'source_model': ex['sourceModel'],
-                'created_at': ts,
-                'updated_at': ts,
-              };
-              await txn.insert('example_sentences', map);
+
+          // 如果单词有category且对应的单元存在，设置unit_id
+          if (unitName != null && unitNameToIdMap.containsKey(unitName)) {
+            final wordMap = wordWithBookId.toMap();
+            wordMap['unit_id'] = unitNameToIdMap[unitName];
+            await txn.insert('words', wordMap);
+          } else {
+            await txn.insert('words', wordWithBookId.toMap());
+          }
+
+          // 插入例句（按 prompt 关联，写入稳定的词义文本快照 sense_text，不做索引推断）
+          final examples = wordExamples?[word.prompt];
+          if (examples != null && examples.isNotEmpty) {
+            // 获取刚插入/更新后的该词的ID
+            final insertedWordMaps = await txn.query(
+              'words',
+              columns: ['id'],
+              where: 'wordbook_id = ? AND prompt = ?',
+              whereArgs: [wordbookId, word.prompt],
+              orderBy: 'created_at DESC',
+              limit: 1,
+            );
+            if (insertedWordMaps.isNotEmpty) {
+              final wordId = insertedWordMaps.first['id'] as int;
+              final tsEx = now.millisecondsSinceEpoch;
+              for (final ex in examples) {
+                final senseText = (ex['senseText'] ?? '') as String;
+                final map = {
+                  'word_id': wordId,
+                  'sense_index': (ex['senseIndex'] ?? 0) as int,
+                  'sense_text': senseText,
+                  'text_plain': (ex['textPlain'] ?? '') as String,
+                  'text_html': (ex['textHtml'] ?? '') as String,
+                  'text_translation': (ex['textTranslation'] ?? '') as String,
+                  'grammar_note': (ex['grammarNote'] ?? '') as String,
+                  'source_model': ex['sourceModel'],
+                  'created_at': tsEx,
+                  'updated_at': tsEx,
+                };
+                await txn.insert('example_sentences', map);
+              }
             }
           }
         }
