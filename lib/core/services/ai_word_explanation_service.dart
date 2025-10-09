@@ -49,9 +49,9 @@ class AIWordExplanationService {
       rules.add('自动识别单词语言，该语言用于生成同义词、反义词、例句等内容。');
     }
     if (langTarget.isNotEmpty) {
-      rules.add('单词词义为 $langTarget，该语言用于生成例句译文与讲解等内容。');
+      rules.add('单词词义为 $langTarget，该语言用于生成整体结构标题、例句翻译、单词含义讲解、常用搭配/熟语讲解、重点讲解、扩展内容讲解等内容。');
     } else {
-      rules.add('自动识别单词词义语言，该语言用于生成例句译文与讲解等内容。');
+      rules.add('自动识别单词词义语言，该语言用于生成整体结构标题、例句翻译、单词含义讲解、常用搭配/熟语讲解、重点讲解、扩展内容讲解等内容。');
     }
 
     String system = r'''
@@ -74,6 +74,15 @@ class AIWordExplanationService {
 例句必须真实自然并能体现区别；若无法体现或不确定其准确性，则省略对应例句。
 不要新增未在“单词词义”中出现的全新义项；如确有高度常见且与该词紧密相关的其他义项，可在【扩展】中简述；否则省略【扩展】。
 输出前自检：删除可能不准确或不确定的内容，避免矛盾与过度延伸。
+
+# 参考词典与查询准则
+
+在内容生成时，默认为静默参考权威与主流词典的通行释义与规范用法，以提升准确性；但不要在输出中标注或引用这些来源，也不要编造来源名或URL。
+英语可参考：Oxford, Cambridge, Merriam‑Webster, Longman。
+日语可参考：広辞苑、大辞泉、明鏡国語辞典、NHK日本語発音アクセント新辞典、三省堂類語辞典。
+中文可参考：现代汉语词典、新华字典、现代汉语规范词典。
+当不同来源存在差异时，优先选择现代通行用法与教材常用规范；无法确定时省略对应项。
+近/反义词与搭配需与给定词义严格一致，不要因“跨义项”造成偏差。
 
 # 内容结构
 
@@ -98,7 +107,7 @@ class AIWordExplanationService {
 
 ### HTML限制
 除 ruby 外尽量使用纯文本；换行使用 <br>；不要使用 Markdown；不要包裹代码块。
-多个内容模块之间，用 `<br><br>` 分隔。
+多个内容模块之间，用两个换行分隔。
 
 ### ruby 规则
 对于输出内容语言为日文时，内容中的所有汉字的部分需要添加 ruby 注音；
@@ -118,19 +127,15 @@ ruby生成时注意标签的闭合准确。
 ```html
 <!-- 存在多个词性、含义时按照格式生成多个 -->
 单词含义：
-<词性1> <词性1的单词含义1>；<词性1的单词含义2>
-<词性2> <词性2的单词含义1>；<词性2的单词含义2>
+<词性1> <单词含义1>；<单词含义2>
+<词性2> <单词含义1>；<单词含义2>
 读音：<读音（例：英语的音标 /bānk/ / 日语的读音 あかるい / 中文的拼音 pīn yīn 等）>
 <!-- 如果是日语，需要标注声调 -->
 声调：⓪
-<!-- 存在多个常用搭配时按照格式生成多个，尽可能生成3-8个，但是要确保确实为常用搭配 -->
-常用搭配：
-1. <常用搭配1>（<常用搭配1含义>）
-2. <常用搭配2>（<常用搭配2含义>）
-<!-- 存在多个常用短语时按照格式生成多个，尽可能生成3-8个，但是要确保确实为常用短语 -->
-常用短语：
-1. <常用短语1>（<常用短语1含义>）
-2. <常用短语2>（<常用短语2含义>）
+<!-- 存在多个常用搭配/熟语时按照格式生成多个，尽可能生成3-8个，但是要确保确实为真实常用搭配/熟语 -->
+常用搭配/熟语：
+1. <常用搭配/熟语>（<常用搭配/熟语含义>）
+2. <常用搭配/熟语>（<常用搭配/熟语含义>）
 ```
 
 #### 生成示例
@@ -140,10 +145,9 @@ ruby生成时注意标签的闭合准确。
 形容词：表示环境或物体光线充足、明度高；性格开朗
 读音：あかるい
 声调：⓪
-常用搭配：
+常用搭配/熟语：
 1. <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>性格</rb><rt>せいかく</rt></ruby>（开朗的性格）
-常用短语：
-1. <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>未来</rb><rt>みらい</rt></ruby>（开朗的性格）
+2. <ruby><rb>明</rb><rt>あか</rt></ruby>るい<ruby><rb>未来</rb><rt>みらい</rt></ruby>（光明的未来）
 ```
 
 ### 重点部分
@@ -152,26 +156,16 @@ ruby生成时注意标签的闭合准确。
 
 ```html
 重点：
-易错读音：<读音讲解>
-<!-- 存在多个易错搭配时按照格式生成多个 -->
-易错搭配：
-1. <易错搭配1>（<易错搭配1含义>）
-2. <易错搭配2>（<易错搭配2含义>）
-<!-- 存在多个易错词义时按照格式生成多个 -->
-易错词义：
-1. <易错词义1>（<易错词义1含义>）
-2. <易错词义2>（<易错词义2含义>）
+1. <易错点/注意点/涉及语法点等重点>
+2. <易错点/注意点/涉及语法点等重点>
 ```
 
 #### 生成示例
 
 ```html
 重点：
-易错读音：①，读音错误会导致意思改变，比如：<ruby><rb>橋</rb><rt>はし</rt></ruby> ⓪ 为桥梁的意思
-易错搭配：
-1. <ruby><rb>箸</rb><rt>はし</rt></ruby>を<ruby><rb>持</rb><rt>も</rt></ruby>つ：拿起筷子，而「<ruby><rb>箸</rb><rt>はし</rt></ruby>を<ruby><rb>取</rb><rt>と</rt></ruby>る」通常用来表示从某个地方拿筷子，可能会导致误解
-易错词义：
-1. <ruby><rb>端</rb><rt>はし</rt></ruby>：指的是边缘、尽头或末端。这与「<ruby><rb>箸</rb><rt>はし</rt></ruby>」的意思没有关系，但读音相同，容易混淆。
+1. 注意读音为：①，读音错误会导致意思改变，比如：<ruby><rb>橋</rb><rt>はし</rt></ruby> ⓪ 为桥梁的意思
+2. <ruby><rb>箸</rb><rt>はし</rt></ruby>を<ruby><rb>持</rb><rt>も</rt></ruby>つ：拿起筷子，而「<ruby><rb>箸</rb><rt>はし</rt></ruby>を<ruby><rb>取</rb><rt>と</rt></ruby>る」通常用来表示从某个地方拿筷子，可能会导致误解
 ```
 
 ### 近义词部分
@@ -523,12 +517,12 @@ ruby生成时注意标签的闭合准确。
         {'role': 'system', 'content': system},
         // {'role': 'user', 'content': fewShotUserEn},
         // {'role': 'assistant', 'content': fewShotAssistantEn},
-        {'role': 'user', 'content': fewShotUserJa},
-        {'role': 'assistant', 'content': fewShotAssistantJa},
-        {'role': 'user', 'content': fewShotUserJa2},
-        {'role': 'assistant', 'content': fewShotAssistantJa2},
-        {'role': 'user', 'content': fewShotUserJa3},
-        {'role': 'assistant', 'content': fewShotAssistantJa3},
+        // {'role': 'user', 'content': fewShotUserJa},
+        // {'role': 'assistant', 'content': fewShotAssistantJa},
+        // {'role': 'user', 'content': fewShotUserJa2},
+        // {'role': 'assistant', 'content': fewShotAssistantJa2},
+        // {'role': 'user', 'content': fewShotUserJa3},
+        // {'role': 'assistant', 'content': fewShotAssistantJa3},
         {'role': 'user', 'content': user},
       ],
       'temperature': temperature,
