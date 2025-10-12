@@ -11,8 +11,15 @@ import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
 
 class WordDetailScreen extends StatefulWidget {
   final Word word;
+  final List<Word>? wordList;
+  final int? initialIndex;
 
-  const WordDetailScreen({super.key, required this.word});
+  const WordDetailScreen({
+    super.key,
+    required this.word,
+    this.wordList,
+    this.initialIndex,
+  });
 
   @override
   State<WordDetailScreen> createState() => _WordDetailScreenState();
@@ -25,17 +32,50 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   final WordExplanationService _explanationService = WordExplanationService();
   WordExplanation? _explanation;
   bool _expLoading = true;
+  late ValueNotifier<int> _currentIndexNotifier;
+  PageController? _pageController;
+
+  Word get _currentWord {
+    if (widget.wordList != null && _currentIndexNotifier.value >= 0 && _currentIndexNotifier.value < widget.wordList!.length) {
+      return widget.wordList![_currentIndexNotifier.value];
+    }
+    return widget.word;
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadExamples();
-    _loadExplanation();
+    final initialIndex = widget.wordList != null
+        ? (widget.initialIndex != null && widget.initialIndex! >= 0 && widget.initialIndex! < widget.wordList!.length
+            ? widget.initialIndex!
+            : (widget.wordList!.indexWhere((element) => element.id == widget.word.id) >= 0
+                ? widget.wordList!.indexWhere((element) => element.id == widget.word.id)
+                : 0))
+        : 0;
+    _currentIndexNotifier = ValueNotifier<int>(initialIndex);
+    final word = _currentWord;
+    _loadExamples(word: word);
+    _loadExplanation(word: word);
+    _currentIndexNotifier.addListener(_onWordIndexChanged);
   }
 
-  Future<void> _loadExamples() async {
-    if (widget.word.id != null) {
-      final data = await _exampleService.getExamplesByWordId(widget.word.id!);
+  @override
+  void dispose() {
+    _currentIndexNotifier.removeListener(_onWordIndexChanged);
+    _currentIndexNotifier.dispose();
+    _pageController?.dispose();
+    super.dispose();
+  }
+
+  void _onWordIndexChanged() {
+    final word = _currentWord;
+    _loadExamples(word: word);
+    _loadExplanation(word: word);
+  }
+
+  Future<void> _loadExamples({required Word word}) async {
+    if (word.id != null) {
+      final data = await _exampleService.getExamplesByWordId(word.id!);
       if (mounted) {
         setState(() {
           _examples = data;
@@ -52,9 +92,9 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     }
   }
 
-  Future<void> _loadExplanation() async {
-    if (widget.word.id != null) {
-      final data = await _explanationService.getByWordId(widget.word.id!);
+  Future<void> _loadExplanation({required Word word}) async {
+    if (word.id != null) {
+      final data = await _explanationService.getByWordId(word.id!);
       if (mounted) {
         setState(() {
           _explanation = data;
@@ -73,213 +113,323 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final word = widget.word;
     return Scaffold(
       appBar: AppBar(
-        title: Text(word.prompt),
+        title: ValueListenableBuilder<int>(
+          valueListenable: _currentIndexNotifier,
+          builder: (_, __, ___) => Text(_currentWord.prompt),
+        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 基本信息
-            SizedBox(
-              width: double.infinity,
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        word.prompt,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        word.answer,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (word.partOfSpeech != null)
-                            Chip(
-                              label: Text(word.partOfSpeech!),
-                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                            ),
-                          if (word.level != null)
-                            Chip(
-                              label: Text(word.level!),
-                              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
-                            ),
-                          if (word.category != null)
-                            Chip(
-                              label: Text(word.category!),
-                              backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: () => _generateExplanation(word),
-                            icon: const Icon(Icons.psychology),
-                            label: const Text('AI生成词解'),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.icon(
-                            onPressed: () => _showAIGenerateExamplesDialog(word),
-                            icon: const Icon(Icons.auto_awesome),
-                            label: const Text('AI生成例句'),
-                          ),
-                        ],
-                      ),
-                    ],
+      body: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _pageController ??= PageController(initialPage: _currentIndexNotifier.value),
+              itemCount: widget.wordList?.length ?? 1,
+              physics: widget.wordList != null && widget.wordList!.length > 1
+                  ? const PageScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              onPageChanged: (index) {
+                if (widget.wordList != null && index >= 0 && index < widget.wordList!.length) {
+                  setState(() {
+                    _loading = true;
+                    _examples = [];
+                    _expLoading = true;
+                    _explanation = null;
+                  });
+                  _currentIndexNotifier.value = index;
+                }
+              },
+              itemBuilder: (context, pageIndex) {
+                final currentWord = widget.wordList != null ? widget.wordList![pageIndex] : _currentWord;
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _currentIndexNotifier,
+                    builder: (_, currentIndex, __) {
+                      if (widget.wordList != null && currentIndex != pageIndex) {
+                        return const SizedBox.shrink();
+                      }
+                      return _buildWordContent(context, currentWord);
+                    },
                   ),
-                ),
-              ),
+                );
+              },
             ),
+          ),
+          _buildBottomNavigationBar(context),
+        ],
+      ),
+    );
+  }
 
-            const SizedBox(height: 16),
+  void _goPrev() {
+    final controller = _pageController;
+    if (controller != null && controller.hasClients) {
+      controller.previousPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
 
-            // 词解/注意点/近义词（HTML）
-            Text(
-              '词解',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+  void _goNext() {
+    final controller = _pageController;
+    if (controller != null && controller.hasClients) {
+      controller.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  Widget _buildBottomNavigationBar(BuildContext context) {
+    final total = widget.wordList?.length ?? 1;
+    if (widget.wordList == null || total <= 1) {
+      return const SizedBox.shrink();
+    }
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 6,
+              offset: Offset(0, -2),
+              color: Color(0x14000000),
             ),
-            const SizedBox(height: 8),
-            if (_expLoading)
-              const Center(child: Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(),
-              ))
-            else if (_explanation == null)
-              SizedBox(
-                width: double.infinity,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.article, size: 18, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('暂无词解', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _generateExplanation(word),
-                                  icon: const Icon(Icons.psychology),
-                                  label: const Text('使用AI生成词解'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              // 词解区域占满宽度
-              Container(
-                width: double.infinity,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: _buildExplanationHtml(context: context, html: _explanation!.html),
-                  ),
-                ),
-              ),
-
-            // 例句列表
-            Text(
-              '例句',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (_loading)
-              const Center(child: Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(),
-              ))
-            else if (_examples.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  '暂无例句',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              )
-            else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _examples.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final ex = _examples[index];
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(Icons.format_quote, size: 16, color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 6),
-                              Text(
-                                ex.senseText.isNotEmpty ? ex.senseText : '（未标注词义）',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          _buildRubyText(
-                            context: context,
-                            html: ex.textHtml,
-                            plain: ex.textPlain,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            ex.textTranslation,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          ),
-                          if (ex.grammarNote.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              ex.grammarNote,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
           ],
+        ),
+        child: ValueListenableBuilder<int>(
+          valueListenable: _currentIndexNotifier,
+          builder: (_, index, __) {
+            final prevEnabled = total > 1 && index > 0;
+            final nextEnabled = total > 1 && index < total - 1;
+            return Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: prevEnabled ? _goPrev : null,
+                    icon: const Icon(Icons.chevron_left),
+                    label: const Text('上一个'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: nextEnabled ? _goNext : null,
+                    icon: const Icon(Icons.chevron_right),
+                    label: const Text('下一个'),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
+  Widget _buildWordContent(BuildContext context, Word word) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    word.prompt,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    word.answer,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (word.partOfSpeech != null)
+                        Chip(
+                          label: Text(word.partOfSpeech!),
+                          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                        ),
+                      if (word.level != null)
+                        Chip(
+                          label: Text(word.level!),
+                          backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                        ),
+                      if (word.category != null)
+                        Chip(
+                          label: Text(word.category!),
+                          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => _generateExplanation(word),
+                        icon: const Icon(Icons.psychology),
+                        label: const Text('AI生成词解'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: () => _showAIGenerateExamplesDialog(word),
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('AI生成例句'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '词解',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        if (_expLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_explanation == null)
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.article, size: 18, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '暂无词解',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _generateExplanation(word),
+                              icon: const Icon(Icons.psychology),
+                              label: const Text('使用AI生成词解'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            width: double.infinity,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: _buildExplanationHtml(context: context, html: _explanation!.html),
+              ),
+            ),
+          ),
+        Text(
+          '例句',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        if (_loading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_examples.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              '暂无例句',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _examples.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final ex = _examples[index];
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.format_quote, size: 16, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            ex.senseText.isNotEmpty ? ex.senseText : '（未标注词义）',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildRubyText(
+                        context: context,
+                        html: ex.textHtml,
+                        plain: ex.textPlain,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        ex.textTranslation,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      if (ex.grammarNote.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          ex.grammarNote,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
   Widget _buildExplanationHtml({required BuildContext context, required String html}) {
-    final normalized = html
-        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    final normalized = html.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
     final plain = normalized.replaceAll(RegExp(r'<[^>]+>'), '');
     return _buildRubyText(context: context, html: normalized, plain: plain);
   }
@@ -320,8 +470,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         }
       }
 
-      final rubyBlock = (match.group(1) ?? '')
-          .replaceAll(RegExp(r"<rp>[\s\S]*?<\/rp>"), '');
+      final rubyBlock = (match.group(1) ?? '').replaceAll(RegExp(r"<rp>[\s\S]*?</rp>"), '');
 
       final rbs = RegExp(r"<rb>([\s\S]*?)<\/rb>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
       final rts = RegExp(r"<rt>([\s\S]*?)<\/rt>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
@@ -440,7 +589,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
       final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
       await svc.insertExamples(withWordId);
-      await _loadExamples();
+      await _loadExamples(word: word);
 
       if (mounted) {
         Navigator.of(context).pop();
