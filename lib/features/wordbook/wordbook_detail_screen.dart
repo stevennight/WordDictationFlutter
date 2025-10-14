@@ -83,10 +83,17 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     }
   }
   
-  void _openWordDetail(Word word) {
+  void _openWordDetail({required Word word, required List<Word> sourceWords}) {
+    final initialIndex = sourceWords.indexWhere((element) => element.id == word.id);
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => WordDetailScreen(word: word)),
+      MaterialPageRoute(
+        builder: (_) => WordDetailScreen(
+          word: word,
+          wordList: sourceWords,
+          initialIndex: initialIndex >= 0 ? initialIndex : 0,
+        ),
+      ),
     );
   }
   
@@ -802,7 +809,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  onTap: () => _openWordDetail(word),
+                  onTap: () => _openWordDetail(word: word, sourceWords: _filteredWords),
                   leading: CircleAvatar(
                     backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                     child: Text(
@@ -1658,7 +1665,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                   child: ListTile(
                     onTap: () {
                       Navigator.pop(context);
-                      _openWordDetail(word);
+                      _openWordDetail(word: word, sourceWords: unitWords);
                     },
                     leading: CircleAvatar(
                       backgroundColor: Theme.of(context).colorScheme.primaryContainer,

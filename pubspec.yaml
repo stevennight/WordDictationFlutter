@@ -1,6 +1,6 @@
 name: flutter_word_dictation
 description: 默写小助手 - 一个跨平台的单词默写应用，基于原Python wordDictation工具构建。
-version: 1.2.0+1
+version: v1.2.1+1
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

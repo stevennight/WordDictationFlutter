@@ -55,46 +55,54 @@ class AIExampleService {
     final List<String> rules = [];
     if (langSource.isNotEmpty) {
       rules.add('textPlain 与 textHtml 使用 '+langSource+'。');
+      rules.add('单词为 $langSource，该语言用于生成例句内容。');
     } else {
-      rules.add('自动识别原词语言并用于 textPlain 与 textHtml。');
+      rules.add('自动识别单词语言，该语言用于生成例句内容。');
     }
     if (langTarget.isNotEmpty) {
-      rules.add('textTranslation 使用 '+langTarget+'，提供完整句子译文。');
+      rules.add('单词词义为 $langTarget，该语言用于生成例句翻译、例句语法讲解。');
     } else {
-      rules.add('自动识别最合适的词义语言，并提供完整句子译文。');
+      rules.add('自动识别单词词义语言，该语言用于生成例句翻译、例句语法讲解。');
     }
 
-    final baseSystem = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
+    const baseSystem = '你是一名负责生成「例句」的助手，请严格按要求返回数据。'
         '例句应地道、简洁、符合常用表达，避免生僻词或不自然的搭配。'
         '严格只返回一个 JSON 数组（不包含任何额外文本或解释），数组每项必须包含：'
         'senseIndex（数字）、senseText（字符串）、textPlain（字符串）、textHtml（字符串）、textTranslation（字符串）、grammarNote（字符串）。'
         '不要返回 Markdown 或除 JSON 之外的任意内容。'
         '质量要求：'
         '1）各例句之间语法结构与场景尽量差异化；'
-        '2）textPlain 长度适中（约10–40词或等效字数），语法正确、自然；'
-        '3）textTranslation 与该词义严格一致，为整句完整译文，避免意译导致语义偏离；'
-        '4）grammarNote 使用译文语言书写，仅说明句中真实出现的语法点；多个语法点用 \\n 分隔（JSON 中必须使用 \\n，而非实际换行或 \\r\\n）；'
-        '5）避免重复或模板化的句式。'
-        'textHtml 规则：若原文为日文或中文则使用 ruby 标注；否则令 textHtml 与 textPlain 相同，不包含任何 HTML 标签。'
-        '如果例句是日文：为例句中出现的汉字都添加 ruby，禁止漏标；仅对「汉字」添加 ruby，不要对假名（ひらがな/カタカナ）或拉丁字符添加 ruby；严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；注意日文汉字的音读与训读，以及量词的音变（如10分应该看作一个整体，念じゅっぷん）等。'
-        '如果例句是中文：为整句所有汉字添加拼音 ruby（<ruby><rb>汉字</rb><rt>pinyin</rt></ruby>），不要对拉丁字符或符号添加 ruby；允许一个 ruby 中包含多组 <rb>/<rt>。';
-    final system = [baseSystem, ...rules].join(' ');
+        '2）textPlain 长度适中（约20–60词或等效字数），语法正确、自然；只保留句子本身。'
+        '3）textTranslation 与该词义严格一致，为整句完整译文，避免意译导致语义偏离；只保留句子本身。'
+        '4）grammarNote ，仅说明句中真实出现的语法点；多个语法点用 \\n 分隔（JSON 中必须使用 \\n，而非实际换行或 \\r\\n）；'
+        '5）避免重复或模板化的句式；尽可能用一些常用的语法、语法结构。'
+        'textHtml 规则：'
+        '如果例句是日文：'
+        '例句中的所有汉字的部分需要添加 ruby 注音，禁止漏标；'
+        '注音用假名标注，不要用罗马字；'
+        '禁止为平假名、片假名或拉丁字符的单词添加注音ruby，但句子中的汉字仍要添加注音ruby。'
+        '注意日文汉字的音读与训读，以及量词的音变等。'
+        '严格遵循 <ruby><rb>汉字</rb><rt>かな</rt></ruby> 的形式标注，rt 使用平假名，不要使用罗马音；'
+        'ruby生成时注意标签的闭合准确。';
+    final system = [baseSystem, ...rules].join('\n');
 
-    final user = '原词：'+prompt+
-        '。词义（带索引）：'+
-        List.generate(senses.length, (i) => '【'+i.toString()+'】'+senses[i]).join('；')+
-        '。请严格生成恰好 '+expectedCount.toString()+' 条例句，每条对应一个词义。'
-        '输出要求：仅输出一个 JSON 数组，长度为 '+expectedCount.toString()+'；'
-        '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
-        '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须「严格复制」对应词义文本（不要增删或改写）。';
+    String answerWithIndex = List.generate(senses.length, (i) => '【$i】${senses[i]}').join('；');
+    final user = [
+      '单词为："$prompt"；单词词义（带索引）为："$answerWithIndex"。',
+      '请严格生成恰好 $expectedCount 条例句，每条对应一个词义。',
+      '输出要求：仅输出一个 JSON 数组，长度为 $expectedCount；',
+      '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。',
+      '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须「严格复制」对应词义文本（不要增删或改写）。',
+      ...rules
+    ].join('\n');
 
     // 简短 Few-shot 示例，用于稳定格式与风格（不长、但可示范）
-    final fewShotUser = '原词：light。词义（带索引）：【0】亮光；【1】轻的。请严格生成恰好 2 条例句，每条对应一个词义。'
+    const fewShotUser = '单词为："light"；单词词义（带索引）为："【0】亮光；【1】轻的"。'
         '输出要求：仅输出一个 JSON 数组，长度为 2；'
         '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
         '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须严格复制对应词义文本（不要增删或改写）。';
 
-    final fewShotAssistant = '''[
+    const fewShotAssistant = '''[
   {
     "senseIndex": 0,
     "senseText": "亮光",
@@ -114,12 +122,12 @@ class AIExampleService {
 ]''';
 
     // 超短的日文 ruby 示例 Few-shot（演示正确的 ruby 与键名）
-    final fewShotUserJa = '原词：明るい。词义（带索引）：【0】明亮的；【1】开朗的。请严格生成恰好 2 条例句，每条对应一个词义。'
+    const fewShotUserJa = '单词为："明るい"；单词词义（带索引）为："【0】明亮的；【1】开朗的"。'
         '输出要求：仅输出一个 JSON 数组，长度为 2；'
         '数组中每项的键必须为：senseIndex、senseText、textPlain、textHtml、textTranslation、grammarNote。'
         '映射要求：senseIndex 必须对应上面提供的编号；senseText 必须严格复制对应词义文本（不要增删或改写）。';
 
-    final fewShotAssistantJa = '''[
+    const fewShotAssistantJa = '''[
   {
     "senseIndex": 0,
     "senseText": "明亮的",
