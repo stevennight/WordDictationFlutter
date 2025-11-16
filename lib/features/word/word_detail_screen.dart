@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_word_dictation/core/models/dictionary.dart';
+import 'package:flutter_word_dictation/core/services/dictionary_query_service.dart';
+import 'package:flutter_word_dictation/core/services/dictionary_service.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
 import 'package:flutter_word_dictation/core/services/example_sentence_service.dart';
 import 'package:flutter_word_dictation/shared/models/example_sentence.dart';
@@ -8,6 +11,12 @@ import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_strat
 import 'package:flutter_word_dictation/core/services/word_explanation_service.dart';
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
 import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
+
+class _DictKeyItem {
+  final Dictionary dictionary;
+  final String key;
+  const _DictKeyItem(this.dictionary, this.key);
+}
 
 class WordDetailScreen extends StatefulWidget {
   final Word word;
@@ -34,6 +43,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   bool _expLoading = true;
   late ValueNotifier<int> _currentIndexNotifier;
   PageController? _pageController;
+  final DictionaryService _dictionaryService = DictionaryService();
+  final DictionaryQueryService _dictionaryQueryService = DictionaryQueryService();
+  List<Dictionary> _dictionaries = [];
+  int _selectedDictionaryIndex = -1;
+  final TextEditingController _dictionarySearchController = TextEditingController();
+  String? _dictionarySearchResult;
+  bool _isDictionaryLoading = false;
+  List<_DictKeyItem> _dictionarySearchEntries = [];
 
   Word get _currentWord {
     if (widget.wordList != null && _currentIndexNotifier.value >= 0 && _currentIndexNotifier.value < widget.wordList!.length) {
@@ -56,6 +73,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     final word = _currentWord;
     _loadExamples(word: word);
     _loadExplanation(word: word);
+    _loadDictionaries();
     _currentIndexNotifier.addListener(_onWordIndexChanged);
   }
 
@@ -64,6 +82,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     _currentIndexNotifier.removeListener(_onWordIndexChanged);
     _currentIndexNotifier.dispose();
     _pageController?.dispose();
+    _dictionarySearchController.dispose();
+    _dictionaryQueryService.dispose();
     super.dispose();
   }
 
@@ -292,6 +312,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        _buildDictionaryLookup(context),
+        const SizedBox(height: 16),
         Text(
           '词解',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -519,6 +541,165 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     }
 
     return spans;
+  }
+
+  Future<void> _loadDictionaries() async {
+    final dictionaries = await _dictionaryService.getDictionaries();
+    if (mounted) {
+      setState(() {
+        _dictionaries = dictionaries;
+        if (_dictionaries.isNotEmpty && _selectedDictionaryIndex >= _dictionaries.length) {
+          _selectedDictionaryIndex = -1;
+        }
+      });
+    }
+  }
+
+  void _doDictionarySearch(String word) async {
+    if (_dictionaries.isEmpty || word.isEmpty) {
+      return;
+    }
+    setState(() {
+      _isDictionaryLoading = true;
+      _dictionarySearchResult = null;
+      _dictionarySearchEntries = [];
+    });
+
+    if (_selectedDictionaryIndex == -1) {
+      final List<_DictKeyItem> entries = [];
+      for (final d in _dictionaries) {
+        final keys = await _dictionaryQueryService.searchKeys(d, word, limit: 20);
+        for (final k in keys) {
+          entries.add(_DictKeyItem(d, k));
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _dictionarySearchEntries = entries;
+          _isDictionaryLoading = false;
+        });
+      }
+    } else {
+      final dictionary = _dictionaries[_selectedDictionaryIndex];
+      final keys = await _dictionaryQueryService.searchKeys(dictionary, word, limit: 50);
+      if (mounted) {
+        setState(() {
+          _dictionarySearchEntries = keys.map((k) => _DictKeyItem(dictionary, k)).toList();
+          _isDictionaryLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _lookupTargetItem(_DictKeyItem item) async {
+    if (_dictionaries.isEmpty) return;
+    setState(() {
+      _isDictionaryLoading = true;
+      _dictionarySearchResult = null;
+    });
+    final result = await _dictionaryQueryService.lookupWord(item.dictionary, item.key);
+    if (mounted) {
+      setState(() {
+        _dictionarySearchResult = result;
+        _isDictionaryLoading = false;
+      });
+    }
+  }
+
+  void _changeDictionaryIndex(int? index) {
+    setState(() {
+      _selectedDictionaryIndex = index ?? -1;
+    });
+    final text = _dictionarySearchController.text.trim();
+    if (text.isNotEmpty) {
+      _doDictionarySearch(text);
+    }
+  }
+
+  Widget _buildDictionaryLookup(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '词典查询',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            if (_dictionaries.isNotEmpty)
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedDictionaryIndex,
+                      items: [
+                        const DropdownMenuItem<int>(value: -1, child: Text('所有词典')),
+                        for (int i = 0; i < _dictionaries.length; i++)
+                          DropdownMenuItem<int>(value: i, child: Text(_dictionaries[i].name)),
+                      ],
+                      onChanged: _changeDictionaryIndex,
+                      decoration: const InputDecoration(
+                        labelText: '选择词典',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _dictionarySearchController,
+              decoration: InputDecoration(
+                hintText: '输入要查询的单词',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: () => _doDictionarySearch(_dictionarySearchController.text),
+                ),
+              ),
+              onSubmitted: _doDictionarySearch,
+            ),
+            if (_isDictionaryLoading)
+              const Padding(
+                padding: EdgeInsets.all(8.0),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (_dictionarySearchResult != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: _buildExplanationHtml(context: context, html: _dictionarySearchResult!),
+              ),
+            if (_dictionarySearchEntries.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('匹配项', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _dictionarySearchEntries.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final item = _dictionarySearchEntries[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(item.key),
+                          subtitle: Text(item.dictionary.name),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _lookupTargetItem(item),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 不再通过索引推断词义文本，例句标签仅使用例句中存储的 senseText。

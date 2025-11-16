@@ -11,6 +11,7 @@ import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/about_dialog.dart';
 import '../../sync/sync_settings_screen.dart';
+import '../../dictionary/screens/dictionary_settings_screen.dart';
 
 
 class SettingsScreen extends StatefulWidget {
@@ -137,6 +138,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: '配置云端同步服务',
                   leading: const Icon(Icons.sync),
                   onTap: () => _navigateToSyncSettings(),
+                ),
+                SettingsTile(
+                  title: '词典管理',
+                  subtitle: '添加和管理本地词典',
+                  leading: const Icon(Icons.menu_book),
+                  onTap: () => _navigateToDictionarySettings(),
                 ),
               ],
             ),
@@ -553,6 +560,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const SyncSettingsScreen(),
+      ),
+    );
+  }
+
+  void _navigateToDictionarySettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const DictionarySettingsScreen(),
       ),
     );
   }
