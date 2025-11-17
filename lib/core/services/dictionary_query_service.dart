@@ -4,10 +4,15 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'config_service.dart';
+import '../mdict/mdd_reader.dart';
 
 class DictionaryQueryService {
   final Map<String, DictReader> _readerCache = {};
   final Map<String, List<RecordOffsetInfo>> _offsetCache = {};
+  final Map<String, MddReader> _mddReaderCache = {};
+  final Map<String, Map<String, String>> _mddIndexCache = {};
+  final Set<String> _mddRootPrinted = {};
+  final Map<String, List<String>> _mddHeadsCache = {};
   String? lastResolvedMediaKey;
 
   Future<String?> lookupWord(Dictionary dictionary, String word) async {
@@ -221,7 +226,7 @@ class DictionaryQueryService {
             return await f.readAsBytes();
           }
         }
-        
+        return null;
       }
     } catch (e) {
       // Silent failure, media may be packed in MDD
@@ -296,6 +301,71 @@ class DictionaryQueryService {
       }
     } catch (_) {}
     return paths;
+  }
+  Future<Map<String, String>> _buildMddIndex(MddReader reader, String mddPath) async {
+    final cached = _mddIndexCache[mddPath];
+    if (cached != null) return cached;
+    final map = <String, String>{};
+    try {
+      final keys = reader.keys();
+      for (final k in keys) {
+        final lower = k.toLowerCase();
+        final idxSlash = lower.lastIndexOf('/');
+        final idxBack = lower.lastIndexOf('\\');
+        final idx = (idxSlash > idxBack ? idxSlash : idxBack) + 1;
+        final base = lower.substring(idx);
+        if (base.isNotEmpty && !map.containsKey(base)) {
+          map[base] = k;
+        }
+      }
+      _mddIndexCache[mddPath] = map;
+      print('[DictionaryQuery] mdd index built: ${map.length}');
+    } catch (e) {
+      print('[DictionaryQuery] mdd index error: $e');
+    }
+    return map;
+  }
+
+  Future<void> _printMddRoot(MddReader reader, String mddPath, {int limit = 100}) async {
+    try {
+      final keys = reader.keys();
+      final List<String> root = [];
+      final Map<String, int> dirCount = {};
+      for (final k in keys) {
+        final n = k.replaceAll('\\', '/');
+        if (!n.contains('/')) {
+          root.add(k);
+          continue;
+        }
+        final first = n.indexOf('/');
+        final rest = n.substring(first + 1);
+        if (first == 0 && !rest.contains('/')) {
+          root.add(k);
+        } else if (first >= 0) {
+          final head = first == 0 ? (rest.contains('/') ? rest.substring(0, rest.indexOf('/')) : '') : n.substring(0, first);
+          if (head.isNotEmpty) {
+            dirCount[head] = (dirCount[head] ?? 0) + 1;
+          }
+        }
+      }
+      final dirs = dirCount.entries.map((e) => '/${e.key} (${e.value})').toList()..sort();
+      _mddHeadsCache[mddPath] = dirCount.keys.toList();
+      print('[DictionaryQuery] mdd index built: ${keys.length}');
+      if (dirs.isNotEmpty) {
+        print('[DictionaryQuery] mdd top-level dirs: ${dirs.join(' | ')} ; root=${root.length}');
+      } else {
+        print('[DictionaryQuery] mdd top-level dirs: (none) ; root=${root.length}');
+      }
+      if (root.isNotEmpty) {
+        final sample = root.take(limit).map((e) {
+          final s = e.replaceAll('\\', '/');
+          return s.startsWith('/') ? s.substring(1) : s;
+        }).toList();
+        print('[DictionaryQuery] mdd root listing (${sample.length}): ${sample.join(' | ')}');
+      }
+    } catch (e) {
+      print('[DictionaryQuery] mdd root listing error: $e');
+    }
   }
   Future<List<String>> listMddRoot(Dictionary dictionary, {int limit = 100}) async {
     return [];
