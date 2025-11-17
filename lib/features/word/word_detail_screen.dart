@@ -59,6 +59,36 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   List<_DictKeyItem> _dictionarySearchEntries = [];
   Dictionary? _dictionarySearchSource;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final Set<String> _selectedDictKeys = {};
+
+  String _itemKey(_DictKeyItem i) => '${i.dictionary.path}::${i.key}';
+  bool _isSelected(_DictKeyItem i) => _selectedDictKeys.contains(_itemKey(i));
+  void _toggleSelected(_DictKeyItem i, bool selected) {
+    final k = _itemKey(i);
+    if (selected) {
+      _selectedDictKeys.add(k);
+    } else {
+      _selectedDictKeys.remove(k);
+    }
+  }
+  void _clearSelected() {
+    setState(() {
+      _selectedDictKeys.clear();
+    });
+  }
+  Future<List<String>> _collectSelectedHtml() async {
+    final keys = _selectedDictKeys.toList();
+    if (keys.isEmpty) return [];
+    final items = _dictionarySearchEntries.where((e) => _selectedDictKeys.contains(_itemKey(e))).toList();
+    final List<String> htmls = [];
+    for (final it in items) {
+      final h = await _dictionaryQueryService.lookupWord(it.dictionary, it.key);
+      if ((h?.trim().isNotEmpty ?? false)) {
+        htmls.add(h!.trim());
+      }
+    }
+    return htmls;
+  }
 
   Word get _currentWord {
     if (widget.wordList != null && _currentIndexNotifier.value >= 0 && _currentIndexNotifier.value < widget.wordList!.length) {
@@ -839,6 +869,32 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
               ),
               onSubmitted: _doDictionarySearch,
             ),
+            if (_selectedDictKeys.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Row(
+                  children: [
+                    Text('已选 ${_selectedDictKeys.length} 项'),
+                    const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: () => _generateExplanation(_currentWord),
+                      icon: const Icon(Icons.psychology),
+                      label: const Text('喂AI生成词解'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: () => _showAIGenerateExamplesDialog(_currentWord),
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('喂AI生成例句'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _clearSelected,
+                      child: const Text('清空选择'),
+                    ),
+                  ],
+                ),
+              ),
             if (_isDictionaryLoading)
               const Padding(
                 padding: EdgeInsets.all(8.0),
@@ -914,7 +970,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                           dense: true,
                           title: Text(item.key),
                           subtitle: Text(item.dictionary.name),
-                          trailing: const Icon(Icons.chevron_right),
+                          trailing: Checkbox(
+                            value: _isSelected(item),
+                            onChanged: (v) {
+                              setState(() {
+                                _toggleSelected(item, v ?? false);
+                              });
+                            },
+                          ),
                           onTap: () => _lookupTargetItem(item),
                         );
                       },
@@ -986,11 +1049,13 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
 
       final ai = await AIExampleService.getInstance();
+      final refs = await _collectSelectedHtml();
       final examples = await ai.generateExamples(
         prompt: req.prompt,
         answer: req.answer,
         sourceLanguage: req.sourceLanguage,
         targetLanguage: req.targetLanguage,
+        sourcesHtml: refs,
       );
       progress.value = 1;
 
@@ -1056,9 +1121,11 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
 
       final ai = await AIWordExplanationService.getInstance();
+      final refs = await _collectSelectedHtml();
       final html = await ai.generateExplanationHtml(
         prompt: word.prompt,
         answer: word.answer,
+        sourcesHtml: refs,
       );
 
       final now = DateTime.now();

@@ -25,6 +25,7 @@ class AIExampleService {
     required String answer,
     String? sourceLanguage,
     String? targetLanguage,
+    List<String>? sourcesHtml,
   }) async {
     final endpoint = await _configService.getAIEndpoint();
     final apiKey = await _configService.getAIApiKey();
@@ -146,6 +147,16 @@ class AIExampleService {
   }
 ]''';
 
+    final refs = (sourcesHtml ?? const <String>[]).where((e) => e.trim().isNotEmpty).toList();
+    final refsJoined = () {
+      if (refs.isEmpty) return '';
+      final truncated = refs.map((e) {
+        final t = e.trim();
+        return t.length > 4000 ? t.substring(0, 4000) : t;
+      }).toList();
+      return '参考词典原始HTML：\n' + truncated.join('\n\n---\n\n');
+    }();
+
     final body = jsonEncode({
       'model': model,
       'messages': [
@@ -154,6 +165,7 @@ class AIExampleService {
         {'role': 'assistant', 'content': fewShotAssistant},
         {'role': 'user', 'content': fewShotUserJa},
         {'role': 'assistant', 'content': fewShotAssistantJa},
+        if (refsJoined.isNotEmpty) {'role': 'user', 'content': refsJoined},
         {'role': 'user', 'content': user},
       ],
       'temperature': temperature,

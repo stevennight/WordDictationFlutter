@@ -23,6 +23,7 @@ class AIWordExplanationService {
     required String answer,
     String? sourceLanguage,
     String? targetLanguage,
+    List<String>? sourcesHtml,
   }) async {
     final endpoint = await _configService.getAIEndpoint();
     final apiKey = await _configService.getAIApiKey();
@@ -511,6 +512,16 @@ ruby生成时注意标签的闭合准确。
 3. 表记习惯：「スケジュール<ruby><rb>通</rb><rt>どお</rt></ruby>り」（按原定计划）、「スケジュール<ruby><rb>感</rb><rt>かん</rt></ruby>」（对工期/所需时间的<ruby><rb>感覚</rb><rt>かんかく</rt></ruby>，商务口语）。
 ''';
 
+    final refs = (sourcesHtml ?? const <String>[]).where((e) => e.trim().isNotEmpty).toList();
+    final refsJoined = () {
+      if (refs.isEmpty) return '';
+      final truncated = refs.map((e) {
+        final t = e.trim();
+        return t.length > 4000 ? t.substring(0, 4000) : t;
+      }).toList();
+      return '参考词典原始HTML：\n' + truncated.join('\n\n---\n\n');
+    }();
+
     final body = jsonEncode({
       'model': model,
       'messages': [
@@ -523,6 +534,7 @@ ruby生成时注意标签的闭合准确。
         // {'role': 'assistant', 'content': fewShotAssistantJa2},
         // {'role': 'user', 'content': fewShotUserJa3},
         // {'role': 'assistant', 'content': fewShotAssistantJa3},
+        if (refsJoined.isNotEmpty) {'role': 'user', 'content': refsJoined},
         {'role': 'user', 'content': user},
       ],
       'temperature': temperature,
