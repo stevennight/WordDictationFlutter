@@ -14,6 +14,7 @@ import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
@@ -60,6 +61,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   Dictionary? _dictionarySearchSource;
   final AudioPlayer _audioPlayer = AudioPlayer();
   final Set<String> _selectedDictKeys = {};
+  String? _aiNormIn;
+  String? _aiNormOut;
+  String? _aiPickIn;
+  String? _aiPickOut;
+  String _normPath(String p) {
+    final s = p.trim().replaceAll('/', '\\');
+    return s.replaceAll(RegExp(r'\\+'), '\\');
+  }
 
   String _itemKey(_DictKeyItem i) => '${i.dictionary.path}::${i.key}';
   bool _isSelected(_DictKeyItem i) => _selectedDictKeys.contains(_itemKey(i));
@@ -77,17 +86,117 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     });
   }
   Future<List<String>> _collectSelectedHtml() async {
-    final keys = _selectedDictKeys.toList();
-    if (keys.isEmpty) return [];
-    final items = _dictionarySearchEntries.where((e) => _selectedDictKeys.contains(_itemKey(e))).toList();
+    if (_selectedDictKeys.isEmpty) return [];
     final List<String> htmls = [];
-    for (final it in items) {
-      final h = await _dictionaryQueryService.lookupWord(it.dictionary, it.key);
+    for (final sel in _selectedDictKeys) {
+      final sep = sel.indexOf('::');
+      if (sep <= 0) continue;
+      final dictPath = sel.substring(0, sep).trim();
+      final key = sel.substring(sep + 2).trim();
+      if (dictPath.isEmpty || key.isEmpty) continue;
+      Dictionary? dict;
+      for (final d in _dictionaries) {
+        if (_normPath(d.path) == _normPath(dictPath)) {
+          dict = d;
+          break;
+        }
+      }
+      if (dict == null) continue;
+      final h = await _dictionaryQueryService.lookupWord(dict, key);
       if ((h?.trim().isNotEmpty ?? false)) {
         htmls.add(h!.trim());
       }
     }
     return htmls;
+  }
+  List<Map<String, String>> _collectSelectedMeta() {
+    if (_selectedDictKeys.isEmpty) return [];
+    final List<Map<String, String>> metas = [];
+    for (final sel in _selectedDictKeys) {
+      final sep = sel.indexOf('::');
+      if (sep <= 0) continue;
+      final dictPath = sel.substring(0, sep).trim();
+      final key = sel.substring(sep + 2).trim();
+      if (dictPath.isEmpty || key.isEmpty) continue;
+      Dictionary? dict;
+      for (final d in _dictionaries) {
+        if (_normPath(d.path) == _normPath(dictPath)) {
+          dict = d;
+          break;
+        }
+      }
+      if (dict == null) continue;
+      metas.add({'dictionary': dict.name, 'key': key});
+    }
+    return metas;
+  }
+
+  bool _htmlMatchesTerms(String html, Set<String> terms) {
+    final variants = <String>{};
+    for (final t in terms) {
+      final s = t.trim();
+      if (s.isEmpty) continue;
+      variants.add(s);
+      variants.add(s.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', ''));
+      variants.add(s.replaceAll('‐', '・').replaceAll('‑', '・').replaceAll('–', '・').replaceAll('—', '・').replaceAll('-', '・'));
+      variants.add(_toKatakana(s));
+      variants.add(_toHiragana(s));
+    }
+    final lower = html;
+    for (final v in variants) {
+      if (v.isNotEmpty && lower.contains(v)) return true;
+    }
+    return false;
+  }
+
+  String _toKatakana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x3041 && code <= 0x3096) {
+        sb.writeCharCode(code + 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
+  }
+
+  String _toHiragana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x30A1 && code <= 0x30FA) {
+        sb.writeCharCode(code - 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
+  }
+
+  void _showAIDebug() {
+    final lines = <String>[
+      '归一化-输入:\n'+(_aiNormIn ?? '未执行'),
+      '\n归一化-输出:\n'+(_aiNormOut ?? '未执行'),
+      '\n自动选择-输入:\n'+(_aiPickIn ?? '未执行'),
+      '\n自动选择-输出:\n'+(_aiPickOut ?? '未执行'),
+    ];
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('AI归一化/自动选择 调试'),
+        content: SizedBox(
+          width: 640,
+          child: SingleChildScrollView(
+            child: SelectableText(lines.join('\n\n')),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+        ],
+      ),
+    );
   }
 
   Word get _currentWord {
@@ -869,12 +978,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
               ),
               onSubmitted: _doDictionarySearch,
             ),
-            if (_selectedDictKeys.isNotEmpty)
+            if (_selectedDictKeys.isNotEmpty || (_aiNormOut != null || _aiPickOut != null))
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Row(
                   children: [
-                    Text('已选 ${_selectedDictKeys.length} 项'),
+                    _selectedDictKeys.isNotEmpty
+                        ? Text('已选 ${_selectedDictKeys.length} 项')
+                        : const SizedBox.shrink(),
                     const Spacer(),
                     OutlinedButton.icon(
                       onPressed: () => _generateExplanation(_currentWord),
@@ -888,9 +999,16 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                       label: const Text('喂AI生成例句'),
                     ),
                     const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: _clearSelected,
-                      child: const Text('清空选择'),
+                    if (_selectedDictKeys.isNotEmpty)
+                      TextButton(
+                        onPressed: _clearSelected,
+                        child: const Text('清空选择'),
+                      ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _showAIDebug,
+                      icon: const Icon(Icons.bug_report),
+                      label: const Text('查看AI调试'),
                     ),
                   ],
                 ),
@@ -1121,12 +1239,118 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
 
       final ai = await AIWordExplanationService.getInstance();
-      final refs = await _collectSelectedHtml();
-      final html = await ai.generateExplanationHtml(
+      List<String> refs = await _collectSelectedHtml();
+      List<Map<String, String>> metas = _collectSelectedMeta();
+      if (refs.isEmpty) {
+        _aiNormIn = jsonEncode({'prompt': word.prompt});
+        final norm = await ai.normalizeWord(prompt: word.prompt);
+        _aiNormOut = jsonEncode(norm);
+        final lang = (norm['language'] ?? '') as String;
+        final terms = <String>{};
+        if (lang == 'ja') {
+          final k1 = (norm['jaKanji'] ?? '') as String;
+          final k2 = (norm['jaKana'] ?? '') as String;
+          if (k1.trim().isNotEmpty) terms.add(k1.trim());
+          if (k2.trim().isNotEmpty) terms.add(k2.trim());
+        } else {
+          final t = (norm['promptNormalized'] ?? word.prompt) as String;
+          terms.add(t.trim().isNotEmpty ? t.trim() : word.prompt);
+        }
+        final dicts = _selectedDictionaryIndex == -1
+            ? _dictionaries
+            : (_selectedDictionaryIndex >= 0 && _selectedDictionaryIndex < _dictionaries.length
+                ? [_dictionaries[_selectedDictionaryIndex]]
+                : []);
+        final Map<String, List<Map<String, String>>> entries = {};
+        for (final d in dicts) {
+          final List<Map<String, String>> list = [];
+          for (final t in terms) {
+            final keys = await _dictionaryQueryService.searchKeys(d, t, limit: 32);
+            for (final k in keys) {
+              final html0 = await _dictionaryQueryService.lookupWord(d, k);
+              final h = (html0 ?? '').trim();
+              if (h.isNotEmpty && _htmlMatchesTerms(h, terms)) {
+                final trunc = h.length > 2000 ? h.substring(0, 2000) : h;
+                list.add({'key': k, 'html': trunc});
+              }
+            }
+          }
+          if (list.isEmpty) {
+            for (final t in terms) {
+              final keys = await _dictionaryQueryService.searchKeys(d, t, limit: 8);
+              for (final k in keys) {
+                final html0 = await _dictionaryQueryService.lookupWord(d, k);
+                final h = (html0 ?? '').trim();
+                if (h.isNotEmpty) {
+                  final trunc = h.length > 2000 ? h.substring(0, 2000) : h;
+                  list.add({'key': k, 'html': trunc});
+                }
+              }
+              if (list.isNotEmpty) break;
+            }
+          }
+          if (list.isNotEmpty) {
+            entries[d.path] = list;
+          }
+        }
+        if (entries.isEmpty) {
+          print('[AISelect] entries prepared: dicts=0');
+        } else {
+          print('[AISelect] entries prepared: dicts=${entries.length}');
+          entries.forEach((dp, lst) {
+            print('[AISelect]   $dp -> ${lst.length} candidates');
+          });
+        }
+        if (entries.isNotEmpty) {
+          _aiPickIn = jsonEncode({'prompt': word.prompt, 'answer': word.answer, 'entries': entries});
+          final picks = await ai.pickBestDictionaryEntries(
+            prompt: word.prompt,
+            answer: word.answer,
+            entries: entries,
+          );
+          _aiPickOut = jsonEncode(picks);
+          _selectedDictKeys.clear();
+          picks.forEach((dictId, chosen) {
+            final sel = (chosen ?? '') as String;
+            if (sel.trim().isNotEmpty) {
+              _selectedDictKeys.add(dictId+'::'+sel);
+            }
+          });
+          refs = await _collectSelectedHtml();
+          metas = _collectSelectedMeta();
+        }
+        if (refs.isEmpty) {
+          if (mounted) {
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('未找到合适的释义，请在匹配项中手动勾选后重试')),
+            );
+          }
+          return;
+        }
+      }
+
+      var html = await ai.generateExplanationHtml(
         prompt: word.prompt,
         answer: word.answer,
         sourcesHtml: refs,
+        sourcesMeta: metas,
       );
+      if (metas.isNotEmpty && (html.contains('参考来源') == false)) {
+        final buf = StringBuffer();
+        buf.write('<hr/><section><h3>【参考来源】</h3><ul>');
+        for (final m in metas) {
+          final dn = (m['dictionary'] ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+          final k = (m['key'] ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+          buf.write('<li>');
+          buf.write(dn);
+          buf.write('：');
+          buf.write(k);
+          buf.write('</li>');
+        }
+        buf.write('</ul></section>');
+        html = html + '\n' + buf.toString();
+      }
 
       final now = DateTime.now();
       final exp = WordExplanation(

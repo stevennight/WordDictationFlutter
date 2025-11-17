@@ -24,6 +24,7 @@ class AIWordExplanationService {
     String? sourceLanguage,
     String? targetLanguage,
     List<String>? sourcesHtml,
+    List<Map<String, String>>? sourcesMeta,
   }) async {
     final endpoint = await _configService.getAIEndpoint();
     final apiKey = await _configService.getAIApiKey();
@@ -93,8 +94,9 @@ class AIWordExplanationService {
 - 【近义词】：常见的近义词，重点说明当前单词与近义词的区别，并且分别生成对应的例句与例句翻译，例句能充分体现他们之间的区别；区别包括但不限于语境、语气、程度、使用场景等方面的细微区别。
 - 【反义词】：常见的反义词，粗略讲解反义词的基本含义，并为每个反义词生成对应的例句与例句翻译；反义词注意需要与当前单词语境、使用场景一致，比如不能说单词是口语化表达、生成一个正式场合用的反义词。
 - 【扩展】：除了当前提供词义外，还有其他词义，在此部分中讲解。
+- 【参考来源】：本次生成所参考的词典与条目列表（仅列出词典名称与条目 key，不展示 HTML）。
 
-严格遵循以上内容结构，包括内容组成以及各部分的顺序；禁止新增其他内容模块。
+严格遵循以上内容结构，包括内容组成以及各部分的顺序；允许在末尾追加【参考来源】模块；除此之外禁止新增其他内容模块。
 上述各模块如果内容为空，则不需要生成对应模块的标题与内容。
 内容返回格式参见后面的输出格式-内容格式小节。
 
@@ -522,11 +524,29 @@ ruby生成时注意标签的闭合准确。
       }).toList();
       return '参考词典原始HTML：\n' + truncated.join('\n\n---\n\n');
     }();
+    final metas = (sourcesMeta ?? const <Map<String, String>>[])
+        .where((m) => (m['dictionary']?.trim().isNotEmpty ?? false) && (m['key']?.trim().isNotEmpty ?? false))
+        .toList();
+    final metaJoined = () {
+      if (metas.isEmpty) return '';
+      final lines = <String>[];
+      for (int i = 0; i < metas.length; i++) {
+        final m = metas[i];
+        final dn = (m['dictionary'] ?? '').trim();
+        final k = (m['key'] ?? '').trim();
+        lines.add('${i + 1}. 词典：'+dn+'；条目：'+k);
+      }
+      return '参考来源清单：\n' + lines.join('\n');
+    }();
+    final mustRefNote = metaJoined.isNotEmpty
+        ? '当存在参考来源清单时，必须在输出HTML末尾添加【参考来源】模块，逐条列出词典名称与条目key。'
+        : '';
 
     final body = jsonEncode({
       'model': model,
       'messages': [
         {'role': 'system', 'content': system},
+        if (mustRefNote.isNotEmpty) {'role': 'system', 'content': mustRefNote},
         // {'role': 'user', 'content': fewShotUserEn},
         // {'role': 'assistant', 'content': fewShotAssistantEn},
         // {'role': 'user', 'content': fewShotUserJa},
@@ -536,6 +556,7 @@ ruby生成时注意标签的闭合准确。
         // {'role': 'user', 'content': fewShotUserJa3},
         // {'role': 'assistant', 'content': fewShotAssistantJa3},
         if (refsJoined.isNotEmpty) {'role': 'user', 'content': refsJoined},
+        if (metaJoined.isNotEmpty) {'role': 'user', 'content': metaJoined},
         {'role': 'user', 'content': user},
       ],
       'temperature': temperature,
@@ -555,6 +576,154 @@ ruby生成时注意标签的闭合准确。
     return html;
   }
 
+  Future<Map<String, dynamic>> normalizeWord({
+    required String prompt,
+    String? sourceLanguage,
+  }) async {
+    final endpoint = await _configService.getAIEndpoint();
+    final apiKey = await _configService.getAIApiKey();
+    final model = await _configService.getAIModel();
+    final temperature = await _configService.getAITemperature();
+    if (apiKey.isEmpty) {
+      throw Exception('AI API key is not set');
+    }
+    final uri = Uri.parse(_normalizeEndpoint(endpoint, path: '/chat/completions'));
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $apiKey',
+    };
+    final system = r'''你是一名词条归一化助手。
+
+目标：判断输入单词的语言并进行最小必要的标准化；仅在日文时返回“汉字写法”和“假名写法”两个规范形。
+
+输出要求：
+- 严格只返回一个 JSON 对象；不得包含任何解释、Markdown、额外文本或多余字段；
+- 统一键名：
+  - 当语言为日文：{"language":"ja","jaKanji":"…","jaKana":"…"}
+  - 当语言为其他：{"language":"xx","promptNormalized":"…"}（xx 为ISO或通用语言标记）
+- 当无法判断语言，返回 {"language":"","promptNormalized":"原文"}
+
+归一化规则：
+- 日文：
+  - jaKanji：常见标准汉字写法（若为外来语或本无汉字写法，填空字符串）
+  - jaKana：常见标准假名写法（平假名或片假名，优先教材或通行用法）
+  - 不要返回罗马字；不要混合假名与拉丁字符；
+- 非日文：
+  - promptNormalized 为原文或最常见标准写法（如大小写规范、去除多余空格、常见变体的主形）
+  - 不要创造新词或合成词；
+''';
+    final user = '输入："'+prompt+'"。请按上面的 JSON 规范返回。';
+    final body = jsonEncode({
+      'model': model,
+      'messages': [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+      ],
+      'temperature': temperature,
+    });
+    final resp = await http.post(uri, headers: headers, body: body);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return {
+        'language': '',
+        'promptNormalized': prompt,
+      };
+    }
+    final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+    final content = decoded['choices']?[0]?['message']?['content'] as String? ?? '';
+    final objStr = _extractJsonObject(content);
+    if (objStr == null || objStr.isEmpty) {
+      return {
+        'language': '',
+        'promptNormalized': prompt,
+      };
+    }
+    try {
+      final data = jsonDecode(objStr) as Map<String, dynamic>;
+      return data;
+    } catch (_) {
+      return {
+        'language': '',
+        'promptNormalized': prompt,
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> pickBestDictionaryEntries({
+    required String prompt,
+    required String answer,
+    required Map<String, List<Map<String, String>>> entries,
+  }) async {
+    final endpoint = await _configService.getAIEndpoint();
+    final apiKey = await _configService.getAIApiKey();
+    final model = await _configService.getAIModel();
+    final temperature = await _configService.getAITemperature();
+    if (apiKey.isEmpty) {
+      throw Exception('AI API key is not set');
+    }
+    final uri = Uri.parse(_normalizeEndpoint(endpoint, path: '/chat/completions'));
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $apiKey',
+    };
+    final system = r'''你是一名词典候选项选择器。
+
+任务：在每个词典的候选条目中，选择与给定「单词（prompt）」「词义（answer）」最匹配的一项；若无合适项则返回 null。
+
+输入（user为JSON）：{"prompt":"…","answer":"…","entries":{"dictId":[{"key":"…","html":"…"},…]}}
+
+匹配准则（按重要性排序）：
+1. 释义一致性：候选HTML中的释义与 answer 高度一致；避免跨义项；
+2. 用法可信度：词性、常用搭配/短语、语境与 answer 一致或相容；
+3. 词形与范围：候选 key 与 prompt/归一化形态相符；避免过宽或过窄的条目（如仅短语或过泛条目）；
+4. 质量优先：若多个候选合理，选择信息更完整、结构更规范者；
+5. 排除：若候选HTML明显指向不同词义、缩略、同形异义或仅为跳转/索引，判定为不合适。
+
+输出：
+- 严格只返回一个 JSON 对象：{ "dictId": "chosenKey" | null, … }
+- dictId 为输入 entries 的键；chosenKey 必须取自对应候选的 key；无合适项时填 null；
+- 不得包含除该对象外的任何内容（禁止解释、Markdown、文本）。
+''';
+    final payload = jsonEncode({
+      'prompt': prompt,
+      'answer': answer,
+      'entries': entries,
+    });
+    final user = payload;
+    final body = jsonEncode({
+      'model': model,
+      'messages': [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+      ],
+      'temperature': temperature,
+    });
+    final resp = await http.post(uri, headers: headers, body: body);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return {};
+    }
+    final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+    final content = decoded['choices']?[0]?['message']?['content'] as String? ?? '';
+    final objStr = _extractJsonObject(content);
+    if (objStr == null || objStr.isEmpty) return {};
+    try {
+      final data = jsonDecode(objStr) as Map<String, dynamic>;
+      final total = data.length;
+      int matched = 0;
+      data.forEach((k, v) {
+        final s = (v is String) ? v.trim() : '';
+        if (s.isNotEmpty) matched++;
+      });
+      print('[AISelect] 自动选择结果：词典总数=$total，命中数=$matched');
+      data.forEach((k, v) {
+        final s = (v is String) ? v.trim() : '';
+        print('[AISelect] $k -> ${s.isEmpty ? '(null)' : s}');
+      });
+      return data;
+    } catch (_) {
+      return {};
+    }
+  }
+
   String _normalizeEndpoint(String endpoint, {required String path}) {
     final base = endpoint.endsWith('/') ? endpoint.substring(0, endpoint.length - 1) : endpoint;
     return '$base$path';
@@ -568,5 +737,14 @@ ruby生成时注意标签的闭合准确。
       return m.group(1) ?? '';
     }
     return content;
+  }
+
+  String? _extractJsonObject(String content) {
+    final start = content.indexOf('{');
+    final end = content.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return content.substring(start, end + 1);
+    }
+    return null;
   }
 }

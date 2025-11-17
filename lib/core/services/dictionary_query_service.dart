@@ -30,9 +30,26 @@ class DictionaryQueryService {
       if (offsetInfo != null) {
         print('[DictionaryQuery] locate hit: ${offsetInfo.keyText}');
         final content = await reader.readOneMdx(offsetInfo);
-        return await _resolveLink(reader, content, dictionaryPath: dictionary.path);
+        return await _resolveLink(reader, content, dictionaryPath: dictionary.path, expectedTerms: _buildTerms(word));
       }
       print('[DictionaryQuery] locate miss for "$word"');
+      // Try soft variants for common dictionary key formats
+      final variants = <String>{};
+      final raw = word.trim();
+      variants.add(raw);
+      variants.add(raw.replaceAll(RegExp(r'【[^】]*】'), ''));
+      variants.add(raw.replaceAll(RegExp(r'[‐‑–—\-]'), ''));
+      variants.add(raw.replaceAll('・', '').replaceAll('·', ''));
+      for (final v in variants) {
+        final vv = v.trim();
+        if (vv.isEmpty || vv == raw) continue;
+        final alt = await reader.locate(vv);
+        if (alt != null) {
+          print('[DictionaryQuery] locate soft hit: $vv');
+          final content = await reader.readOneMdx(alt);
+          return await _resolveLink(reader, content, dictionaryPath: dictionary.path, expectedTerms: _buildTerms(word));
+        }
+      }
     } catch (e) {
       _readerCache.remove(dictionary.path);
       print('[DictionaryQuery] error: $e');
@@ -40,11 +57,69 @@ class DictionaryQueryService {
     return null;
   }
 
+  Set<String> _buildTerms(String word) {
+    final s = word.trim();
+    final set = <String>{};
+    if (s.isNotEmpty) {
+      set.add(s);
+      set.add(s.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', ''));
+      set.add(s.replaceAll('・', '').replaceAll('·', ''));
+      set.add(_toKatakana(s));
+      set.add(_toHiragana(s));
+    }
+    return set;
+  }
+
+  bool _contentMatches(String html, Set<String> terms) {
+    if (html.isEmpty) return false;
+    for (final t in terms) {
+      final v1 = t.trim();
+      if (v1.isEmpty) continue;
+      if (html.contains(v1)) return true;
+      final v2 = v1.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', '');
+      if (v2.isNotEmpty && html.contains(v2)) return true;
+      final v3 = v1.replaceAll('・', '').replaceAll('·', '');
+      if (v3.isNotEmpty && html.contains(v3)) return true;
+      final v4 = _toKatakana(v1);
+      if (v4.isNotEmpty && html.contains(v4)) return true;
+      final v5 = _toHiragana(v1);
+      if (v5.isNotEmpty && html.contains(v5)) return true;
+    }
+    return false;
+  }
+
+  String _toKatakana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x3041 && code <= 0x3096) {
+        sb.writeCharCode(code + 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
+  }
+
+  String _toHiragana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x30A1 && code <= 0x30FA) {
+        sb.writeCharCode(code - 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
+  }
+
   Future<String?> _resolveLink(
     DictReader reader,
     String? content, {
     required String dictionaryPath,
     int depth = 0,
+    Set<String>? expectedTerms,
   }) async {
     if (content == null) return null;
     if (!content.startsWith('@@@LINK=')) return content;
@@ -61,29 +136,50 @@ class DictionaryQueryService {
         print('[DictionaryQuery] numeric link miss: $numeric');
         final data = await _getDataByIndex(reader, dictionaryPath, numeric);
         if (data != null) {
-          return await _resolveLink(reader, data, dictionaryPath: dictionaryPath, depth: depth + 1);
+          if (expectedTerms != null && !_contentMatches(data, expectedTerms)) {
+            for (int i = -3; i <= 3; i++) {
+              if (i == 0) continue;
+              final altData2 = await _getDataByIndex(reader, dictionaryPath, numeric + i);
+              if (altData2 != null && _contentMatches(altData2, expectedTerms)) {
+                return await _resolveLink(reader, altData2, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
+              }
+            }
+          }
+          return await _resolveLink(reader, data, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
         }
         final alt = numeric + 1;
         print('[DictionaryQuery] try alt index: $alt');
         final altInfo = await _getOffsetByIndex(reader, dictionaryPath, alt);
         if (altInfo != null) {
           final nextAlt = await reader.readOneMdx(altInfo);
-          return await _resolveLink(reader, nextAlt, dictionaryPath: dictionaryPath, depth: depth + 1);
+          return await _resolveLink(reader, nextAlt, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
         }
         final altData = await _getDataByIndex(reader, dictionaryPath, alt);
         if (altData != null) {
-          return await _resolveLink(reader, altData, dictionaryPath: dictionaryPath, depth: depth + 1);
+          return await _resolveLink(reader, altData, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
         }
         return null;
       }
       final next = await reader.readOneMdx(info);
-      return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1);
+      if (expectedTerms != null && !_contentMatches(next, expectedTerms)) {
+        for (int i = -3; i <= 3; i++) {
+          if (i == 0) continue;
+          final altInfo2 = await _getOffsetByIndex(reader, dictionaryPath, numeric + i);
+          if (altInfo2 != null) {
+            final altNext2 = await reader.readOneMdx(altInfo2);
+            if (_contentMatches(altNext2, expectedTerms)) {
+              return await _resolveLink(reader, altNext2, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
+            }
+          }
+        }
+      }
+      return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
     }
 
     final info = await reader.locate(target);
     if (info == null) return null;
     final next = await reader.readOneMdx(info);
-    return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1);
+    return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
   }
 
   int? _parseNumeric(String raw) {
