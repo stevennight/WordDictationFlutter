@@ -11,6 +11,12 @@ import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_strat
 import 'package:flutter_word_dictation/core/services/word_explanation_service.dart';
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
 import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
+import 'package:flutter_html/flutter_html.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
 
 class _DictKeyItem {
   final Dictionary dictionary;
@@ -51,6 +57,8 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
   String? _dictionarySearchResult;
   bool _isDictionaryLoading = false;
   List<_DictKeyItem> _dictionarySearchEntries = [];
+  Dictionary? _dictionarySearchSource;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   Word get _currentWord {
     if (widget.wordList != null && _currentIndexNotifier.value >= 0 && _currentIndexNotifier.value < widget.wordList!.length) {
@@ -84,6 +92,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     _pageController?.dispose();
     _dictionarySearchController.dispose();
     _dictionaryQueryService.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -304,6 +313,12 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         icon: const Icon(Icons.auto_awesome),
                         label: const Text('AI生成例句'),
                       ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _listMddRoot,
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('列出MDD根目录'),
+                      ),
                     ],
                   ),
                 ],
@@ -478,6 +493,170 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     );
   }
 
+  Future<void> _playSound(String url) async {
+    final dict = _dictionarySearchSource ?? (_selectedDictionaryIndex == -1
+        ? (_dictionaries.isNotEmpty ? _dictionaries.first : null)
+        : _dictionaries[_selectedDictionaryIndex]);
+    if (dict == null) return;
+    try {
+      final bytes = await _dictionaryQueryService.readMedia(dict, url);
+      if (bytes == null) return;
+      final dir = await getTemporaryDirectory();
+      final name = url.split('://').last;
+      final matched = _dictionaryQueryService.lastResolvedMediaKey;
+      final adjustedName = () {
+        if (matched != null && matched.isNotEmpty) {
+          final normalized = matched.replaceAll('\\', '/');
+          final lastSeg = normalized.split('/').last;
+          if (lastSeg.contains('.')) {
+            return lastSeg;
+          }
+        }
+        return name;
+      }();
+      final filePath = p.join(dir.path, adjustedName);
+      final f = File(filePath);
+      await f.writeAsBytes(bytes, flush: true);
+      print('[WordDetail] media ready: ${bytes.length} bytes -> $filePath');
+      await _audioPlayer.stop();
+      await _audioPlayer.play(DeviceFileSource(filePath));
+    } catch (_) {}
+  }
+
+  Future<void> _listMddRoot() async {
+    final dict = _dictionarySearchSource ?? (_selectedDictionaryIndex == -1
+        ? (_dictionaries.isNotEmpty ? _dictionaries.first : null)
+        : _dictionaries[_selectedDictionaryIndex]);
+    if (dict == null) return;
+    try {
+      final data = await _dictionaryQueryService.listMddRootAndDirs(dict, limit: 200);
+      final items = data['root'] ?? const <String>[];
+      final dirs = data['dirs'] ?? const <String>[];
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('MDD根层清单与目录摘要'),
+            content: SizedBox(
+              width: 520,
+              height: 400,
+              child: (items.isEmpty && dirs.isEmpty)
+                  ? const Center(child: Text('无根目录内容或未找到MDD'))
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('目录摘要', style: Theme.of(context).textTheme.titleSmall),
+                              const SizedBox(height: 6),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: dirs.length,
+                                  itemBuilder: (_, i) => ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.folder),
+                                    title: Text(dirs[i]),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () async {
+                                      final raw = dirs[i];
+                                      final name = () {
+                                        final s = raw.trim();
+                                        final idx = s.indexOf('(');
+                                        final t = idx > 0 ? s.substring(0, idx).trim() : s;
+                                        return t.startsWith('/') ? t.substring(1).trim() : t;
+                                      }();
+                                      final children = await _dictionaryQueryService.listMddDirChildren(dict, name, limit: 300);
+                                      if (!context.mounted) return;
+                                      await showDialog(
+                                        context: context,
+                                        builder: (context) {
+                                          return AlertDialog(
+                                            title: Text('目录 "$name" 子项样本'),
+                                            content: SizedBox(
+                                              width: 520,
+                                              height: 400,
+                                              child: children.isEmpty
+                                                  ? const Center(child: Text('无子项或未找到'))
+                                                  : ListView.builder(
+                                                      itemCount: children.length,
+                                                      itemBuilder: (_, j) => ListTile(
+                                                        dense: true,
+                                                        leading: const Icon(Icons.music_note),
+                                                        title: Text(children[j]),
+                                                      ),
+                                                    ),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.of(context).pop(),
+                                                child: const Text('关闭'),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('根层清单', style: Theme.of(context).textTheme.titleSmall),
+                              const SizedBox(height: 6),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: items.length,
+                                  itemBuilder: (_, i) => ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.music_note),
+                                    title: Text(items[i]),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('关闭'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (_) {}
+  }
+
+  Future<Uint8List?> _loadMedia(String url) async {
+    final dict = _dictionarySearchSource ?? (_selectedDictionaryIndex == -1
+        ? (_dictionaries.isNotEmpty ? _dictionaries.first : null)
+        : _dictionaries[_selectedDictionaryIndex]);
+    if (dict == null) return null;
+    return await _dictionaryQueryService.readMedia(dict, url);
+  }
+
+  List<String> _extractSoundUrls(String html) {
+    final reg = RegExp(r'sound://[^"\s>]+');
+    return reg.allMatches(html).map((m) => m.group(0)!).toList();
+  }
+
+  List<String> _extractImageUrls(String html) {
+    final reg = RegExp(r'(mdd://|res://)[^"\s>]+');
+    return reg.allMatches(html).map((m) => m.group(0)!).toList();
+  }
+
   List<InlineSpan> _rubySpansFromHtml(String html, TextStyle? baseStyle, TextStyle? rubyStyle) {
     final List<InlineSpan> spans = [];
     final rubyReg = RegExp(r"<ruby>([\s\S]*?)<\/ruby>", multiLine: true);
@@ -601,6 +780,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     if (mounted) {
       setState(() {
         _dictionarySearchResult = result;
+        _dictionarySearchSource = item.dictionary;
         _isDictionaryLoading = false;
       });
     }
@@ -669,6 +849,52 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                 padding: const EdgeInsets.only(top: 8.0),
                 child: _buildExplanationHtml(context: context, html: _dictionarySearchResult!),
               ),
+            if (_dictionarySearchResult != null)
+              Builder(builder: (context) {
+                final urls = _extractSoundUrls(_dictionarySearchResult!);
+                if (urls.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: urls
+                        .map((u) => OutlinedButton.icon(
+                              onPressed: () => _playSound(u),
+                              icon: const Icon(Icons.play_circle_outline),
+                              label: Text('音频'),
+                            ))
+                        .toList(),
+                  ),
+                );
+              }),
+            if (_dictionarySearchResult != null)
+              Builder(builder: (context) {
+                final urls = _extractImageUrls(_dictionarySearchResult!);
+                if (urls.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: urls
+                        .map((u) => FutureBuilder<Uint8List?>(
+                              future: _loadMedia(u),
+                              builder: (context2, snapshot) {
+                                if (snapshot.connectionState != ConnectionState.done) {
+                                  return const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2));
+                                }
+                                final bytes = snapshot.data;
+                                if (bytes == null || bytes.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Image.memory(bytes, width: 120);
+                              },
+                            ))
+                        .toList(),
+                  ),
+                );
+              }),
             if (_dictionarySearchEntries.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),

@@ -223,4 +223,29 @@ class ConfigService {
     value = value.clamp(0.0, 1.0);
     await _localConfig!.setSetting<double>('ai_temperature', value);
   }
+
+  // Media base mapping
+  Future<Map<String, String>> getMediaBaseMap() async {
+    final raw = await _localConfig!.getSetting<Map<String, dynamic>>('media_base_map');
+    if (raw == null) return {};
+    final map = <String, String>{};
+    for (final e in raw.entries) {
+      final v = e.value;
+      if (v is String && v.isNotEmpty) {
+        map[e.key] = v;
+      }
+    }
+    return map;
+  }
+
+  Future<String?> getMediaBaseForScheme(String scheme) async {
+    final map = await getMediaBaseMap();
+    return map[scheme];
+  }
+
+  Future<void> setMediaBaseForScheme(String scheme, String base) async {
+    final raw = await _localConfig!.getSetting<Map<String, dynamic>>('media_base_map') ?? <String, dynamic>{};
+    raw[scheme] = base;
+    await _localConfig!.setSetting('media_base_map', raw);
+  }
 }

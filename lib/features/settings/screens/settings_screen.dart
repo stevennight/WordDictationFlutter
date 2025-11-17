@@ -167,6 +167,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: const Icon(Icons.history),
                   onTap: () => _showHistoryLimitDialog(),
                 ),
+                SettingsTile(
+                  title: '媒体资源基址映射',
+                  subtitle: '为 sound:// 等设置 HTTP 基址',
+                  leading: const Icon(Icons.link),
+                  onTap: () => _showMediaBaseDialog(),
+                ),
               ],
             ),
             
@@ -553,6 +559,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       applicationName: _packageInfo?.appName ?? 'Word Dictation',
       applicationVersion: _packageInfo?.version ?? AppVersion.version,
+    );
+  }
+
+  void _showMediaBaseDialog() async {
+    final configService = await LocalConfigService.getInstance();
+    final raw = await configService.getSetting<Map<String, dynamic>>('media_base_map') ?? <String, dynamic>{};
+    final soundController = TextEditingController(text: (raw['sound'] as String?) ?? '');
+    final resController = TextEditingController(text: (raw['res'] as String?) ?? '');
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('媒体资源基址映射'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: soundController,
+                  decoration: const InputDecoration(
+                    labelText: 'sound:// 基址 (如 http://dicctcontent.1.localhost:16332)'
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: resController,
+                  decoration: const InputDecoration(
+                    labelText: 'res:// 基址 (可选)'
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                raw['sound'] = soundController.text.trim();
+                raw['res'] = resController.text.trim();
+                await configService.setSetting('media_base_map', raw);
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('媒体资源基址已保存')),
+                  );
+                }
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
     );
   }
 

@@ -1,9 +1,14 @@
 import 'package:dict_reader/dict_reader.dart';
 import 'package:flutter_word_dictation/core/models/dictionary.dart';
+import 'dart:typed_data';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'config_service.dart';
 
 class DictionaryQueryService {
   final Map<String, DictReader> _readerCache = {};
   final Map<String, List<RecordOffsetInfo>> _offsetCache = {};
+  String? lastResolvedMediaKey;
 
   Future<String?> lookupWord(Dictionary dictionary, String word) async {
     try {
@@ -151,6 +156,157 @@ class DictionaryQueryService {
       print('[DictionaryQuery] search error: $e');
       return [];
     }
+  }
+
+  Future<Uint8List?> readMedia(Dictionary dictionary, String url) async {
+    try {
+      final lowerAll = url.toLowerCase();
+      if (lowerAll.startsWith('http://') || lowerAll.startsWith('https://')) {
+        try {
+          final resp = await http.get(Uri.parse(url));
+          if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+            print('[DictionaryQuery] http media fetch: ${resp.bodyBytes.length} bytes from $url');
+            return resp.bodyBytes;
+          }
+        } catch (_) {}
+      }
+      // scheme-based media base mapping
+      final idx = lowerAll.indexOf('://');
+      if (idx > 0) {
+        final scheme = lowerAll.substring(0, idx);
+        final pathPart = url.substring(idx + 3);
+        final cfg = await ConfigService.getInstance();
+        final base = await cfg.getMediaBaseForScheme(scheme);
+        if (base != null && base.isNotEmpty) {
+          final composed = base.endsWith('/') ? (base + pathPart) : (base + '/' + pathPart);
+          try {
+            final resp = await http.get(Uri.parse(composed));
+            if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+              print('[DictionaryQuery] http media via mapping: ${resp.bodyBytes.length} bytes from $composed');
+              return resp.bodyBytes;
+            }
+          } catch (_) {}
+        }
+      }
+      // Heuristic file lookup for sound:// or res://
+      final lower = lowerAll;
+      if (lower.startsWith('sound://') || lower.startsWith('res://') || lower.startsWith('mdd://')) {
+        final rawName = url.split('://').last;
+        final fileName = Uri.decodeComponent(rawName);
+        final fileNameLower = fileName.toLowerCase();
+        final mdxPath = dictionary.path;
+        final dir = mdxPath.substring(0, mdxPath.lastIndexOf(RegExp(r'[\\/]')) + 1);
+        final candidates = <String>[
+          dir + fileName,
+          dir + 'sound/' + fileName,
+          dir + 'Sound/' + fileName,
+          dir + 'sound\\' + fileName,
+          dir + 'Sound\\' + fileName,
+          dir + 'res/' + fileName,
+          dir + 'Res/' + fileName,
+          dir + 'res\\' + fileName,
+          dir + 'Res\\' + fileName,
+          dir + 'media/' + fileName,
+          dir + 'Media/' + fileName,
+          dir + 'media\\' + fileName,
+          dir + 'Media\\' + fileName,
+          dir + 'audio/' + fileName,
+          dir + 'Audio/' + fileName,
+          dir + 'audio\\' + fileName,
+          dir + 'Audio\\' + fileName,
+        ];
+        for (final p in candidates) {
+          final f = File(p);
+          if (await f.exists()) {
+            return await f.readAsBytes();
+          }
+        }
+        
+      }
+    } catch (e) {
+      // Silent failure, media may be packed in MDD
+    }
+    return null;
+  }
+
+  Future<List<String>> _resolveMddPathsFromMdx(String mdxPath) async {
+    final paths = <String>[];
+    try {
+      final dir = mdxPath.substring(0, mdxPath.lastIndexOf(RegExp(r'[\\/]')) + 1);
+      final base = mdxPath.substring(dir.length, mdxPath.length);
+      final dot = base.lastIndexOf('.');
+      final stem = dot >= 0 ? base.substring(0, dot) : base;
+      final preferred = dir + stem + '.mdd';
+      if (await File(preferred).exists()) {
+        paths.add(preferred);
+      }
+      final d = Directory(dir);
+      if (await d.exists()) {
+        // search current directory
+        await for (final entity in d.list()) {
+          if (entity is File && entity.path.toLowerCase().endsWith('.mdd')) {
+            if (!paths.contains(entity.path)) {
+              paths.add(entity.path);
+            }
+          }
+        }
+        // search one-level subdirectories for .mdd
+        await for (final sub in d.list()) {
+          if (sub is Directory) {
+            try {
+              await for (final entity in sub.list()) {
+                if (entity is File && entity.path.toLowerCase().endsWith('.mdd')) {
+                  if (!paths.contains(entity.path)) {
+                    paths.add(entity.path);
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        }
+        // search two-level subdirectories and prefer matching stem
+        final normalizedStem = stem.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+        Future<void> scanDeep(Directory baseDir, int depth) async {
+          if (depth <= 0) return;
+          try {
+            await for (final ent in baseDir.list()) {
+              if (ent is File) {
+                final p = ent.path;
+                if (p.toLowerCase().endsWith('.mdd')) {
+                  final name = p.substring(p.lastIndexOf(RegExp(r'[\\/]')) + 1).replaceAll(' ', '').toLowerCase();
+                  final prefer = name.contains(normalizedStem);
+                  if (!paths.contains(p)) {
+                    if (prefer) {
+                      paths.insert(0, p);
+                    } else {
+                      paths.add(p);
+                    }
+                  }
+                }
+              } else if (ent is Directory) {
+                await scanDeep(ent, depth - 1);
+              }
+            }
+          } catch (_) {}
+        }
+        await scanDeep(d, 2);
+      }
+      if (paths.isNotEmpty) {
+        print('[DictionaryQuery] mdd candidates: ${paths.join(' ; ')}');
+      }
+    } catch (_) {}
+    return paths;
+  }
+  Future<List<String>> listMddRoot(Dictionary dictionary, {int limit = 100}) async {
+    return [];
+  }
+
+  Future<Map<String, List<String>>> listMddRootAndDirs(Dictionary dictionary, {int limit = 100}) async {
+    return {'root': [], 'dirs': []};
+  }
+
+  Future<List<String>> listMddDirChildren(Dictionary dictionary, String dir, {int limit = 200}) async {
+    return [];
   }
 
   void dispose() {

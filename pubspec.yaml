@@ -53,6 +53,7 @@ dependencies:
   logger: ^2.0.2+1
   dict_reader: ^1.5.1
   flutter_html: ^3.0.0
+  audioplayers: ^5.2.1
 
 dev_dependencies:
   flutter_test:
