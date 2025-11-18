@@ -796,6 +796,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       _isDictionaryLoading = true;
       _dictionarySearchResult = null;
     });
+    print('[UI] lookup tap: dict=' + item.dictionary.name + ' path=' + item.dictionary.path + ' key="' + item.key + '"');
     final result = await _dictionaryQueryService.lookupWord(item.dictionary, item.key);
     if (mounted) {
       setState(() {
@@ -804,6 +805,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         _isDictionaryLoading = false;
       });
     }
+    final len = result?.length ?? 0;
+    final hasTarget = (result ?? '').contains('朝') || (result ?? '').contains('あけ') || (result ?? '').contains('朝あけ');
+    final preview = (() {
+      final s = (result ?? '');
+      final t = s.replaceAll(RegExp(r'\s+'), ' ');
+      return t.length > 200 ? t.substring(0, 200) : t;
+    })();
+    print('[UI] lookup done: len=' + len.toString() + ' containsTarget=' + hasTarget.toString() + ' preview="' + preview + '"');
   }
 
   void _changeDictionaryIndex(int? index) {

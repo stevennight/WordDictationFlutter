@@ -35,7 +35,8 @@ class DictionaryQueryService {
       final mdx = await _openMdx(dictionary.path);
       final def = await mdx.lookup(key);
       if (def == null || def.isEmpty) return null;
-      return await _followLink(mdx, def, depth: 0);
+      final out = await _followLink(mdx, def, depth: 0);
+      return out;
     } catch (e) {
       _mdxCache.remove(dictionary.path);
       print('[DictionaryQuery] lookup error: $e');
@@ -49,9 +50,9 @@ class DictionaryQueryService {
     if (!content.startsWith('@@@LINK=')) return _decodeIfBase64(content);
     if (depth > 16) return null;
     final target = content.substring(8).trim();
-    final digits = _asDigits(target);
-    if (digits != null) {
-      final located = await mdx.locate(digits.toString());
+    final digitsStr = _asDigitsString(target);
+    if (digitsStr != null) {
+      final located = await mdx.locate(digitsStr);
       if (located == null || located.isEmpty) return null;
       return await _followLink(mdx, located, depth: depth + 1);
     }
@@ -60,7 +61,7 @@ class DictionaryQueryService {
     return await _followLink(mdx, next, depth: depth + 1);
   }
 
-  int? _asDigits(String raw) {
+  String? _asDigitsString(String raw) {
     final s = raw
         .replaceAll('\u00A0', '')
         .replaceAll('\u3000', '')
@@ -77,7 +78,7 @@ class DictionaryQueryService {
         .replaceAll('９', '9');
     final d = s.replaceAll(RegExp(r'[^0-9]'), '');
     if (d.isEmpty) return null;
-    return int.tryParse(d);
+    return d; // 保留前导零
   }
 
   String _decodeIfBase64(String s) {
