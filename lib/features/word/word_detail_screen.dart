@@ -453,11 +453,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         label: const Text('AI生成例句'),
                       ),
                       const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _listMddRoot,
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('列出MDD根目录'),
-                      ),
                     ],
                   ),
                 ],
@@ -662,121 +657,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     } catch (_) {}
   }
 
-  Future<void> _listMddRoot() async {
-    final dict = _dictionarySearchSource ?? (_selectedDictionaryIndex == -1
-        ? (_dictionaries.isNotEmpty ? _dictionaries.first : null)
-        : _dictionaries[_selectedDictionaryIndex]);
-    if (dict == null) return;
-    try {
-      final data = await _dictionaryQueryService.listMddRootAndDirs(dict, limit: 200);
-      final items = data['root'] ?? const <String>[];
-      final dirs = data['dirs'] ?? const <String>[];
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('MDD根层清单与目录摘要'),
-            content: SizedBox(
-              width: 520,
-              height: 400,
-              child: (items.isEmpty && dirs.isEmpty)
-                  ? const Center(child: Text('无根目录内容或未找到MDD'))
-                  : Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('目录摘要', style: Theme.of(context).textTheme.titleSmall),
-                              const SizedBox(height: 6),
-                              Expanded(
-                                child: ListView.builder(
-                                  itemCount: dirs.length,
-                                  itemBuilder: (_, i) => ListTile(
-                                    dense: true,
-                                    leading: const Icon(Icons.folder),
-                                    title: Text(dirs[i]),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: () async {
-                                      final raw = dirs[i];
-                                      final name = () {
-                                        final s = raw.trim();
-                                        final idx = s.indexOf('(');
-                                        final t = idx > 0 ? s.substring(0, idx).trim() : s;
-                                        return t.startsWith('/') ? t.substring(1).trim() : t;
-                                      }();
-                                      final children = await _dictionaryQueryService.listMddDirChildren(dict, name, limit: 300);
-                                      if (!context.mounted) return;
-                                      await showDialog(
-                                        context: context,
-                                        builder: (context) {
-                                          return AlertDialog(
-                                            title: Text('目录 "$name" 子项样本'),
-                                            content: SizedBox(
-                                              width: 520,
-                                              height: 400,
-                                              child: children.isEmpty
-                                                  ? const Center(child: Text('无子项或未找到'))
-                                                  : ListView.builder(
-                                                      itemCount: children.length,
-                                                      itemBuilder: (_, j) => ListTile(
-                                                        dense: true,
-                                                        leading: const Icon(Icons.music_note),
-                                                        title: Text(children[j]),
-                                                      ),
-                                                    ),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.of(context).pop(),
-                                                child: const Text('关闭'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('根层清单', style: Theme.of(context).textTheme.titleSmall),
-                              const SizedBox(height: 6),
-                              Expanded(
-                                child: ListView.builder(
-                                  itemCount: items.length,
-                                  itemBuilder: (_, i) => ListTile(
-                                    dense: true,
-                                    leading: const Icon(Icons.music_note),
-                                    title: Text(items[i]),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('关闭'),
-              ),
-            ],
-          );
-        },
-      );
-    } catch (_) {}
-  }
+  
 
   Future<Uint8List?> _loadMedia(String url) async {
     final dict = _dictionarySearchSource ?? (_selectedDictionaryIndex == -1

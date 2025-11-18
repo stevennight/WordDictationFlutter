@@ -1,189 +1,67 @@
-import 'package:dict_reader/dict_reader.dart';
+import 'package:mdict_flutter/mdict_flutter.dart';
 import 'package:flutter_word_dictation/core/models/dictionary.dart';
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'config_service.dart';
-import '../mdict/mdd_reader.dart';
 
 class DictionaryQueryService {
-  final Map<String, DictReader> _readerCache = {};
-  final Map<String, List<RecordOffsetInfo>> _offsetCache = {};
-  final Map<String, MddReader> _mddReaderCache = {};
-  final Map<String, Map<String, String>> _mddIndexCache = {};
-  final Set<String> _mddRootPrinted = {};
-  final Map<String, List<String>> _mddHeadsCache = {};
+  final Map<String, MdictReader> _mdxCache = {};
+  final Map<String, MdictReader> _mddCache = {};
   String? lastResolvedMediaKey;
 
-  Future<String?> lookupWord(Dictionary dictionary, String word) async {
+  Future<MdictReader> _openMdx(String path) async {
+    var r = _mdxCache[path];
+    if (r != null) return r;
+    r = MdictReader(path);
+    await r.open();
+    _mdxCache[path] = r;
+    print('[DictionaryQuery] mdx opened: $path');
+    return r;
+  }
+
+  Future<MdictReader> _openMdd(String path) async {
+    var r = _mddCache[path];
+    if (r != null) return r;
+    r = MdictReader(path);
+    await r.open();
+    _mddCache[path] = r;
+    print('[DictionaryQuery] mdd opened: $path');
+    return r;
+  }
+
+  Future<String?> lookupWord(Dictionary dictionary, String key) async {
     try {
-      var reader = _readerCache[dictionary.path];
-      if (reader == null) {
-        reader = DictReader(dictionary.path);
-        await reader.init();
-        _readerCache[dictionary.path] = reader;
-        print('[DictionaryQuery] init reader: ${dictionary.name} (${dictionary.path})');
-      }
-
-      print('[DictionaryQuery] locate("$word")');
-      final offsetInfo = await reader.locate(word);
-      if (offsetInfo != null) {
-        print('[DictionaryQuery] locate hit: ${offsetInfo.keyText}');
-        final content = await reader.readOneMdx(offsetInfo);
-        return await _resolveLink(reader, content, dictionaryPath: dictionary.path, expectedTerms: _buildTerms(word));
-      }
-      print('[DictionaryQuery] locate miss for "$word"');
-      // Try soft variants for common dictionary key formats
-      final variants = <String>{};
-      final raw = word.trim();
-      variants.add(raw);
-      variants.add(raw.replaceAll(RegExp(r'【[^】]*】'), ''));
-      variants.add(raw.replaceAll(RegExp(r'[‐‑–—\-]'), ''));
-      variants.add(raw.replaceAll('・', '').replaceAll('·', ''));
-      for (final v in variants) {
-        final vv = v.trim();
-        if (vv.isEmpty || vv == raw) continue;
-        final alt = await reader.locate(vv);
-        if (alt != null) {
-          print('[DictionaryQuery] locate soft hit: $vv');
-          final content = await reader.readOneMdx(alt);
-          return await _resolveLink(reader, content, dictionaryPath: dictionary.path, expectedTerms: _buildTerms(word));
-        }
-      }
+      final mdx = await _openMdx(dictionary.path);
+      final def = await mdx.lookup(key);
+      if (def == null || def.isEmpty) return null;
+      return await _followLink(mdx, def, depth: 0);
     } catch (e) {
-      _readerCache.remove(dictionary.path);
-      print('[DictionaryQuery] error: $e');
+      _mdxCache.remove(dictionary.path);
+      print('[DictionaryQuery] lookup error: $e');
+      return null;
     }
-    return null;
   }
 
-  Set<String> _buildTerms(String word) {
-    final s = word.trim();
-    final set = <String>{};
-    if (s.isNotEmpty) {
-      set.add(s);
-      set.add(s.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', ''));
-      set.add(s.replaceAll('・', '').replaceAll('·', ''));
-      set.add(_toKatakana(s));
-      set.add(_toHiragana(s));
+
+
+  Future<String?> _followLink(MdictReader mdx, String content, {int depth = 0}) async {
+    if (!content.startsWith('@@@LINK=')) return _decodeIfBase64(content);
+    if (depth > 16) return null;
+    final target = content.substring(8).trim();
+    final digits = _asDigits(target);
+    if (digits != null) {
+      final located = await mdx.locate(digits.toString());
+      if (located == null || located.isEmpty) return null;
+      return await _followLink(mdx, located, depth: depth + 1);
     }
-    return set;
+    final next = await mdx.lookup(target);
+    if (next == null || next.isEmpty) return null;
+    return await _followLink(mdx, next, depth: depth + 1);
   }
 
-  bool _contentMatches(String html, Set<String> terms) {
-    if (html.isEmpty) return false;
-    for (final t in terms) {
-      final v1 = t.trim();
-      if (v1.isEmpty) continue;
-      if (html.contains(v1)) return true;
-      final v2 = v1.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', '');
-      if (v2.isNotEmpty && html.contains(v2)) return true;
-      final v3 = v1.replaceAll('・', '').replaceAll('·', '');
-      if (v3.isNotEmpty && html.contains(v3)) return true;
-      final v4 = _toKatakana(v1);
-      if (v4.isNotEmpty && html.contains(v4)) return true;
-      final v5 = _toHiragana(v1);
-      if (v5.isNotEmpty && html.contains(v5)) return true;
-    }
-    return false;
-  }
-
-  String _toKatakana(String input) {
-    final sb = StringBuffer();
-    for (int i = 0; i < input.length; i++) {
-      final code = input.codeUnitAt(i);
-      if (code >= 0x3041 && code <= 0x3096) {
-        sb.writeCharCode(code + 0x60);
-      } else {
-        sb.writeCharCode(code);
-      }
-    }
-    return sb.toString();
-  }
-
-  String _toHiragana(String input) {
-    final sb = StringBuffer();
-    for (int i = 0; i < input.length; i++) {
-      final code = input.codeUnitAt(i);
-      if (code >= 0x30A1 && code <= 0x30FA) {
-        sb.writeCharCode(code - 0x60);
-      } else {
-        sb.writeCharCode(code);
-      }
-    }
-    return sb.toString();
-  }
-
-  Future<String?> _resolveLink(
-    DictReader reader,
-    String? content, {
-    required String dictionaryPath,
-    int depth = 0,
-    Set<String>? expectedTerms,
-  }) async {
-    if (content == null) return null;
-    if (!content.startsWith('@@@LINK=')) return content;
-    if (depth > 5) return null;
-
-    final target = content.substring('@@@LINK='.length).trim();
-    print('[DictionaryQuery] link detected: $target (depth=$depth)');
-    final numeric = _parseNumeric(target);
-    print('[DictionaryQuery] numeric parse: ${numeric ?? 'null'}');
-    if (numeric != null) {
-      print('[DictionaryQuery] numeric link -> index $numeric');
-      final info = await _getOffsetByIndex(reader, dictionaryPath, numeric);
-      if (info == null) {
-        print('[DictionaryQuery] numeric link miss: $numeric');
-        final data = await _getDataByIndex(reader, dictionaryPath, numeric);
-        if (data != null) {
-          if (expectedTerms != null && !_contentMatches(data, expectedTerms)) {
-            for (int i = -3; i <= 3; i++) {
-              if (i == 0) continue;
-              final altData2 = await _getDataByIndex(reader, dictionaryPath, numeric + i);
-              if (altData2 != null && _contentMatches(altData2, expectedTerms)) {
-                return await _resolveLink(reader, altData2, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-              }
-            }
-          }
-          return await _resolveLink(reader, data, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-        }
-        final alt = numeric + 1;
-        print('[DictionaryQuery] try alt index: $alt');
-        final altInfo = await _getOffsetByIndex(reader, dictionaryPath, alt);
-        if (altInfo != null) {
-          final nextAlt = await reader.readOneMdx(altInfo);
-          return await _resolveLink(reader, nextAlt, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-        }
-        final altData = await _getDataByIndex(reader, dictionaryPath, alt);
-        if (altData != null) {
-          return await _resolveLink(reader, altData, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-        }
-        return null;
-      }
-      final next = await reader.readOneMdx(info);
-      if (expectedTerms != null && !_contentMatches(next, expectedTerms)) {
-        for (int i = -3; i <= 3; i++) {
-          if (i == 0) continue;
-          final altInfo2 = await _getOffsetByIndex(reader, dictionaryPath, numeric + i);
-          if (altInfo2 != null) {
-            final altNext2 = await reader.readOneMdx(altInfo2);
-            if (_contentMatches(altNext2, expectedTerms)) {
-              return await _resolveLink(reader, altNext2, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-            }
-          }
-        }
-      }
-      return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-    }
-
-    final info = await reader.locate(target);
-    if (info == null) return null;
-    final next = await reader.readOneMdx(info);
-    return await _resolveLink(reader, next, dictionaryPath: dictionaryPath, depth: depth + 1, expectedTerms: expectedTerms);
-  }
-
-  int? _parseNumeric(String raw) {
-    final ascii = raw
+  int? _asDigits(String raw) {
+    final s = raw
         .replaceAll('\u00A0', '')
         .replaceAll('\u3000', '')
         .replaceAll(RegExp(r'\s+'), '')
@@ -197,63 +75,34 @@ class DictionaryQueryService {
         .replaceAll('７', '7')
         .replaceAll('８', '8')
         .replaceAll('９', '9');
-    final digits = ascii.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty) return null;
-    return int.tryParse(digits);
+    final d = s.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.isEmpty) return null;
+    return int.tryParse(d);
   }
 
-  Future<RecordOffsetInfo?> _getOffsetByIndex(
-    DictReader reader,
-    String path,
-    int index,
-  ) async {
-    final list = _offsetCache.putIfAbsent(path, () => <RecordOffsetInfo>[]);
-    if (index <= list.length) {
-      return list[index - 1];
+  String _decodeIfBase64(String s) {
+    final sn = s.trim();
+    if (sn.isEmpty) return s;
+    final re = RegExp(r'^[A-Za-z0-9+/=\r\n]+$');
+    if (sn.length >= 16 && sn.length % 4 == 0 && re.hasMatch(sn) && !sn.contains('<') && !sn.contains('>')) {
+      try {
+        final bytes = base64Decode(sn);
+        return const Utf8Decoder(allowMalformed: true).convert(bytes);
+      } catch (_) {}
     }
-    print('[DictionaryQuery] build offset cache up to $index');
-    int i = 0;
-    await for (final info in reader.readWithOffset()) {
-      i++;
-      if (i > list.length) {
-        list.add(info);
-      }
-      if (i == index) {
-        return info;
-      }
-    }
-    return null;
+    return s;
   }
 
-  Future<String?> _getDataByIndex(
-    DictReader reader,
-    String path,
-    int index,
-  ) async {
-    int i = 0;
-    await for (final rec in reader.readWithMdxData()) {
-      i++;
-      if (i == index) {
-        return rec.data;
-      }
-    }
-    return null;
-  }
+  // dict_reader 顺序遍历相关方法移除；数值坐标解析交由 mdict-cpp 桥接
 
-  Future<List<String>> searchKeys(Dictionary dictionary, String query, {int limit = 20}) async {
+  Future<List<String>> searchKeys(Dictionary dictionary, String prefix, {int limit = 50}) async {
     try {
-      var reader = _readerCache[dictionary.path];
-      if (reader == null) {
-        reader = DictReader(dictionary.path);
-        await reader.init();
-        _readerCache[dictionary.path] = reader;
-        print('[DictionaryQuery] init reader: ${dictionary.name} (${dictionary.path})');
-      }
-      final keys = reader.search(query, limit: limit);
-      print('[DictionaryQuery] search("$query") -> ${keys.length}');
-      return keys;
+      final mdx = await _openMdx(dictionary.path);
+      final list = await mdx.prefixSearch(prefix, limit: limit);
+      print('[DictionaryQuery] prefixSearch("$prefix") -> ${list.length}');
+      return list;
     } catch (e) {
-      _readerCache.remove(dictionary.path);
+      _mdxCache.remove(dictionary.path);
       print('[DictionaryQuery] search error: $e');
       return [];
     }
@@ -261,73 +110,60 @@ class DictionaryQueryService {
 
   Future<Uint8List?> readMedia(Dictionary dictionary, String url) async {
     try {
-      final lowerAll = url.toLowerCase();
-      if (lowerAll.startsWith('http://') || lowerAll.startsWith('https://')) {
-        try {
-          final resp = await http.get(Uri.parse(url));
-          if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
-            print('[DictionaryQuery] http media fetch: ${resp.bodyBytes.length} bytes from $url');
-            return resp.bodyBytes;
-          }
-        } catch (_) {}
-      }
-      // scheme-based media base mapping
-      final idx = lowerAll.indexOf('://');
-      if (idx > 0) {
-        final scheme = lowerAll.substring(0, idx);
-        final pathPart = url.substring(idx + 3);
-        final cfg = await ConfigService.getInstance();
-        final base = await cfg.getMediaBaseForScheme(scheme);
-        if (base != null && base.isNotEmpty) {
-          final composed = base.endsWith('/') ? (base + pathPart) : (base + '/' + pathPart);
-          try {
-            final resp = await http.get(Uri.parse(composed));
-            if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
-              print('[DictionaryQuery] http media via mapping: ${resp.bodyBytes.length} bytes from $composed');
-              return resp.bodyBytes;
-            }
-          } catch (_) {}
-        }
-      }
-      // Heuristic file lookup for sound:// or res://
-      final lower = lowerAll;
-      if (lower.startsWith('sound://') || lower.startsWith('res://') || lower.startsWith('mdd://')) {
-        final rawName = url.split('://').last;
-        final fileName = Uri.decodeComponent(rawName);
-        final fileNameLower = fileName.toLowerCase();
-        final mdxPath = dictionary.path;
-        final dir = mdxPath.substring(0, mdxPath.lastIndexOf(RegExp(r'[\\/]')) + 1);
-        final candidates = <String>[
-          dir + fileName,
-          dir + 'sound/' + fileName,
-          dir + 'Sound/' + fileName,
-          dir + 'sound\\' + fileName,
-          dir + 'Sound\\' + fileName,
-          dir + 'res/' + fileName,
-          dir + 'Res/' + fileName,
-          dir + 'res\\' + fileName,
-          dir + 'Res\\' + fileName,
-          dir + 'media/' + fileName,
-          dir + 'Media/' + fileName,
-          dir + 'media\\' + fileName,
-          dir + 'Media\\' + fileName,
-          dir + 'audio/' + fileName,
-          dir + 'Audio/' + fileName,
-          dir + 'audio\\' + fileName,
-          dir + 'Audio\\' + fileName,
-        ];
-        for (final p in candidates) {
-          final f = File(p);
-          if (await f.exists()) {
-            return await f.readAsBytes();
-          }
+      final lower = url.toLowerCase();
+      if (lower.startsWith('http://') || lower.startsWith('https://')) {
+        final resp = await http.get(Uri.parse(url));
+        if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+          print('[DictionaryQuery] http media: ${resp.bodyBytes.length} bytes');
+          return resp.bodyBytes;
         }
         return null;
       }
-    } catch (e) {
-      // Silent failure, media may be packed in MDD
+      if (lower.startsWith('mdd://') || lower.startsWith('res://') || lower.startsWith('sound://')) {
+        final key = Uri.decodeComponent(url.split('://').last);
+        final mddPaths = await _resolveMddPathsFromMdx(dictionary.path);
+        for (final p in mddPaths) {
+          try {
+            final mdd = await _openMdd(p);
+            var b64 = await mdd.locate(key, encodingOut: OutputEncoding.base64);
+            var matchedKey = key;
+            if ((b64 == null || b64.isEmpty) && !key.startsWith('/')) {
+              b64 = await mdd.locate('/' + key, encodingOut: OutputEncoding.base64);
+              matchedKey = '/' + key;
+            }
+            if (b64 == null || b64.isEmpty) {
+              String? probeKey;
+              for (var b = 0; b < mdd.keyBlockInfoList.length && b < 10; b++) {
+                final list = mdd.decodeKeyBlockById(b);
+                for (final k in list) {
+                  final s = k.key.toLowerCase();
+                  final idxSlash = s.lastIndexOf('/');
+                  final idxBack = s.lastIndexOf('\\');
+                  final idx = (idxSlash > idxBack ? idxSlash : idxBack) + 1;
+                  final base = s.substring(idx);
+                  if (base == key.toLowerCase()) { probeKey = k.key; break; }
+                }
+                if (probeKey != null) break;
+              }
+              if (probeKey != null) {
+                matchedKey = probeKey;
+                b64 = await mdd.locate(probeKey, encodingOut: OutputEncoding.base64);
+              }
+            }
+            if (b64 != null && b64.isNotEmpty) {
+              final bytes = base64Decode(b64);
+              lastResolvedMediaKey = matchedKey;
+              print('[DictionaryQuery] mdd media: ${bytes.length} bytes from $matchedKey');
+              return Uint8List.fromList(bytes);
+            }
+          } catch (_) {}
+        }
+        return null;
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
-    return null;
   }
 
   Future<List<String>> _resolveMddPathsFromMdx(String mdxPath) async {
@@ -398,87 +234,16 @@ class DictionaryQueryService {
     } catch (_) {}
     return paths;
   }
-  Future<Map<String, String>> _buildMddIndex(MddReader reader, String mddPath) async {
-    final cached = _mddIndexCache[mddPath];
-    if (cached != null) return cached;
-    final map = <String, String>{};
-    try {
-      final keys = reader.keys();
-      for (final k in keys) {
-        final lower = k.toLowerCase();
-        final idxSlash = lower.lastIndexOf('/');
-        final idxBack = lower.lastIndexOf('\\');
-        final idx = (idxSlash > idxBack ? idxSlash : idxBack) + 1;
-        final base = lower.substring(idx);
-        if (base.isNotEmpty && !map.containsKey(base)) {
-          map[base] = k;
-        }
-      }
-      _mddIndexCache[mddPath] = map;
-      print('[DictionaryQuery] mdd index built: ${map.length}');
-    } catch (e) {
-      print('[DictionaryQuery] mdd index error: $e');
-    }
-    return map;
-  }
-
-  Future<void> _printMddRoot(MddReader reader, String mddPath, {int limit = 100}) async {
-    try {
-      final keys = reader.keys();
-      final List<String> root = [];
-      final Map<String, int> dirCount = {};
-      for (final k in keys) {
-        final n = k.replaceAll('\\', '/');
-        if (!n.contains('/')) {
-          root.add(k);
-          continue;
-        }
-        final first = n.indexOf('/');
-        final rest = n.substring(first + 1);
-        if (first == 0 && !rest.contains('/')) {
-          root.add(k);
-        } else if (first >= 0) {
-          final head = first == 0 ? (rest.contains('/') ? rest.substring(0, rest.indexOf('/')) : '') : n.substring(0, first);
-          if (head.isNotEmpty) {
-            dirCount[head] = (dirCount[head] ?? 0) + 1;
-          }
-        }
-      }
-      final dirs = dirCount.entries.map((e) => '/${e.key} (${e.value})').toList()..sort();
-      _mddHeadsCache[mddPath] = dirCount.keys.toList();
-      print('[DictionaryQuery] mdd index built: ${keys.length}');
-      if (dirs.isNotEmpty) {
-        print('[DictionaryQuery] mdd top-level dirs: ${dirs.join(' | ')} ; root=${root.length}');
-      } else {
-        print('[DictionaryQuery] mdd top-level dirs: (none) ; root=${root.length}');
-      }
-      if (root.isNotEmpty) {
-        final sample = root.take(limit).map((e) {
-          final s = e.replaceAll('\\', '/');
-          return s.startsWith('/') ? s.substring(1) : s;
-        }).toList();
-        print('[DictionaryQuery] mdd root listing (${sample.length}): ${sample.join(' | ')}');
-      }
-    } catch (e) {
-      print('[DictionaryQuery] mdd root listing error: $e');
-    }
-  }
-  Future<List<String>> listMddRoot(Dictionary dictionary, {int limit = 100}) async {
-    return [];
-  }
-
-  Future<Map<String, List<String>>> listMddRootAndDirs(Dictionary dictionary, {int limit = 100}) async {
-    return {'root': [], 'dirs': []};
-  }
-
-  Future<List<String>> listMddDirChildren(Dictionary dictionary, String dir, {int limit = 200}) async {
-    return [];
-  }
+  
 
   void dispose() {
-    for (var reader in _readerCache.values) {
-      reader.close();
+    for (var r in _mdxCache.values) {
+      r.close();
     }
-    _readerCache.clear();
+    for (var r in _mddCache.values) {
+      r.close();
+    }
+    _mdxCache.clear();
+    _mddCache.clear();
   }
 }

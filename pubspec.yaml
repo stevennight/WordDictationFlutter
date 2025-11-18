@@ -51,7 +51,7 @@ dependencies:
   
   # Logging
   logger: ^2.0.2+1
-  dict_reader: ^1.5.1
+  mdict_flutter: ^0.1.0
   flutter_html: ^3.0.0
   audioplayers: ^5.2.1
 
