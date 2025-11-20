@@ -2349,11 +2349,16 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
             }
 
             try {
+              final cfg2 = await ConfigService.getInstance();
+              final useSources = await cfg2.getUseDictionarySources();
+              final sources = useSources ? await ai.collectSourcesForWord(w) : (<String>[], const <Map<String, String>>[]);
               final html = await ai.generateExplanationHtml(
                 prompt: w.prompt,
                 answer: w.answer,
                 sourceLanguage: srcLangBulk,
                 targetLanguage: tgtLangBulk,
+                sourcesHtml: sources.$1,
+                sourcesMeta: sources.$2,
               );
 
               final now = DateTime.now();

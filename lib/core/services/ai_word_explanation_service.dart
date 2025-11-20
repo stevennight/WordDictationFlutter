@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'config_service.dart';
+import '../models/dictionary.dart';
+import 'dictionary_service.dart';
+import 'dictionary_query_service.dart';
+import 'package:flutter_word_dictation/shared/models/word.dart';
 
 class AIWordExplanationService {
   static AIWordExplanationService? _instance;
@@ -746,5 +750,123 @@ ruby生成时注意标签的闭合准确。
       return content.substring(start, end + 1);
     }
     return null;
+  }
+}
+extension AIWordExplanationSourceExt on AIWordExplanationService {
+  Future<(List<String>, List<Map<String, String>>)> collectSourcesForWord(Word word) async {
+    final ds = DictionaryService();
+    final dq = DictionaryQueryService();
+    final dicts = await ds.getDictionaries();
+    final norm = await normalizeWord(prompt: word.prompt);
+    final lang = (norm['language'] ?? '') as String;
+    final terms = <String>{};
+    if (lang == 'ja') {
+      final k1 = (norm['jaKanji'] ?? '') as String;
+      final k2 = (norm['jaKana'] ?? '') as String;
+      if (k1.trim().isNotEmpty) terms.add(k1.trim());
+      if (k2.trim().isNotEmpty) terms.add(k2.trim());
+    } else {
+      final t = (norm['promptNormalized'] ?? word.prompt) as String;
+      terms.add(t.trim().isNotEmpty ? t.trim() : word.prompt);
+    }
+
+    final Map<String, List<Map<String, String>>> entries = {};
+    for (final d in dicts) {
+      final List<Map<String, String>> list = [];
+      for (final t in terms) {
+        final keys = await dq.searchKeys(d, t, limit: 32);
+        for (final k in keys) {
+          final html0 = await dq.lookupWord(d, k);
+          final h = (html0 ?? '').trim();
+          if (h.isNotEmpty && _htmlMatchesTerms(h, terms)) {
+            final trunc = h.length > 2000 ? h.substring(0, 2000) : h;
+            list.add({'key': k, 'html': trunc});
+          }
+        }
+      }
+      if (list.isEmpty) {
+        for (final t in terms) {
+          final keys = await dq.searchKeys(d, t, limit: 8);
+          for (final k in keys) {
+            final html0 = await dq.lookupWord(d, k);
+            final h = (html0 ?? '').trim();
+            if (h.isNotEmpty) {
+              final trunc = h.length > 2000 ? h.substring(0, 2000) : h;
+              list.add({'key': k, 'html': trunc});
+            }
+          }
+          if (list.isNotEmpty) break;
+        }
+      }
+      if (list.isNotEmpty) {
+        entries[d.path] = list;
+      }
+    }
+    final picks = await pickBestDictionaryEntries(prompt: word.prompt, answer: word.answer, entries: entries);
+    final htmls = <String>[];
+    final metas = <Map<String, String>>[];
+    for (final dp in picks.keys) {
+      final chosen = (picks[dp] ?? '') as String;
+      if (chosen.trim().isEmpty) continue;
+      Dictionary? dict;
+      for (final d in dicts) {
+        if (d.path == dp) {
+          dict = d;
+          break;
+        }
+      }
+      if (dict == null) continue;
+      final h = await dq.lookupWord(dict, chosen);
+      final hh = (h ?? '').trim();
+      if (hh.isNotEmpty) {
+        htmls.add(hh);
+        metas.add({'dictionary': dict.name, 'key': chosen});
+      }
+    }
+    dq.dispose();
+    return (htmls, metas);
+  }
+
+  bool _htmlMatchesTerms(String html, Set<String> terms) {
+    final variants = <String>{};
+    for (final t in terms) {
+      final s = t.trim();
+      if (s.isEmpty) continue;
+      variants.add(s);
+      variants.add(s.replaceAll('‐', '').replaceAll('‑', '').replaceAll('–', '').replaceAll('—', '').replaceAll('-', ''));
+      variants.add(s.replaceAll('‐', '・').replaceAll('‑', '・').replaceAll('–', '・').replaceAll('—', '・').replaceAll('-', '・'));
+      variants.add(_toKatakana(s));
+      variants.add(_toHiragana(s));
+    }
+    for (final v in variants) {
+      if (v.isNotEmpty && html.contains(v)) return true;
+    }
+    return false;
+  }
+
+  String _toKatakana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x3041 && code <= 0x3096) {
+        sb.writeCharCode(code + 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
+  }
+
+  String _toHiragana(String input) {
+    final sb = StringBuffer();
+    for (int i = 0; i < input.length; i++) {
+      final code = input.codeUnitAt(i);
+      if (code >= 0x30A1 && code <= 0x30FA) {
+        sb.writeCharCode(code - 0x60);
+      } else {
+        sb.writeCharCode(code);
+      }
+    }
+    return sb.toString();
   }
 }

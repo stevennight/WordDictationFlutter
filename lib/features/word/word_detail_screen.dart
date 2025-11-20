@@ -12,6 +12,7 @@ import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_dialog.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_strategy_dialog.dart';
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
+import 'package:flutter_word_dictation/core/services/config_service.dart';
 
  
 
@@ -695,6 +696,92 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
   Future<void> _generateExplanation(Word word) async {
     if (word.id == null) return;
+    String sourceDropdown = 'auto';
+    String targetDropdown = 'auto';
+    final TextEditingController sourceCustomController = TextEditingController();
+    final TextEditingController targetCustomController = TextEditingController();
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setState) => AlertDialog(
+                title: const Text('选择语言（词解生成）'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: sourceDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('原文自动识别')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => sourceDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '原文语言（常用）'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetDropdown,
+                            items: const [
+                              DropdownMenuItem(value: 'auto', child: Text('译文自动识别')),
+                              DropdownMenuItem(value: 'zh', child: Text('中文 zh')),
+                              DropdownMenuItem(value: 'ja', child: Text('日语 ja')),
+                              DropdownMenuItem(value: 'en', child: Text('英语 en')),
+                              DropdownMenuItem(value: 'de', child: Text('德语 de')),
+                              DropdownMenuItem(value: 'fr', child: Text('法语 fr')),
+                              DropdownMenuItem(value: 'ko', child: Text('韩语 ko')),
+                              DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                            ],
+                            onChanged: (v) => setState(() => targetDropdown = v ?? 'auto'),
+                            decoration: const InputDecoration(labelText: '译文语言（常用）'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (sourceDropdown == 'custom')
+                      TextField(
+                        controller: sourceCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '原文语言（自定义代码，可选）',
+                          hintText: '如 ja, zh-CN, en-US，留空则自动或常用选择',
+                        ),
+                      ),
+                    if (targetDropdown == 'custom')
+                      TextField(
+                        controller: targetCustomController,
+                        decoration: const InputDecoration(
+                          labelText: '译文语言（自定义代码，可选）',
+                          hintText: '如 zh, en-GB，留空则自动或常用选择',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+                  TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('开始')),
+                ],
+              ),
+            );
+          },
+        ) ?? false;
+    if (!ok) return;
+    final srcLang = sourceDropdown == 'custom'
+        ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
+        : (sourceDropdown == 'auto' ? null : sourceDropdown);
+    final tgtLang = targetDropdown == 'custom'
+        ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
+        : (targetDropdown == 'auto' ? null : targetDropdown);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -712,10 +799,14 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     );
     try {
       final ai = await AIWordExplanationService.getInstance();
-      final sources = await _autoCollectSources(word);
+      final cfg = await ConfigService.getInstance();
+      final useSources = await cfg.getUseDictionarySources();
+      final sources = useSources ? await ai.collectSourcesForWord(word) : (<String>[], const <Map<String, String>>[]);
       var html = await ai.generateExplanationHtml(
         prompt: word.prompt,
         answer: word.answer,
+        sourceLanguage: srcLang,
+        targetLanguage: tgtLang,
         sourcesHtml: sources.$1,
         sourcesMeta: sources.$2,
       );

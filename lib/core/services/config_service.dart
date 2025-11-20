@@ -224,28 +224,18 @@ class ConfigService {
     await _localConfig!.setSetting<double>('ai_temperature', value);
   }
 
-  // Media base mapping
-  Future<Map<String, String>> getMediaBaseMap() async {
-    final raw = await _localConfig!.getSetting<Map<String, dynamic>>('media_base_map');
-    if (raw == null) return {};
-    final map = <String, String>{};
-    for (final e in raw.entries) {
-      final v = e.value;
-      if (v is String && v.isNotEmpty) {
-        map[e.key] = v;
-      }
+  // Use dictionary sources setting
+  Future<bool> getUseDictionarySources() async {
+    final v = await _localConfig!.getSetting<dynamic>('use_dictionary_sources');
+    if (v is bool) return v;
+    if (v is String) {
+      if (v.toLowerCase() == 'true') return true;
+      if (v.toLowerCase() == 'false') return false;
     }
-    return map;
+    return true;
   }
 
-  Future<String?> getMediaBaseForScheme(String scheme) async {
-    final map = await getMediaBaseMap();
-    return map[scheme];
-  }
-
-  Future<void> setMediaBaseForScheme(String scheme, String base) async {
-    final raw = await _localConfig!.getSetting<Map<String, dynamic>>('media_base_map') ?? <String, dynamic>{};
-    raw[scheme] = base;
-    await _localConfig!.setSetting('media_base_map', raw);
+  Future<void> setUseDictionarySources(bool value) async {
+    await _localConfig!.setSetting<bool>('use_dictionary_sources', value);
   }
 }
