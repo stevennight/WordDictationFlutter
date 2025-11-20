@@ -9,8 +9,7 @@ import 'package:flutter_word_dictation/core/models/dictionary.dart';
 import 'package:flutter_word_dictation/core/services/dictionary_service.dart';
 import 'package:flutter_word_dictation/core/services/dictionary_query_service.dart';
 import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
-import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_dialog.dart';
-import 'package:flutter_word_dictation/shared/widgets/ai_generate_examples_strategy_dialog.dart';
+ 
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
 import 'package:flutter_word_dictation/core/services/config_service.dart';
 
@@ -309,17 +308,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         label: const Text('AI生成词解'),
                       ),
                       const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: () {
-                          if (word.id == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先保存单词')));
-                            return;
-                          }
-                          _showAIGenerateExamplesDialog(word);
-                        },
-                        icon: const Icon(Icons.auto_awesome),
-                        label: const Text('AI生成例句'),
-                      ),
+                      
                       const Spacer(),
                       OutlinedButton.icon(
                         onPressed: () {
@@ -374,19 +363,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                           ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              final w = _currentWord;
-                              if (w.id == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先保存单词')));
-                                return;
-                              }
-                              _generateExplanation(w);
-                            },
-                            icon: const Icon(Icons.psychology),
-                            label: const Text('使用AI生成词解'),
-                          ),
+                          
                         ],
                       ),
                     ),
@@ -837,13 +814,32 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       );
       await _explanationService.upsertForWord(exp);
       final latest = await _explanationService.getByWordId(word.id!);
+
+      final aiEx = await AIExampleService.getInstance();
+      final exSvc = ExampleSentenceService();
+      final existingExamples = await exSvc.getExamplesByWordId(word.id!);
+      if (existingExamples.isEmpty) {
+        final examples = await aiEx.generateExamples(
+          prompt: word.prompt,
+          answer: word.answer,
+          sourceLanguage: srcLang,
+          targetLanguage: tgtLang,
+          sourcesHtml: useSources ? sources.$1 : null,
+        );
+        final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
+        if (withWordId.isNotEmpty) {
+          await exSvc.insertExamples(withWordId);
+        }
+        await _loadExamples(word: word);
+      }
+
       if (mounted) {
         Navigator.of(context).pop();
         setState(() {
           _explanation = latest;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已为 "${word.prompt}" 生成词解')),
+          SnackBar(content: Text('已为 "${word.prompt}" 生成词解并例句')),
         );
       }
     } catch (e) {
@@ -856,82 +852,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     }
   }
 
-  void _showAIGenerateExamplesDialog(Word word) async {
-    final req = await showDialog<AIGenerateExamplesRequest>(
-      context: context,
-      builder: (context) => AIGenerateExamplesDialog(
-        initialPrompt: word.prompt,
-        initialAnswer: word.answer,
-      ),
-    );
-    if (req == null) return;
-    try {
-      final chosen = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
-      if (chosen == 'skip') {
-        final existing = await _exampleService.getExamplesByWordId(word.id!);
-        if (existing.isNotEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
-            );
-          }
-          return;
-        }
-      }
-      if (chosen == 'overwrite') {
-        await _exampleService.deleteByWordId(word.id!);
-      }
-
-      final total = 1;
-      final progress = ValueNotifier<int>(0);
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('正在生成例句'),
-          content: ValueListenableBuilder<int>(
-            valueListenable: progress,
-            builder: (context, done, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LinearProgressIndicator(value: total == 0 ? 0 : done / total),
-                const SizedBox(height: 8),
-                Text('进度：$done / $total'),
-              ],
-            ),
-          ),
-        ),
-      );
-
-      final ai = await AIExampleService.getInstance();
-      final sources = await _autoCollectSources(word);
-      final examples = await ai.generateExamples(
-        prompt: req.prompt,
-        answer: req.answer,
-        sourceLanguage: req.sourceLanguage,
-        targetLanguage: req.targetLanguage,
-        sourcesHtml: sources.$1,
-      );
-      progress.value = 1;
-
-      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
-      await _exampleService.insertExamples(withWordId);
-      await _loadExamples(word: word);
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已为 "${word.prompt}" 生成 ${withWordId.length} 条例句')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('生成失败：$e')),
-      );
-    }
-  }
+  
 }
 // 移至文件顶部统一导入（见上），删除中部重复导入
