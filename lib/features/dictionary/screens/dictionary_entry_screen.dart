@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_word_dictation/core/models/dictionary.dart';
 import 'package:flutter_word_dictation/core/services/dictionary_query_service.dart';
+import 'package:flutter_html/flutter_html.dart';
 
 class DictionaryEntryScreen extends StatefulWidget {
   final Dictionary dictionary;
@@ -42,6 +43,23 @@ class _DictionaryEntryScreenState extends State<DictionaryEntryScreen> {
       _html = null;
     });
     final res = await _queryService.lookupWord(widget.dictionary, widget.entryKey);
+    final len = res?.length ?? 0;
+    final preview = () {
+      final s = (res ?? '').replaceAll(RegExp(r'\s+'), ' ');
+      return s.length > 200 ? s.substring(0, 200) : s;
+    }();
+    print('[DictEntry] lookup: dict=' + widget.dictionary.name + ' key="' + widget.entryKey + '" len=' + len.toString() + ' preview="' + preview + '"');
+    if (res != null) {
+      final classes = <String>{};
+      for (final m in RegExp(r'class\s*=\s*"([^"]+)"').allMatches(res)) {
+        final parts = (m.group(1) ?? '').split(RegExp(r'\s+')).where((e) => e.trim().isNotEmpty);
+        classes.addAll(parts);
+      }
+      if (classes.isNotEmpty) {
+        final first = classes.take(16).join(', ');
+        print('[DictEntry] classes: ' + first + (classes.length > 16 ? ' ...' : ''));
+      }
+    }
     if (mounted) {
       setState(() {
         _html = res;
@@ -50,94 +68,143 @@ class _DictionaryEntryScreenState extends State<DictionaryEntryScreen> {
     }
   }
 
+  String _prepareHtml(String html) {
+    var s = html;
+    s = _bodyOnly(s);
+    s = _heuristicBlockify(s);
+    s = s.replaceAll(RegExp(r'color\s*:\s*(black|#000000|#000|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\))', caseSensitive: false), 'color: inherit');
+    s = s.replaceAll(RegExp(r'color\s*:\s*(black|#000000|#000|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\))', caseSensitive: false), 'color: inherit');
+    s = s.replaceAll(RegExp(r'<font([^>]*?)\scolor\s*=\s*"[^"]*"', caseSensitive: false), '<font');
+    s = s.replaceAll(RegExp(r"<font([^>]*?)\scolor\s*=\s*'[^']*'", caseSensitive: false), '<font');
+    s = s.replaceAll(RegExp(r'<style[\s\S]*?<\/style>', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'<script[\s\S]*?<\/script>', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'<link[^>]*rel\s*=\s*"stylesheet"[^>]*>', caseSensitive: false), '');
+    return s;
+  }
+
+  String _bodyOnly(String s) {
+    var out = s.replaceFirst(RegExp(r'^\s*<\?xml[\s\S]*?\?>', multiLine: true), '');
+    final m = RegExp(r'<body[^>]*>([\s\S]*?)<\/body>', caseSensitive: false).firstMatch(out);
+    if (m != null) {
+      return m.group(1) ?? out;
+    }
+    out = out.replaceAll(RegExp(r'<head[\s\S]*?<\/head>', caseSensitive: false), '');
+    out = out.replaceAll(RegExp(r'<html[^>]*>', caseSensitive: false), '');
+    out = out.replaceAll(RegExp(r'<\/html>', caseSensitive: false), '');
+    return out;
+  }
+
+  String _heuristicBlockify(String s) {
+    var out = s;
+    out = out.replaceAllMapped(RegExp(r'【([^】]+)】'), (match) => '<h3>' + match.group(1)!.trim() + '</h3>');
+    out = out.replaceAllMapped(RegExp(r'([★◆◎●○◇■□▲△※])'), (m) => '<br/>' + m.group(1)!);
+    out = out.replaceAllMapped(RegExp(r'([①②③④⑤⑥⑦⑧⑨⑩])'), (m) => '<br/>' + m.group(1)!);
+    out = out.replaceAll(RegExp(r'\s・'), '<br/>・');
+    return out;
+  }
+
+  String _stripEntities(String s) {
+    return s
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&');
+  }
+
   Widget _buildExplanationHtml(String html) {
-    final normalized = html.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    final plain = normalized.replaceAll(RegExp(r'<[^>]+>'), '');
-    return _buildRubyText(normalized, plain);
-  }
-
-  Widget _buildRubyText(String html, String plain) {
-    final baseStyle = Theme.of(context).textTheme.bodyLarge?.copyWith(
-      fontWeight: FontWeight.w600,
-    );
-    final rubyStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      fontSize: (Theme.of(context).textTheme.bodySmall?.fontSize ?? 12) * 0.9,
-    );
-
-    if (html.isEmpty) {
-      return Text(plain, style: baseStyle);
-    }
-
-    final spans = _rubySpansFromHtml(html, baseStyle, rubyStyle);
-    return RichText(
-      text: TextSpan(
-        children: spans,
-        style: baseStyle,
-      ),
-    );
-  }
-
-  List<InlineSpan> _rubySpansFromHtml(String html, TextStyle? baseStyle, TextStyle? rubyStyle) {
-    final List<InlineSpan> spans = [];
-    final rubyReg = RegExp(r"<ruby>([\s\S]*?)<\/ruby>", multiLine: true);
-    int lastIndex = 0;
-
-    for (final match in rubyReg.allMatches(html)) {
-      if (match.start > lastIndex) {
-        final before = html.substring(lastIndex, match.start).replaceAll(RegExp(r"<[^>]+>"), "");
-        if (before.isNotEmpty) {
-          spans.add(TextSpan(text: before, style: baseStyle));
-        }
-      }
-
-      final rubyBlock = (match.group(1) ?? '').replaceAll(RegExp(r"<rp>[\s\S]*?<\/rp>"), '');
-
-      final rbs = RegExp(r"<rb>([\s\S]*?)<\/rb>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
-      final rts = RegExp(r"<rt>([\s\S]*?)<\/rt>").allMatches(rubyBlock).map((m) => m.group(1) ?? '').toList();
-
-      if (rbs.isEmpty && rts.isEmpty) {
-        final plainBlock = rubyBlock.replaceAll(RegExp(r"<[^>]+>"), "");
-        if (plainBlock.isNotEmpty) {
-          spans.add(TextSpan(text: plainBlock, style: baseStyle));
-        }
-      } else {
-        final count = (rbs.length > rts.length) ? rbs.length : rts.length;
-        for (int i = 0; i < count; i++) {
-          final rb = i < rbs.length ? rbs[i] : '';
-          final rt = i < rts.length ? rts[i] : '';
-          spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.bottom,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (rt.isNotEmpty)
-                      Text(rt, style: rubyStyle, textAlign: TextAlign.center),
-                    if (rb.isNotEmpty)
-                      Text(rb, style: baseStyle, textAlign: TextAlign.left),
-                  ],
-                ),
-              ),
+    final theme = Theme.of(context);
+    final prepared = _prepareHtml(html);
+    final plain = _stripEntities(prepared.replaceAll(RegExp(r'<[^>]+>'), ' ')).trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Html(
+          data: prepared,
+          style: {
+            'html': Style(color: theme.colorScheme.onSurface),
+            'body': Style(
+              fontSize: FontSize(theme.textTheme.bodyLarge?.fontSize ?? 16),
+              lineHeight: const LineHeight(1.6),
+              color: theme.colorScheme.onSurface,
             ),
-          );
-        }
-      }
-
-      lastIndex = match.end;
-    }
-
-    if (lastIndex < html.length) {
-      final after = html.substring(lastIndex).replaceAll(RegExp(r"<[^>]+>"), "");
-      if (after.isNotEmpty) {
-        spans.add(TextSpan(text: after, style: baseStyle));
-      }
-    }
-
-    return spans;
+            'p': Style(margin: Margins.symmetric(vertical: 8)),
+            'div': Style(margin: Margins.symmetric(vertical: 6)),
+            'h1': Style(fontSize: FontSize(24), fontWeight: FontWeight.bold, margin: Margins.only(bottom: 8)),
+            'h2': Style(fontSize: FontSize(22), fontWeight: FontWeight.bold, margin: Margins.only(bottom: 8)),
+            'h3': Style(fontSize: FontSize(20), fontWeight: FontWeight.bold, margin: Margins.only(bottom: 8)),
+            'ul': Style(margin: Margins.symmetric(vertical: 6), padding: HtmlPaddings.only(left: 20)),
+            'ol': Style(margin: Margins.symmetric(vertical: 6), padding: HtmlPaddings.only(left: 20)),
+            'li': Style(margin: Margins.only(bottom: 4)),
+            'blockquote': Style(
+              margin: Margins.symmetric(vertical: 8),
+              padding: HtmlPaddings.symmetric(horizontal: 12, vertical: 8),
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            ),
+            'code': Style(
+              fontFamily: 'monospace',
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              padding: HtmlPaddings.symmetric(horizontal: 6, vertical: 4),
+            ),
+            'pre': Style(
+              fontFamily: 'monospace',
+              whiteSpace: WhiteSpace.pre,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              padding: HtmlPaddings.all(8),
+            ),
+            'table': Style(margin: Margins.only(top: 8)),
+            'th': Style(fontWeight: FontWeight.bold, padding: HtmlPaddings.all(6), backgroundColor: theme.colorScheme.surfaceContainerHighest),
+            'td': Style(padding: HtmlPaddings.all(6)),
+            'ruby': Style(fontWeight: FontWeight.w600),
+            'rt': Style(fontSize: FontSize((theme.textTheme.bodySmall?.fontSize ?? 12) * 0.9), color: theme.colorScheme.onSurfaceVariant),
+            'span': Style(color: theme.colorScheme.onSurface),
+            'a': Style(color: theme.colorScheme.primary),
+          },
+          extensions: [
+            TagExtension(tagsToExtend: {'ruby'}, builder: (context) {
+              final el = context.element;
+              final children = el?.children ?? const [];
+              final rbs = <String>[];
+              final rts = <String>[];
+              for (final c in children) {
+                final name = (c.localName ?? '').toLowerCase();
+                final text = c.text.trim();
+                if (name == 'rb') {
+                  rbs.add(text);
+                } else if (name == 'rt') {
+                  rts.add(text);
+                }
+              }
+              final theme2 = Theme.of(context.buildContext!);
+              final baseStyle = theme2.textTheme.bodyLarge;
+              final rubyStyle = theme2.textTheme.bodySmall?.copyWith(color: theme2.colorScheme.onSurfaceVariant);
+              return Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                children: [
+                  for (int i = 0; i < (rbs.length > rts.length ? rbs.length : rts.length); i++)
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (i < rts.length && rts[i].isNotEmpty) Text(rts[i], style: rubyStyle),
+                        if (i < rbs.length && rbs[i].isNotEmpty) Text(rbs[i], style: baseStyle),
+                      ],
+                    ),
+                ],
+              );
+            }),
+          ],
+        ),
+        if (plain.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            plain,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
+      ],
+    );
   }
 
   List<String> _extractSoundUrls(String html) {
