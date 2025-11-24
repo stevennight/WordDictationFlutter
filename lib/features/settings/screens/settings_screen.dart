@@ -25,12 +25,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   PackageInfo? _packageInfo;
   ConfigService? _configService;
   bool _useDictionarySources = true;
+  bool _aiReflectionEnabled = true;
 
   @override
   void initState() {
     super.initState();
     _loadPackageInfo();
-    _loadUseDictionarySources();
+    _loadSettings();
   }
 
   Future<void> _loadPackageInfo() async {
@@ -42,12 +43,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _loadUseDictionarySources() async {
+  Future<void> _loadSettings() async {
     final cfg = await ConfigService.getInstance();
     final v = await cfg.getUseDictionarySources();
+    final reflection = await cfg.getAIReflectionEnabled();
     if (mounted) {
       setState(() {
         _useDictionarySources = v;
+        _aiReflectionEnabled = reflection;
       });
     }
   }
@@ -147,6 +150,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (mounted) setState(() => _useDictionarySources = v);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(v ? '已开启词典来源' : '已关闭词典来源')),
+                      );
+                    },
+                  ),
+                ),
+                SettingsTile(
+                  title: 'AI 反思验证',
+                  subtitle: '生成后进行质量检查，提高内容可信度',
+                  leading: const Icon(Icons.verified),
+                  trailing: Switch(
+                    value: _aiReflectionEnabled,
+                    onChanged: (v) async {
+                      final cfg = await ConfigService.getInstance();
+                      await cfg.setAIReflectionEnabled(v);
+                      if (mounted) setState(() => _aiReflectionEnabled = v);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(v ? '已开启 AI 反思验证' : '已关闭 AI 反思验证')),
                       );
                     },
                   ),

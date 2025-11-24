@@ -238,4 +238,19 @@ class ConfigService {
   Future<void> setUseDictionarySources(bool value) async {
     await _localConfig!.setSetting<bool>('use_dictionary_sources', value);
   }
+
+  // AI reflection setting
+  Future<bool> getAIReflectionEnabled() async {
+    final v = await _localConfig!.getSetting<dynamic>('ai_reflection_enabled');
+    if (v is bool) return v;
+    if (v is String) {
+      if (v.toLowerCase() == 'true') return true;
+      if (v.toLowerCase() == 'false') return false;
+    }
+    return true; // default enabled
+  }
+
+  Future<void> setAIReflectionEnabled(bool value) async {
+    await _localConfig!.setSetting<bool>('ai_reflection_enabled', value);
+  }
 }

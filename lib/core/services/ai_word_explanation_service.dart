@@ -31,6 +31,8 @@ class AIWordExplanationService {
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
   }) async {
+    // With self-correction, we don't need complex retry logic
+    // The reflection mechanism will automatically correct issues
     return generateExplanationHtmlStructured(
       prompt: prompt,
       answer: answer,
@@ -270,6 +272,7 @@ definition
   - text: 发音（英语用 IPA；日语用假名，并且在假名后⓪、①、②…的形式标识声调；中文用拼音；其他根据具体语言返回对应的发音标注）。
 - collocations: 数组，0–5项，尽可能多，但要注意为常用搭配、组合此、熟语、谚语，不要随便组合词语或短语（比如コンビニでアルバイトする这种是禁止出现的）。每项对象：
   - textHtml: 搭配/熟语（原文语言；允许 ruby）。
+  - translation: 搭配/熟语的译文（译文语言）。
 
 highlights
 - 数组，0–3项，尽可能多。每项对象：
@@ -277,8 +280,7 @@ highlights
 
 synonyms
 - 数组，0–3项，尽可能多。每项对象：
-  - termPlain: 近义词词形
-  - termHtml: 近义词词形（含 ruby 的版本）。
+  - termHtml: 近义词词形（原文语言；允许 ruby）。
   - gloss: 近义词简要含义。
   - differenceHtml: 与当前词的区别（译文语言；允许在「…」中引述少量原文并可带 ruby）。
   - selfHtml: 使用当前词的例句（原文语言；允许 ruby）。
@@ -288,8 +290,7 @@ synonyms
 
 antonyms
 - 数组，0–2项，尽可能多。每项对象：
-  - termPlain: 反义词词形（Html 可含 ruby）
-  - termHtml: 反义词词形（含 ruby 的版本）。
+  - termHtml: 反义词词形（原文语言；允许 ruby）。
   - gloss: 反义词简要含义。
   - exampleHtml: 使用反义词的例句（原文语言；允许 ruby）。
   - exampleTranslation: 上述例句译文。
@@ -297,6 +298,13 @@ antonyms
 extras
 - 数组，0–3项，尽可能多。每项对象：
   - textHtml: 与该词相关的简短补充说明（译文语言；允许在「…」中引述少量原文并可带 ruby）。
+
+examples
+- 数组，与传入的词义（answer）一一对应，每个词义生成一个例句。如果 answer 包含多个词义（如"1. 词义A；2. 词义B"），则生成多个例句。每项对象：
+  - senseText: 该例句对应的词义，必须是 answer 中的原文词义内容。
+  - textHtml: 例句内容（原文语言；允许 ruby）。
+  - textTranslation: 例句译文（译文语言）。
+  - grammarNotes: 数组，该例句中用到的语法点（译文语言）。
 
 ruby 规则：
 - 仅在“日文内容”中为含汉字的词整体标注 ruby。
@@ -316,6 +324,68 @@ ruby 规则：
 - 例句尽可能使用一些高级用法，以便用户复习语法内容。
 - 严格依据提供的单词（prompt）与词义（answer）。
 - 生成的内容尽可能完善，不遗漏任何重要信息。
+
+JSON 示例（日语单词）：
+{
+  "definition": {
+    "senses": [
+      {
+        "pos": "名词",
+        "text": "在家中进行的副业，多为手工劳动或简单加工。"
+      }
+    ],
+    "pronunciation": {
+      "text": "ないしょく①"
+    },
+    "collocations": [
+      {
+        "textHtml": "<ruby><rb>学生</rb><rt>がくせい</rt></ruby>アルバイト",
+        "translation": "学生兼职"
+      },
+      {
+        "textHtml": "<ruby><rb>在宅</rb><rt>ざいたく</rt></ruby><ruby><rb>勤務</rb><rt>きんむ</rt></ruby>",
+        "translation": "在家办公"
+      }
+    ]
+  },
+  "highlights": [
+    {
+      "textHtml": "「<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>」则特指在家中进行的副业。"
+    }
+  ],
+  "synonyms": [
+    {
+      "termHtml": "アルバイト",
+      "gloss": "兼职工作",
+      "differenceHtml": "「アルバイト」多指在特定场所（如商店、咖啡馆）工作，而「<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>」则特指在家中进行的副业。",
+      "selfHtml": "<ruby><rb>彼女</rb><rt>かのじょ</rt></ruby>は<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>で<ruby><rb>生活費</rb><rt>せいかつひ</rt></ruby>を<ruby><rb>稼</rb><rt>かせ</rt></ruby>いでいる。",
+      "selfTranslation": "她通过在家做副业来赚取生活费。",
+      "synHtml": "<ruby><rb>学生</rb><rt>がくせい</rt></ruby>の<ruby><rb>頃</rb><rt>ころ</rt></ruby>、カフェでアルバイトをしていた。",
+      "synTranslation": "学生时代在咖啡馆打工。"
+    }
+  ],
+  "antonyms": [
+    {
+      "termHtml": "<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>",
+      "gloss": "主业、正职",
+      "exampleHtml": "<ruby><rb>彼</rb><rt>かれ</rt></ruby>は<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>は<ruby><rb>会社員</rb><rt>かいしゃいん</rt></ruby>だ。",
+      "exampleTranslation": "他的正职是公司职员。"
+    }
+  ],
+  "extras": [
+    {
+      "textHtml": "在德语中，「Arbeit」除了指「劳动、工作」外，也可指「学问上的业绩、研究成果」。"
+    }
+  ],
+  "examples": [
+    {
+      "senseText": "在家中进行的副业",
+      "textHtml": "<ruby><rb>彼女</rb><rt>かのじょ</rt></ruby>は<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>で<ruby><rb>生活費</rb><rt>せいかつひ</rt></ruby>を<ruby><rb>稼</rb><rt>かせ</rt></ruby>いでいる。",
+      "textTranslation": "她通过在家做副业来赚取生活费。",
+      "grammarNotes": ["で表示手段方法", "ている表示持续状态"]
+    }
+  ]
+}
 ''';
 
     final refs = (sourcesHtml ?? const <String>[]).where((e) => e.trim().isNotEmpty).toList();
@@ -368,8 +438,356 @@ ruby 规则：
       final pretty = const JsonEncoder.withIndent('  ').convert(data);
       debugPrint('[AIExplain][json_pretty]\n' + pretty);
     } catch (_) {}
-    final html = _renderExplanationHtmlFromJson(data, metas, prompt: prompt, answer: answer, sourceLanguage: langSource);
-    return html;
+    
+    String jsonResult = jsonEncode(data);
+    
+    // Check if reflection is enabled
+    final reflectionEnabled = await _configService.getAIReflectionEnabled();
+    if (reflectionEnabled) {
+      jsonResult = await _validateAndCorrectWithRetry(
+        prompt: prompt,
+        answer: answer,
+        generatedJson: jsonResult,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+      );
+    }
+    
+    // Return JSON string directly instead of rendering to HTML
+    return jsonResult;
+  }
+
+  /// Validate and correct JSON with retry mechanism (max 3 attempts)
+  Future<String> _validateAndCorrectWithRetry({
+    required String prompt,
+    required String answer,
+    required String generatedJson,
+    String? sourceLanguage,
+    String? targetLanguage,
+  }) async {
+    const maxAttempts = 3;
+    String currentJson = generatedJson;
+    
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      debugPrint('[AIExplain] Validation attempt $attempt/$maxAttempts');
+      
+      final reflectionResult = await _reflectOnResponse(
+        prompt: prompt,
+        answer: answer,
+        generatedJson: currentJson,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+      );
+      
+      if (reflectionResult == null) {
+        // Validation passed
+        if (attempt == 1) {
+          debugPrint('[AIExplain] Reflection passed on first attempt');
+        } else {
+          debugPrint('[AIExplain] Reflection passed after $attempt attempts');
+        }
+        return currentJson;
+      }
+      
+      // Validation failed
+      final issues = reflectionResult['issues'] as List?;
+      debugPrint('[AIExplain] Reflection found ${issues?.length ?? 0} issues on attempt $attempt');
+      
+      if (attempt < maxAttempts) {
+        // Try to correct
+        debugPrint('[AIExplain] Attempting correction...');
+        currentJson = await _correctWithReflection(
+          prompt: prompt,
+          answer: answer,
+          generatedJson: currentJson,
+          reflectionResult: reflectionResult,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+        );
+        
+        // Validate the JSON format
+        try {
+          final correctedData = jsonDecode(currentJson);
+          currentJson = jsonEncode(correctedData);
+          debugPrint('[AIExplain] Correction completed, will re-validate');
+        } catch (e) {
+          debugPrint('[AIExplain] Corrected JSON is invalid: $e');
+          // If correction produces invalid JSON, retry by origin JSON
+          currentJson = generatedJson;
+        }
+      } else {
+        // Max attempts reached
+        debugPrint('[AIExplain] Max correction attempts ($maxAttempts) reached, using last version');
+        return currentJson;
+      }
+    }
+    
+    return currentJson;
+  }
+
+  /// Reflect on the AI response and return issues for correction
+  /// Returns null if valid, or a Map with issues if invalid
+  Future<Map<String, dynamic>?> _reflectOnResponse({
+    required String prompt,
+    required String answer,
+    required String generatedJson,
+    String? sourceLanguage,
+    String? targetLanguage,
+  }) async {
+    final endpoint = await _configService.getAIEndpoint();
+    final apiKey = await _configService.getAIApiKey();
+    final model = await _configService.getAIModel();
+    
+    if (apiKey.isEmpty) {
+      debugPrint('[AIExplain][Reflection] No API key, skipping reflection');
+      return null; // Skip reflection if no API key
+    }
+
+    final reflectionPrompt = '''
+你是一个严格的质量检查专家。请对以下AI生成的词解内容进行**极其严格**的准确性验证。
+
+原始单词：$prompt
+词义：$answer
+${sourceLanguage != null ? '源语言（原文）：$sourceLanguage' : ''}
+${targetLanguage != null ? '目标语言（译文）：$targetLanguage' : ''}
+
+生成的JSON内容：
+$generatedJson
+
+**重要说明**：
+- 源语言（原文）：单词本身的语言，例如日语、英语等
+- 目标语言（译文）：释义、翻译的语言，例如中文
+- 所有 textHtml、termHtml、例句等字段如果是原文语言，则应该用源语言书写
+- 所有 translation、释义、说明等字段应该用目标语言（译文语言）书写
+- **不要混淆原文和译文**：例如日语单词的搭配应该是日语，其翻译才是中文
+
+**准确性要求**：所有内容必须100%准确，发现任何错误都必须指出。
+
+**严格检查清单**：
+
+1. **发音准确性（必须完全正确）**：
+   - 日语：假名拼写、声调标记（⓪①②等）必须与原词完全一致
+   - 英语：IPA 音标必须准确
+   - 中文：拼音及声调必须正确
+   - 绝不允许发音错误
+
+2. **释义准确性**：
+   - 释义必须与输入的"词义"（answer）完全对应
+   - 不能添加、遗漏或曲解原意
+   - 词性标注必须正确
+
+3. **搭配/熟语准确性**：
+   - textHtml 必须是源语言（原文）的真实搭配、熟语或谚语
+   - translation 必须是目标语言（译文）的准确翻译
+   - 不能随意组合词语
+   - 不要混淆：搭配本身是原文，翻译才是译文
+
+4. **例句准确性**：
+   - textHtml 必须是源语言（原文），语法完全正确，用词地道自然
+   - textTranslation 必须是目标语言（译文），翻译准确
+   - senseText 必须是"词义"（answer）中的原文
+   - 每个词义必须对应一个例句
+   - 不要混淆：例句本身是原文，翻译才是译文
+
+5. **Ruby标注准确性（日语）**：
+   - 只能为汉字标注假名
+   - 假名拼写必须100%正确
+   - 绝不能为平假名、片假名标注 ruby
+   - 不能遗漏应标注的汉字
+
+6. **近义词/反义词准确性**：
+   - 必须是真实的近义词/反义词
+   - 词形、读音必须正确
+   - 区别说明必须准确
+   - 例句必须语法正确、用词准确
+
+7. **语法点标注准确性**：
+   - grammarNotes 中的语法点必须真实存在
+   - 必须与例句中实际使用的语法对应
+   - 说明必须准确
+
+8. **整体一致性**：
+   - 所有内容必须逻辑一致
+   - 不能有矛盾或冲突
+   - 语言风格统一
+
+**验证标准**：宁可严格，不可放松。任何疑似错误都应标记为问题。
+
+只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容；禁止使用 Markdown 代码块或 ```json 包裹。
+
+如果**所有内容完全准确无误**：
+{"valid": true}
+
+如果发现**任何问题**：
+{
+  "valid": false,
+  "issues": [
+    {
+      "field": "具体字段路径",
+      "problem": "具体问题描述",
+      "current": "当前错误的内容",
+      "suggested": "建议修正后的内容"
+    }
+  ]
+}
+
+**重要**：每个问题必须包含 current（当前错误内容）和 suggested（建议修正内容），以便修正AI能够准确替换。
+''';
+
+    try {
+      final response = await http.post(
+        Uri.parse('$endpoint/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode({
+          'model': model,
+          'messages': [
+            {'role': 'user', 'content': reflectionPrompt}
+          ],
+          'temperature': 0.1,
+          // 'max_tokens': 4096,  // Large enough for detailed issue descriptions
+          'response_format': {'type': 'json_object'},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+        final choice = jsonResponse['choices'][0];
+        final content = choice['message']['content'] as String;
+        final finishReason = choice['finish_reason'] as String?;
+        
+        debugPrint('[AIExplain][Reflection] Result: $content');
+        debugPrint('[AIExplain][Reflection] Finish reason: $finishReason');
+        
+        // Check if response was truncated
+        if (finishReason == 'length') {
+          debugPrint('[AIExplain][Reflection] Warning: Response truncated due to max_tokens limit');
+          // Treat truncated response as valid to avoid blocking
+          return null;
+        }
+        
+        // Parse JSON directly (response_format ensures pure JSON)
+        try {
+          final result = jsonDecode(content) as Map<String, dynamic>;
+          final isValid = result['valid'] == true;
+          
+          if (isValid) {
+            debugPrint('[AIExplain][Reflection] Validation passed');
+            return null;
+          } else {
+            final issues = result['issues'] as List?;
+            debugPrint('[AIExplain][Reflection] Validation failed with ${issues?.length ?? 0} issues');
+            return result;
+          }
+        } catch (e) {
+          debugPrint('[AIExplain][Reflection] Failed to parse JSON: $e');
+          debugPrint('[AIExplain][Reflection] Content: $content');
+          debugPrint('[AIExplain][Reflection] This may indicate response was truncated or malformed');
+          return null; // Treat parse errors as valid to avoid blocking
+        }
+      } else {
+        debugPrint('[AIExplain][Reflection] API error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('[AIExplain][Reflection] Exception: $e');
+      return null;
+    }
+  }
+
+  /// Correct the generated JSON based on reflection issues
+  Future<String> _correctWithReflection({
+    required String prompt,
+    required String answer,
+    required String generatedJson,
+    required Map<String, dynamic> reflectionResult,
+    String? sourceLanguage,
+    String? targetLanguage,
+  }) async {
+    final endpoint = await _configService.getAIEndpoint();
+    final apiKey = await _configService.getAIApiKey();
+    final model = await _configService.getAIModel();
+    final temperature = await _configService.getAITemperature();
+
+    final issues = reflectionResult['issues'] as List;
+    final issuesText = issues.map((issue) {
+      final field = issue['field'] ?? '';
+      final problem = issue['problem'] ?? '';
+      final current = issue['current'] ?? '';
+      final suggested = issue['suggested'] ?? '';
+      
+      if (current.isNotEmpty && suggested.isNotEmpty) {
+        return '''
+字段：$field
+问题：$problem
+当前内容：$current
+建议修正：$suggested''';
+      } else {
+        return '- $field: $problem';
+      }
+    }).join('\n\n');
+
+    final correctionPrompt = '''
+以下是你之前生成的词解JSON，但存在一些问题需要修正。
+
+原始单词：$prompt
+词义：$answer
+${sourceLanguage != null ? '源语言（原文）：$sourceLanguage' : ''}
+${targetLanguage != null ? '目标语言（译文）：$targetLanguage' : ''}
+
+之前生成的JSON：
+$generatedJson
+
+发现的问题及修正建议：
+$issuesText
+
+**修正指导**：
+1. 对于每个问题，如果提供了"建议修正"，请直接使用建议的内容替换"当前内容"
+2. 确保修正后的内容符合语言规则：
+   - highlights、extras 等说明字段：完全使用目标语言（译文），不要混用原文或 ruby 标注
+   - textHtml、例句等原文字段：使用源语言（原文），日语可以加 ruby
+   - translation 等翻译字段：使用目标语言（译文），不要加 ruby
+3. 如果需要在中文说明中引用原文词汇，用「」包裹，不要加 ruby 标注
+
+请修正这些问题，返回完整的修正后的JSON。
+
+只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容；禁止使用 Markdown 代码块或 ```json 包裹。
+''';
+
+    try {
+      final response = await http.post(
+        Uri.parse('$endpoint/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode({
+          'model': model,
+          'messages': [
+            {'role': 'user', 'content': correctionPrompt}
+          ],
+          'temperature': temperature,
+          'response_format': {'type': 'json_object'},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+        final content = jsonResponse['choices'][0]['message']['content'] as String;
+        
+        debugPrint('[AIExplain][Correction] Corrected JSON generated');
+        // response_format ensures pure JSON, return directly
+        return content.trim();
+      } else {
+        debugPrint('[AIExplain][Correction] API error: ${response.statusCode}');
+        return generatedJson; // Return original if correction fails
+      }
+    } catch (e) {
+      debugPrint('[AIExplain][Correction] Exception: $e');
+      return generatedJson;
+    }
   }
 
   String _renderExplanationHtmlFromJson(Map<String, dynamic> data, List<Map<String, String>> metas, {required String prompt, required String answer, String? sourceLanguage}) {

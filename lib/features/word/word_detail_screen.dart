@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_word_dictation/features/dictionary/screens/dictionary_query_screen.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
  
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
 import 'package:flutter_word_dictation/core/services/config_service.dart';
+import 'package:flutter_word_dictation/shared/widgets/word_explanation_renderer.dart';
 
  
 
@@ -328,13 +330,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        const SizedBox(height: 16),
-        Text(
-          '词解',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         if (_expLoading)
           const Center(
             child: Padding(
@@ -378,90 +374,26 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
             child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: _buildExplanationHtml(context: context, html: _explanation!.html),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Word explanation (now includes examples from JSON)
+                    _buildExplanationHtml(context: context, html: _explanation!.html),
+                  ],
+                ),
               ),
             ),
-          ),
-        Text(
-          '例句',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        if (_loading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-          )
-        else if (_examples.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              '暂无例句',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _examples.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final ex = _examples[index];
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.format_quote, size: 16, color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Text(
-                            ex.senseText.isNotEmpty ? ex.senseText : '（未标注词义）',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      _buildRubyText(
-                        context: context,
-                        html: ex.textHtml,
-                        plain: ex.textPlain,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        ex.textTranslation,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                      if (ex.grammarNote.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          ex.grammarNote,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              );
-            },
           ),
       ],
     );
   }
 
   Widget _buildExplanationHtml({required BuildContext context, required String html}) {
-    final normalized = html.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    final plain = normalized.replaceAll(RegExp(r'<[^>]+>'), '');
-    return _buildRubyText(context: context, html: normalized, plain: plain);
+    // html field now contains JSON data
+    return WordExplanationRenderer(
+      jsonData: html,
+      sourceLanguage: null, // Language will be inferred from JSON content
+    );
   }
 
   Widget _buildRubyText({required BuildContext context, required String html, required String plain}) {
@@ -779,7 +711,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       final cfg = await ConfigService.getInstance();
       final useSources = await cfg.getUseDictionarySources();
       final sources = useSources ? await ai.collectSourcesForWord(word) : (<String>[], const <Map<String, String>>[]);
-      var html = await ai.generateExplanationHtmlStructured(
+      var jsonData = await ai.generateExplanationHtmlStructured(
         prompt: word.prompt,
         answer: word.answer,
         sourceLanguage: srcLang,
@@ -787,27 +719,26 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         sourcesHtml: sources.$1,
         sourcesMeta: sources.$2,
       );
-      if (sources.$2.isNotEmpty && (html.contains('参考来源') == false)) {
-        final buf = StringBuffer();
-        buf.write('<hr/><section><h3>【参考来源】</h3><ul>');
-        for (final m in sources.$2) {
-          final dn = (m['dictionary'] ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-          final k = (m['key'] ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-          buf.write('<li>');
-          buf.write(dn);
-          buf.write('：');
-          buf.write(k);
-          buf.write('</li>');
+      
+      // Embed sources in JSON if available
+      if (sources.$2.isNotEmpty) {
+        try {
+          final data = jsonDecode(jsonData) as Map<String, dynamic>;
+          data['sources'] = sources.$2.map((m) => {
+            'dictionary': m['dictionary'] ?? '',
+            'key': m['key'] ?? '',
+          }).toList();
+          jsonData = jsonEncode(data);
+        } catch (_) {
+          // If JSON parsing fails, keep original
         }
-        buf.write('</ul></section>');
-        html = html + '\n' + buf.toString();
       }
 
       final now = DateTime.now();
       final exp = WordExplanation(
         id: null,
         wordId: word.id!,
-        html: html,
+        html: jsonData,
         sourceModel: null,
         createdAt: now,
         updatedAt: now,
@@ -815,31 +746,13 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       await _explanationService.upsertForWord(exp);
       final latest = await _explanationService.getByWordId(word.id!);
 
-      final aiEx = await AIExampleService.getInstance();
-      final exSvc = ExampleSentenceService();
-      final existingExamples = await exSvc.getExamplesByWordId(word.id!);
-      if (existingExamples.isEmpty) {
-        final examples = await aiEx.generateExamples(
-          prompt: word.prompt,
-          answer: word.answer,
-          sourceLanguage: srcLang,
-          targetLanguage: tgtLang,
-          sourcesHtml: useSources ? sources.$1 : null,
-        );
-        final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
-        if (withWordId.isNotEmpty) {
-          await exSvc.insertExamples(withWordId);
-        }
-        await _loadExamples(word: word);
-      }
-
       if (mounted) {
         Navigator.of(context).pop();
         setState(() {
           _explanation = latest;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已为 "${word.prompt}" 生成词解并例句')),
+          SnackBar(content: Text('已为 "${word.prompt}" 生成词解')),
         );
       }
     } catch (e) {
