@@ -930,25 +930,37 @@ ruby 规则：
   }
 
   String _renderExplanationHtmlFromJson(Map<String, dynamic> data, List<Map<String, String>> metas, {required String prompt, required String answer}) {
-    String _cleanRubyKana(String html) {
+    String _cleanRubyKana(String html, {bool translation = false}) {
       if (html.trim().isEmpty) return html;
       String out = html;
       final regRuby = RegExp(r"<ruby>([\s\S]*?)<\/ruby>", multiLine: true);
       out = out.replaceAllMapped(regRuby, (m) {
         final block = m.group(1) ?? '';
         final rbMatch = RegExp(r"<rb>([\s\S]*?)<\/rb>").firstMatch(block);
+        final rtMatch = RegExp(r"<rt>([\s\S]*?)<\/rt>").firstMatch(block);
         final rb = rbMatch == null ? '' : (rbMatch.group(1) ?? '');
+        final rt = rtMatch == null ? '' : (rtMatch.group(1) ?? '');
         final hasHan = RegExp(r"[\u4E00-\u9FFF]").hasMatch(rb);
-        if (!hasHan) {
+        final isKanaRt = RegExp(r"^[\u3041-\u3096\u30A1-\u30FA\u30FC\u30FB\u30F4\u30F7-\u30FA]+$").hasMatch(rt);
+        bool inQuoted = false;
+        if (translation) {
+          final before = out.substring(0, m.start);
+          final after = out.substring(m.end);
+          final open = before.lastIndexOf('「');
+          final close = after.indexOf('」');
+          inQuoted = open >= 0 && close >= 0;
+        }
+        final keep = hasHan && isKanaRt && (!translation || inQuoted);
+        if (!keep) {
           return rb;
         }
         return m.group(0) ?? '';
       });
       return out;
     }
-    String textOrHtml(Map<String, dynamic> obj) {
+    String textOrHtml(Map<String, dynamic> obj, {bool translation = false}) {
       final h0 = _asString(obj['textHtml']);
-      final h = _cleanRubyKana(h0);
+      final h = _cleanRubyKana(h0, translation: translation);
       final p = _asString(obj['textPlain']);
       return h.trim().isNotEmpty ? h : p;
     }
@@ -988,7 +1000,7 @@ ruby 规则：
         sb.write('常用搭配/熟语：<br>');
         int idx = 1;
         for (final c in collos) {
-          final t = textOrHtml(_asMapSD(c));
+          final t = textOrHtml(_asMapSD(c), translation: false);
           if (t.trim().isEmpty) continue;
           sb.write(idx.toString() + '. ' + t + '<br>');
           idx++;
@@ -1010,7 +1022,7 @@ ruby 规则：
       for (final h in highs) {
         final hm = _asMapSD(h);
         final tPlain = _asString(hm['textPlain']);
-        final tHtml = _asString(hm['textHtml']);
+        final tHtml = _cleanRubyKana(_asString(hm['textHtml']), translation: true);
         final t = tPlain.trim().isNotEmpty ? tPlain : tHtml;
         if (t.trim().isEmpty) continue;
         sb.write(idx.toString() + '. ' + t + '<br>');
@@ -1029,13 +1041,13 @@ ruby 规则：
         final termPlain = _asString(m['termPlain']);
         final term = termHtml.trim().isNotEmpty ? termHtml : termPlain;
         final gloss = _asString(m['gloss']);
-        final diffHtml = _cleanRubyKana(_asString(m['differenceHtml']));
+        final diffHtml = _cleanRubyKana(_asString(m['differenceHtml']), translation: true);
         final diff = diffHtml.trim().isNotEmpty ? diffHtml : _asString(m['difference']);
         final sp = _asString(m['selfPlain']);
-        final sh = _cleanRubyKana(_asString(m['selfHtml']));
+        final sh = _cleanRubyKana(_asString(m['selfHtml']), translation: false);
         final st = _asString(m['selfTranslation']);
         final yp = _asString(m['synPlain']);
-        final yh = _cleanRubyKana(_asString(m['synHtml']));
+        final yh = _cleanRubyKana(_asString(m['synHtml']), translation: false);
         final yt = _asString(m['synTranslation']);
         sb.write(idx.toString() + '. ' + term + (gloss.trim().isNotEmpty ? '（' + gloss + '）' : '') + '<br>');
         if (diff.trim().isNotEmpty) sb.write('区别：' + diff + '<br>');
@@ -1081,7 +1093,7 @@ ruby 规则：
       sb.write('扩展：<br>');
       int idx = 1;
       for (final e in extras) {
-        final t = textOrHtml(_asMapSD(e));
+        final t = textOrHtml(_asMapSD(e), translation: true);
         if (t.trim().isEmpty) continue;
         sb.write(idx.toString() + '. ' + t + '<br>');
         idx++;
