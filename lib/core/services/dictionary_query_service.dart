@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 class DictionaryQueryService {
   final Map<String, MdictReader> _mdxCache = {};
@@ -120,6 +121,17 @@ class DictionaryQueryService {
         }
         return null;
       }
+      if (lower.startsWith('file://')) {
+        final raw = url.replaceFirst(RegExp(r'^file://'), '');
+        final path = Uri.decodeComponent(raw);
+        try {
+          final f = File(path);
+          if (await f.exists()) {
+            final bytes = await f.readAsBytes();
+            return Uint8List.fromList(bytes);
+          }
+        } catch (_) {}
+      }
       if (lower.startsWith('mdd://') || lower.startsWith('res://') || lower.startsWith('sound://')) {
         final key = Uri.decodeComponent(url.split('://').last);
         final mddPaths = await _resolveMddPathsFromMdx(dictionary.path);
@@ -160,6 +172,28 @@ class DictionaryQueryService {
           } catch (_) {}
         }
         return null;
+      }
+      final mdxPath = dictionary.path;
+      final sepIdx = mdxPath.lastIndexOf(RegExp(r'[\\/]'));
+      final mdxDir = sepIdx >= 0 ? mdxPath.substring(0, sepIdx + 1) : '';
+      final normalized = url.replaceAll('\\', '/');
+      final candidate = p.normalize(p.join(mdxDir, normalized));
+      try {
+        final f = File(candidate);
+        if (await f.exists()) {
+          final bytes = await f.readAsBytes();
+          return Uint8List.fromList(bytes);
+        }
+      } catch (_) {}
+      for (final sub in ['res', 'resources', 'data', 'css', 'styles']) {
+        final c2 = p.normalize(p.join(mdxDir, sub, normalized));
+        try {
+          final f2 = File(c2);
+          if (await f2.exists()) {
+            final bytes = await f2.readAsBytes();
+            return Uint8List.fromList(bytes);
+          }
+        } catch (_) {}
       }
       return null;
     } catch (_) {
