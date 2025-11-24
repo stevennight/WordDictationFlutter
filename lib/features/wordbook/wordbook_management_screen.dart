@@ -620,7 +620,7 @@ class _WordbookManagementScreenState extends State<WordbookManagementScreen> {
               final cfg2 = await ConfigService.getInstance();
               final useSources = await cfg2.getUseDictionarySources();
               final sources = useSources ? await ai.collectSourcesForWord(w) : (<String>[], const <Map<String, String>>[]);
-              final html = await ai.generateExplanationHtml(
+              final html = await ai.generateExplanationHtmlStructured(
                 prompt: w.prompt,
                 answer: w.answer,
                 sourceLanguage: srcLangBulk,

@@ -779,7 +779,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       final cfg = await ConfigService.getInstance();
       final useSources = await cfg.getUseDictionarySources();
       final sources = useSources ? await ai.collectSourcesForWord(word) : (<String>[], const <Map<String, String>>[]);
-      var html = await ai.generateExplanationHtml(
+      var html = await ai.generateExplanationHtmlStructured(
         prompt: word.prompt,
         answer: word.answer,
         sourceLanguage: srcLang,
