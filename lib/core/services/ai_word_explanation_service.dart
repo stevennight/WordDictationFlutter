@@ -1099,10 +1099,13 @@ $issuesText
   }
 }
 extension AIWordExplanationSourceExt on AIWordExplanationService {
-  Future<(List<String>, List<Map<String, String>>)> collectSourcesForWord(Word word) async {
+  Future<(List<String>, List<Map<String, String>>)> collectSourcesForWord(Word word, {List<String>? dictionaryPaths}) async {
     final ds = DictionaryService();
     final dq = DictionaryQueryService();
-    final dicts = await ds.getDictionaries();
+    final dictsAll = await ds.getDictionaries();
+    final dicts = (dictionaryPaths != null)
+        ? dictsAll.where((d) => dictionaryPaths.contains(d.path)).toList()
+        : dictsAll.where((d) => d.enabledForAI).toList();
     final norm = await normalizeWord(prompt: word.prompt);
     final lang = (norm['language'] ?? '') as String;
     final terms = <String>{};

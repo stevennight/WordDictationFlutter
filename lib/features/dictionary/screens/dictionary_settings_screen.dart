@@ -128,9 +128,30 @@ class _DictionarySettingsScreenState extends State<DictionarySettingsScreen> {
                   leading: const Icon(Icons.menu_book),
                   title: Text(dictionary.name),
                   subtitle: Text(dictionary.path),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _removeDictionary(dictionary.path),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text(
+                          '参与AI释义',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                      Switch(
+                        value: dictionary.enabledForAI,
+                        onChanged: (v) async {
+                          await _dictionaryService.setDictionaryEnabled(dictionary.path, v);
+                          await _loadDictionaries();
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _removeDictionary(dictionary.path),
+                      ),
+                    ],
                   ),
                 );
               },

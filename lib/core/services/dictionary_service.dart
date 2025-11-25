@@ -29,6 +29,29 @@ class DictionaryService {
     await _saveDictionaries(dictionaries);
   }
 
+  Future<void> updateDictionary(Dictionary dictionary) async {
+    final dictionaries = await getDictionaries();
+    for (int i = 0; i < dictionaries.length; i++) {
+      if (dictionaries[i].path == dictionary.path) {
+        dictionaries[i] = dictionary;
+        break;
+      }
+    }
+    await _saveDictionaries(dictionaries);
+  }
+
+  Future<void> setDictionaryEnabled(String path, bool enabled) async {
+    final dictionaries = await getDictionaries();
+    for (int i = 0; i < dictionaries.length; i++) {
+      if (dictionaries[i].path == path) {
+        final d = dictionaries[i];
+        dictionaries[i] = Dictionary(name: d.name, path: d.path, enabledForAI: enabled);
+        break;
+      }
+    }
+    await _saveDictionaries(dictionaries);
+  }
+
   Future<void> _saveDictionaries(List<Dictionary> dictionaries) async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = json.encode(dictionaries.map((d) => d.toJson()).toList());

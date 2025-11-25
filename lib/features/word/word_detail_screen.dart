@@ -310,7 +310,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                         label: const Text('AI生成词解'),
                       ),
                       const SizedBox(width: 8),
-                      
                       const Spacer(),
                       OutlinedButton.icon(
                         onPressed: () {
@@ -325,6 +324,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                       ),
                     ],
                   ),
+                  
                 ],
               ),
             ),
@@ -359,7 +359,6 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                           ),
-                          
                         ],
                       ),
                     ),
@@ -548,6 +547,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
 
     final Map<String, List<Map<String, String>>> entries = {};
     for (final d in _dictionaries) {
+      if (!d.enabledForAI) continue;
       final List<Map<String, String>> list = [];
       for (final t in terms) {
         final keys = await _dictionaryQueryService.searchKeys(d, t, limit: 32);

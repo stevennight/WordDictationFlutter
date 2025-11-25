@@ -382,7 +382,7 @@ class WordExplanationRenderer extends StatelessWidget {
                               noteStr,
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                fontStyle: FontStyle.italic,
+                                // fontStyle: FontStyle.italic,
                               ),
                             ),
                           ),
