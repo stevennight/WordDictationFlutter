@@ -22,7 +22,10 @@ import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
-import '../../shared/widgets/ai_generate_explanations_strategy_dialog.dart';
+import 'package:flutter_word_dictation/shared/widgets/ai_generate_explanations_strategy_dialog.dart';
+import 'package:flutter_word_dictation/shared/widgets/dictionary_picker_bottom_sheet.dart';
+import '../../core/models/dictionary.dart';
+import '../../core/services/dictionary_service.dart';
 import '../dictation/screens/copying_screen.dart';
 import '../dictation/screens/dictation_screen.dart';
 import 'wordbook_import_screen.dart';
@@ -55,10 +58,12 @@ class WordbookDetailScreen extends StatefulWidget {
 class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
   final WordbookService _wordbookService = WordbookService();
   final UnitService _unitService = UnitService();
+  final DictionaryService _dictionaryService = DictionaryService();
   List<Word> _words = [];
   List<Word> _filteredWords = [];
   List<Unit> _units = [];
   List<Unit> _filteredUnits = [];
+  List<Dictionary> _dictionaries = [];
   Map<String, List<Word>> _unitWords = {};
   bool _isLoading = true;
   String _searchQuery = '';
@@ -72,6 +77,7 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
   void initState() {
     super.initState();
     _loadWords();
+    _loadDictionaries();
     _updateWordbookWordCount();
   }
   
@@ -80,6 +86,19 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
       await _wordbookService.updateWordbookWordCount(widget.wordbook.id!);
     } catch (e) {
       // 静默处理错误，不影响页面加载
+    }
+  }
+  
+  Future<void> _loadDictionaries() async {
+    try {
+      final dictionaries = await _dictionaryService.getDictionaries();
+      if (mounted) {
+        setState(() {
+          _dictionaries = dictionaries;
+        });
+      }
+    } catch (e) {
+      // 静默处理错误，词典加载失败不影响页面功能
     }
   }
   
@@ -1982,6 +2001,8 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     String targetDropdown = 'auto';
     final TextEditingController sourceCustomController = TextEditingController();
     final TextEditingController targetCustomController = TextEditingController();
+    List<String>? selectedDictionaryPaths;
+    bool setDictionaryAsDefault = false;
     final bool langProceed = await showDialog<bool>(
           context: context,
           builder: (context) {
@@ -2047,6 +2068,52 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                           hintText: '如 zh, en-GB，留空则自动或常用选择',
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    ExpansionTile(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.source_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            '词典来源',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          Text(
+                            selectedDictionaryPaths == null
+                                ? '已启用 ${_dictionaries.where((d) => d.enabledForAI).length}/${_dictionaries.length} 个'
+                                : '已选 ${selectedDictionaryPaths!.length}/${_dictionaries.length} 个',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                      children: [
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final result = await showDictionaryPicker(
+                                context,
+                                allDictionaries: _dictionaries,
+                                initialPaths: selectedDictionaryPaths,
+                              );
+                              if (result != null) {
+                                setState(() {
+                                  selectedDictionaryPaths = result.$1;
+                                  setDictionaryAsDefault = result.$2;
+                                });
+                              }
+                            },
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text('选择词典…'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
                   ],
                 ),
                 actions: [
@@ -2058,6 +2125,16 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
           },
         ) ?? false;
     if (!langProceed) return;
+    // 处理词典默认设置（如果用户选择设为默认）
+    if (setDictionaryAsDefault && selectedDictionaryPaths != null) {
+      final allPaths = _dictionaries.map((d) => d.path).toSet();
+      final toEnable = selectedDictionaryPaths!.toSet();
+      for (final path in allPaths) {
+        final enabled = toEnable.contains(path);
+        await _dictionaryService.setDictionaryEnabled(path, enabled);
+      }
+      await _loadDictionaries(); // 刷新本地状态
+    }
     final srcLangBulk = sourceDropdown == 'custom'
         ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
         : (sourceDropdown == 'auto' ? null : sourceDropdown);
@@ -2138,8 +2215,10 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
             try {
               final cfg2 = await ConfigService.getInstance();
               final useSources = await cfg2.getUseDictionarySources();
-              final sources = useSources ? await ai.collectSourcesForWord(w) : (<String>[], const <Map<String, String>>[]);
-              final html = await ai.generateExplanationHtmlStructured(
+              final sources = useSources 
+                  ? await ai.collectSourcesForWord(w, dictionaryPaths: selectedDictionaryPaths)
+                  : (<String>[], const <Map<String, String>>[]);
+              final html = await ai.generateExplanationJson(
                 prompt: w.prompt,
                 answer: w.answer,
                 sourceLanguage: srcLangBulk,

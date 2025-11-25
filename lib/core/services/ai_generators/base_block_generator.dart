@@ -19,7 +19,7 @@ abstract class BaseBlockGenerator {
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
   }) async {
-    final generatedJson = await _generateBlock(
+    final generatedJson = await generateBlock(
       prompt: prompt,
       answer: answer,
       sourceLanguage: sourceLanguage,
@@ -45,7 +45,7 @@ abstract class BaseBlockGenerator {
   }
 
   /// Generate the content block (to be implemented by subclasses)
-  Future<Map<String, dynamic>> _generateBlock({
+  Future<Map<String, dynamic>> generateBlock({
     required String prompt,
     required String answer,
     String? sourceLanguage,
@@ -200,7 +200,19 @@ abstract class BaseBlockGenerator {
 
         // Parse JSON
         try {
-          final result = jsonDecode(content) as Map<String, dynamic>;
+          final decoded = jsonDecode(content);
+          
+          // Debug: Print the actual AI response
+          debugPrint('[$blockName][Reflection] AI response type: ${decoded.runtimeType}');
+          debugPrint('[$blockName][Reflection] AI response content: $decoded');
+          
+          // Handle both Map and List responses
+          if (decoded is List) {
+            debugPrint('[$blockName][Reflection] AI returned List instead of Map, treating as validation passed');
+            return null;
+          }
+          
+          final result = decoded as Map<String, dynamic>;
           final isValid = result['valid'] == true;
 
           if (isValid) {
@@ -213,6 +225,7 @@ abstract class BaseBlockGenerator {
           }
         } catch (e) {
           debugPrint('[$blockName][Reflection] Failed to parse JSON: $e');
+          debugPrint('[$blockName][Reflection] Raw content: $content');
           return null;
         }
       } else {
@@ -389,8 +402,8 @@ $issuesText
 
     String cleanHtml(String html) {
       var s = html.trim();
-      s = s.replaceAll(RegExp(r'(?s)<script[^>]*>.*?</script>'), '');
-      s = s.replaceAll(RegExp(r'(?s)<style[^>]*>.*?</style>'), '');
+      s = s.replaceAll(RegExp(r'<script[^>]*>.*?</script>', dotAll: true), '');
+      s = s.replaceAll(RegExp(r'<style[^>]*>.*?</style>', dotAll: true), '');
       s = s.replaceAllMapped(RegExp(r'<ruby><rb>(.*?)</rb><rt>(.*?)</rt></ruby>'), (m) => '${m.group(1)}(${m.group(2)})');
       s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
       s = s.replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '\n');

@@ -22,11 +22,12 @@ class AIWordExplanationService {
     return _instance!;
   }
 
-  /// 生成词解HTML：包含【词解】【重点】【近义词】三个部分（若无则省略对应部分）
+  /// 生成词解JSON：包含【词解】【重点】【近义词】三个部分（若无则省略对应部分）
   /// - 同义词含多个项，每个项包含简述与区别说明，区别需配合例句；
   /// - 日文例句使用 ruby；否则不使用任何HTML标签（纯文本）；
-  /// - 返回值：严格仅返回一个 HTML 字符串，不含 Markdown 或额外解释。
-  Future<String> generateExplanationHtml({
+  /// - 返回值：严格仅返回一个 JSON 字符串，不含 Markdown 或额外解释。
+  /// - 推荐使用：此方法会调用分块生成（generateExplanationWithBlocks）以获得更好的准确性和独立修正能力
+  Future<String> generateExplanationJson({
     required String prompt,
     required String answer,
     String? sourceLanguage,
@@ -37,6 +38,25 @@ class AIWordExplanationService {
     // Use block-based generation with independent reflection for each block
     // This provides better accuracy and easier correction
     return generateExplanationWithBlocks(
+      prompt: prompt,
+      answer: answer,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage,
+      sourcesHtml: sourcesHtml,
+      sourcesMeta: sourcesMeta,
+    );
+  }
+
+  /// @deprecated 保留向后兼容性，请使用 generateExplanationJson
+  Future<String> generateExplanationHtml({
+    required String prompt,
+    required String answer,
+    String? sourceLanguage,
+    String? targetLanguage,
+    List<String>? sourcesHtml,
+    List<Map<String, String>>? sourcesMeta,
+  }) async {
+    return generateExplanationJson(
       prompt: prompt,
       answer: answer,
       sourceLanguage: sourceLanguage,

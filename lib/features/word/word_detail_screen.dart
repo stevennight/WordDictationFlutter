@@ -14,6 +14,7 @@ import 'package:flutter_word_dictation/core/services/ai_example_service.dart';
 import 'package:flutter_word_dictation/core/services/ai_word_explanation_service.dart';
 import 'package:flutter_word_dictation/core/services/config_service.dart';
 import 'package:flutter_word_dictation/shared/widgets/word_explanation_renderer.dart';
+import 'package:flutter_word_dictation/shared/widgets/dictionary_picker_bottom_sheet.dart';
 
  
 
@@ -609,6 +610,9 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     String targetDropdown = 'auto';
     final TextEditingController sourceCustomController = TextEditingController();
     final TextEditingController targetCustomController = TextEditingController();
+    List<String>? selectedDictionaryPaths;
+    bool setDictionaryAsDefault = false;
+
     final ok = await showDialog<bool>(
           context: context,
           builder: (context) {
@@ -674,6 +678,52 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
                           hintText: '如 zh, en-GB，留空则自动或常用选择',
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    ExpansionTile(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.source_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            '词典来源',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const Spacer(),
+                          Text(
+                            selectedDictionaryPaths == null
+                                ? '已启用 ${_dictionaries.where((d) => d.enabledForAI).length}/${_dictionaries.length} 个'
+                                : '已选 ${selectedDictionaryPaths!.length}/${_dictionaries.length} 个',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        ],
+                      ),
+                      children: [
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final result = await showDictionaryPicker(
+                                context,
+                                allDictionaries: _dictionaries,
+                                initialPaths: selectedDictionaryPaths,
+                              );
+                              if (result != null) {
+                                setState(() {
+                                  selectedDictionaryPaths = result.$1;
+                                  setDictionaryAsDefault = result.$2;
+                                });
+                              }
+                            },
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text('选择词典…'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
                   ],
                 ),
                 actions: [
@@ -685,6 +735,16 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
           },
         ) ?? false;
     if (!ok) return;
+    // 处理词典默认设置（如果用户选择设为默认）
+    if (setDictionaryAsDefault && selectedDictionaryPaths != null) {
+      final allPaths = _dictionaries.map((d) => d.path).toSet();
+      final toEnable = selectedDictionaryPaths!.toSet();
+      for (final path in allPaths) {
+        final enabled = toEnable.contains(path);
+        await _dictionaryService.setDictionaryEnabled(path, enabled);
+      }
+      await _loadDictionaries(); // 刷新本地状态
+    }
     final srcLang = sourceDropdown == 'custom'
         ? (sourceCustomController.text.trim().isEmpty ? null : sourceCustomController.text.trim())
         : (sourceDropdown == 'auto' ? null : sourceDropdown);
@@ -710,8 +770,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       final ai = await AIWordExplanationService.getInstance();
       final cfg = await ConfigService.getInstance();
       final useSources = await cfg.getUseDictionarySources();
-      final sources = useSources ? await ai.collectSourcesForWord(word) : (<String>[], const <Map<String, String>>[]);
-      var jsonData = await ai.generateExplanationHtmlStructured(
+      final sources = useSources
+          ? await ai.collectSourcesForWord(word, dictionaryPaths: selectedDictionaryPaths)
+          : (<String>[], const <Map<String, String>>[]);
+      var jsonData = await ai.generateExplanationJson(
         prompt: word.prompt,
         answer: word.answer,
         sourceLanguage: srcLang,

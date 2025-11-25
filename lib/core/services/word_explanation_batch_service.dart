@@ -113,7 +113,7 @@ class WordExplanationBatchService {
           }
         }
 
-        final html = await ai.generateExplanationHtmlStructured(
+        final html = await ai.generateExplanationJson(
           prompt: w.prompt,
           answer: w.answer,
           sourceLanguage: sourceLanguage,

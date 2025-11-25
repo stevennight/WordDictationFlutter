@@ -9,7 +9,7 @@ class ExamplesGenerator extends BaseBlockGenerator {
   String get blockName => 'Examples';
 
   @override
-  Future<Map<String, dynamic>> _generateBlock({
+  Future<Map<String, dynamic>> generateBlock({
     required String prompt,
     required String answer,
     String? sourceLanguage,

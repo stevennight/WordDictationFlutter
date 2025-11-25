@@ -10,7 +10,7 @@ class DefinitionGenerator extends BaseBlockGenerator {
   String get blockName => 'Definition';
 
   @override
-  Future<Map<String, dynamic>> _generateBlock({
+  Future<Map<String, dynamic>> generateBlock({
     required String prompt,
     required String answer,
     String? sourceLanguage,
@@ -131,17 +131,21 @@ POS 规范化（别名映射与示例）：
     - 助動詞 → 助动词
     - 一段動詞 → 一段动词
     - 五段動詞 → 五段动词
-    - サ変動詞 → サ変动词
-    - カ変動詞 → カ変动词
+    - サ変動詞 → サ变动词
+    - カ変動詞 → カ变动词
 - 其他语言对：若检测到不在目标语言规范标签中的别名或同义标签，应映射为该目标语言的规范标签。
 
-生成约束：
-- 严格依据提供的单词（prompt）与词义（answer）。
-- 生成的内容尽可能完善，不遗漏任何重要信息。
+**验证标准**：宁可严格，不可放松。任何疑似错误都应标记为问题。
 
-JSON 响应示例（日语单词）：
+只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容；禁止使用 Markdown 代码块或 ```json 包裹。
+
+如果**所有内容完全准确无误**：
+{"valid": true}
+
+如果发现**任何问题**：
 {
-  "senses": [
+  "valid": false,
+  "issues": [
     {
       "field": "具体字段路径",
       "problem": "具体问题描述",
