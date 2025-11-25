@@ -598,6 +598,15 @@ class WordExplanationRenderer extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    if (termPronText.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        termPronText,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (gloss.isNotEmpty) ...[
                       const SizedBox(width: 10),
                       Expanded(
