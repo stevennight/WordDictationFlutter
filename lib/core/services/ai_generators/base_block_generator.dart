@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../config_service.dart';
+import 'package:http/http.dart' as http;
 
 /// Base class for all content block generators
 /// Provides common functionality for generation, reflection, and correction
@@ -75,7 +75,7 @@ abstract class BaseBlockGenerator {
   /// Get the block name for logging
   String get blockName;
 
-  /// Validate and correct with retry mechanism (max 3 attempts)
+  /// Validate and correct with retry mechanism (configurable max attempts)
   Future<Map<String, dynamic>> _validateAndCorrectWithRetry({
     required String prompt,
     required String answer,
@@ -83,7 +83,7 @@ abstract class BaseBlockGenerator {
     String? sourceLanguage,
     String? targetLanguage,
   }) async {
-    const maxAttempts = 5;
+    final maxAttempts = await configService.getAIReflectionMaxAttempts();
     Map<String, dynamic> currentJson = generatedJson;
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {

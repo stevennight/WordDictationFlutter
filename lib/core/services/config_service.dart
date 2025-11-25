@@ -254,6 +254,24 @@ class ConfigService {
     await _localConfig!.setSetting<bool>('ai_reflection_enabled', value);
   }
 
+  // AI reflection max attempts setting
+  Future<int> getAIReflectionMaxAttempts() async {
+    final v = await _localConfig!.getSetting<dynamic>('ai_reflection_max_attempts');
+    if (v is int) {
+      return v.clamp(1, 10);
+    }
+    if (v is String) {
+      final parsed = int.tryParse(v);
+      if (parsed != null) return parsed.clamp(1, 10);
+    }
+    return 5; // default
+  }
+
+  Future<void> setAIReflectionMaxAttempts(int value) async {
+    value = value.clamp(1, 10); // reasonable range
+    await _localConfig!.setSetting<int>('ai_reflection_max_attempts', value);
+  }
+
   // References text budget (for dictionary sources passed to AI)
   Future<int> getReferencesBudget() async {
     final v = await _localConfig!.getSetting<dynamic>('references_budget');

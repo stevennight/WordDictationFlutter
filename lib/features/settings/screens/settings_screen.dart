@@ -26,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ConfigService? _configService;
   bool _useDictionarySources = true;
   bool _aiReflectionEnabled = true;
+  int _aiReflectionMaxAttempts = 5;
 
   @override
   void initState() {
@@ -47,10 +48,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cfg = await ConfigService.getInstance();
     final v = await cfg.getUseDictionarySources();
     final reflection = await cfg.getAIReflectionEnabled();
+    final maxAttempts = await cfg.getAIReflectionMaxAttempts();
     if (mounted) {
       setState(() {
         _useDictionarySources = v;
         _aiReflectionEnabled = reflection;
+        _aiReflectionMaxAttempts = maxAttempts;
       });
     }
   }
@@ -167,6 +170,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(v ? '已开启 AI 反思验证' : '已关闭 AI 反思验证')),
                       );
+                    },
+                  ),
+                ),
+                SettingsTile(
+                  title: 'AI 反思重试次数',
+                  subtitle: 'AI验证失败时的最大重试次数：$_aiReflectionMaxAttempts',
+                  leading: const Icon(Icons.refresh),
+                  trailing: DropdownButton<int>(
+                    value: _aiReflectionMaxAttempts,
+                    items: List.generate(10, (index) => index + 1).map((value) {
+                      return DropdownMenuItem<int>(
+                        value: value,
+                        child: Text('$value次'),
+                      );
+                    }).toList(),
+                    onChanged: (value) async {
+                      if (value != null) {
+                        final cfg = await ConfigService.getInstance();
+                        await cfg.setAIReflectionMaxAttempts(value);
+                        if (mounted) setState(() => _aiReflectionMaxAttempts = value);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('AI 反思重试次数已设置为 $value 次')),
+                        );
+                      }
                     },
                   ),
                 ),
