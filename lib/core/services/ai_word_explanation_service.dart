@@ -7,6 +7,9 @@ import '../models/dictionary.dart';
 import 'dictionary_service.dart';
 import 'dictionary_query_service.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
+import 'ai_generators/definition_generator.dart';
+import 'ai_generators/examples_generator.dart';
+import 'ai_generators/optional_blocks_generator.dart';
 
 class AIWordExplanationService {
   static AIWordExplanationService? _instance;
@@ -31,9 +34,9 @@ class AIWordExplanationService {
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
   }) async {
-    // With self-correction, we don't need complex retry logic
-    // The reflection mechanism will automatically correct issues
-    return generateExplanationHtmlStructured(
+    // Use block-based generation with independent reflection for each block
+    // This provides better accuracy and easier correction
+    return generateExplanationWithBlocks(
       prompt: prompt,
       answer: answer,
       sourceLanguage: sourceLanguage,
@@ -218,6 +221,79 @@ class AIWordExplanationService {
     return null;
   }
 
+  /// Generate explanation using block-based approach with independent reflection
+  Future<String> generateExplanationWithBlocks({
+    required String prompt,
+    required String answer,
+    String? sourceLanguage,
+    String? targetLanguage,
+    List<String>? sourcesHtml,
+    List<Map<String, String>>? sourcesMeta,
+  }) async {
+    debugPrint('[AIExplain] Starting block-based generation for: $prompt');
+    
+    // Initialize generators
+    final definitionGen = DefinitionGenerator(_configService);
+    final examplesGen = ExamplesGenerator(_configService);
+    final optionalGen = OptionalBlocksGenerator(_configService);
+    
+    try {
+      // Generate blocks in parallel for better performance
+      final results = await Future.wait([
+        definitionGen.generate(
+          prompt: prompt,
+          answer: answer,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+          sourcesHtml: sourcesHtml,
+          sourcesMeta: sourcesMeta,
+        ),
+        examplesGen.generate(
+          prompt: prompt,
+          answer: answer,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+        ),
+        optionalGen.generate(
+          prompt: prompt,
+          answer: answer,
+          sourceLanguage: sourceLanguage,
+          targetLanguage: targetLanguage,
+        ),
+      ]);
+      
+      // Combine all blocks
+      final combinedJson = <String, dynamic>{
+        ...results[0], // definition
+        ...results[1], // examples
+        ...results[2], // highlights, synonyms, antonyms, extras
+      };
+      
+      // Add sources if available
+      if (sourcesHtml != null && sourcesHtml.isNotEmpty) {
+        final sources = <Map<String, String>>[];
+        for (int i = 0; i < sourcesHtml.length; i++) {
+          if (sourcesMeta != null && i < sourcesMeta.length) {
+            sources.add(sourcesMeta[i]);
+          }
+        }
+        if (sources.isNotEmpty) {
+          combinedJson['sources'] = sources;
+        }
+      }
+      
+      final jsonResult = jsonEncode(combinedJson);
+      debugPrint('[AIExplain] Block-based generation completed successfully');
+      
+      return jsonResult;
+    } catch (e) {
+      debugPrint('[AIExplain] Block-based generation failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Legacy method - generates all content in one API call
+  /// Consider using generateExplanationWithBlocks for better accuracy
   Future<String> generateExplanationHtmlStructured({
     required String prompt,
     required String answer,

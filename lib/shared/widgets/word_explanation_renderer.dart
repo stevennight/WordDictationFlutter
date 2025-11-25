@@ -478,6 +478,8 @@ class WordExplanationRenderer extends StatelessWidget {
         ...synonyms.map((syn) {
           final synMap = syn as Map<String, dynamic>;
           final termHtml = _getString(synMap, 'termHtml');
+          final termPron = _getMap(synMap, 'termPronunciation');
+          final termPronText = _getString(termPron, 'text');
           final gloss = _getString(synMap, 'gloss');
           final differenceHtml = _getString(synMap, 'differenceHtml');
           final selfHtml = _getString(synMap, 'selfHtml');
@@ -500,6 +502,15 @@ class WordExplanationRenderer extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    if (termPronText.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        termPronText,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (gloss.isNotEmpty) ...[
                       const SizedBox(width: 10),
                       Expanded(
@@ -566,6 +577,8 @@ class WordExplanationRenderer extends StatelessWidget {
         ...antonyms.map((ant) {
           final antMap = ant as Map<String, dynamic>;
           final termHtml = _getString(antMap, 'termHtml');
+          final termPron = _getMap(antMap, 'termPronunciation');
+          final termPronText = _getString(termPron, 'text');
           final gloss = _getString(antMap, 'gloss');
           final exampleHtml = _getString(antMap, 'exampleHtml');
           final exampleTranslation = _getString(antMap, 'exampleTranslation');

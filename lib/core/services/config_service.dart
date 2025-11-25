@@ -253,4 +253,22 @@ class ConfigService {
   Future<void> setAIReflectionEnabled(bool value) async {
     await _localConfig!.setSetting<bool>('ai_reflection_enabled', value);
   }
+
+  // References text budget (for dictionary sources passed to AI)
+  Future<int> getReferencesBudget() async {
+    final v = await _localConfig!.getSetting<dynamic>('references_budget');
+    if (v is int) {
+      return v > 0 ? v : 16000;
+    }
+    if (v is String) {
+      final parsed = int.tryParse(v);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 16000; // default
+  }
+
+  Future<void> setReferencesBudget(int value) async {
+    if (value < 1000) value = 1000; // reasonable minimum to keep context
+    await _localConfig!.setSetting<int>('references_budget', value);
+  }
 }
