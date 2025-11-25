@@ -104,7 +104,9 @@ $generatedJson
      * 其他语言：该语言通用的发音标注
    - **读音准确性验证**：
      * 日语：声调必须与termHtml中的词汇完全匹配，如果termHtml中包含变形，termPronunciation中必须为变形后的读音。
-      * 正确示例：termHtml="<ruby><rb>買う</rb><rt>かう</rt></ruby>" → termPronunciation={"text":"②"}
+     * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
+      * 正确示例：termHtml="<ruby><rb>購入</rb><rt>こうにゅう</rt></ruby>" → termPronunciation={"text":"⓪"}
+      * 正确示例：termHtml="<ruby><rb>購入します</rb><rt>こうにゅうします</rt></ruby>" → termPronunciation={"text":"⑥"}（变形后声调变化正确）
       * 错误示例：termHtml="<ruby><rb>買う</rb><rt>かう</rt></ruby>" → termPronunciation={"text":"かいます③"}（不应包含假名）
       * 错误示例：termHtml="<ruby><rb>買</rb><rt>か</rt></ruby>う" → termPronunciation={"text":"③"}（读音非termHtml中变形后的读音）
      * 英语：音标必须准确反映词汇的实际发音
@@ -181,6 +183,8 @@ synonyms
   - **读音格式严格要求**：
     * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
     * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
+    * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
+    * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
     * 中文：拼音+声调符号，如 mǎi、gòu、xíng
     * 其他语言：该语言通用的发音标注
   - gloss: 近义词简要含义。
@@ -197,6 +201,8 @@ antonyms
   - **读音格式严格要求**：
     * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
     * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
+    * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
+    * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
     * 中文：拼音+声调符号，如 mǎi、gòu、xíng
     * 其他语言：该语言通用的发音标注
   - gloss: 反义词简要含义。
