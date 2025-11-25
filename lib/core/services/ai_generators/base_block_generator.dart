@@ -83,7 +83,7 @@ abstract class BaseBlockGenerator {
     String? sourceLanguage,
     String? targetLanguage,
   }) async {
-    const maxAttempts = 3;
+    const maxAttempts = 5;
     Map<String, dynamic> currentJson = generatedJson;
 
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
