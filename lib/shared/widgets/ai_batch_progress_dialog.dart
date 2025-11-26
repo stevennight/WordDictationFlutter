@@ -2,7 +2,6 @@ import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:flutter_word_dictation/core/services/word_explanation_batch_service.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
-
 /// AI批量生成进度对话框
 class AIBatchProgressDialog extends StatefulWidget {
   final String title;
@@ -10,6 +9,7 @@ class AIBatchProgressDialog extends StatefulWidget {
   final bool showRetryButton;
   final Function(List<Word>)? onRetryAll;
   final Function(Word)? onRetrySingle;
+  final Function(List<Word>)? onResume;
 
   const AIBatchProgressDialog({
     Key? key,
@@ -18,6 +18,7 @@ class AIBatchProgressDialog extends StatefulWidget {
     this.showRetryButton = false,
     this.onRetryAll,
     this.onRetrySingle,
+    this.onResume,
   }) : super(key: key);
 
   @override
@@ -41,6 +42,7 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   List<Word> _failedWords = [];
   int _currentPage = 0;
   static const int _itemsPerPage = 20;
+  int _pendingCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -407,6 +409,18 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
           ),
         );
       }
+
+      // 显示继续未完成按钮
+      if (widget.onResume != null && _pendingCount > 0) {
+        actions.add(
+          TextButton.icon(
+            onPressed: () => _resumePendingWords(),
+            icon: const Icon(Icons.play_arrow),
+            label: Text('继续未完成($_pendingCount)'),
+          ),
+        );
+      }
+
       actions.add(
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -445,7 +459,22 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
 
   void _retryFailedWords() {
     if (widget.onRetryAll != null && _failedWords.isNotEmpty) {
-      widget.onRetryAll!(_failedWords);
+      // 传递副本，因为 prepareForRetry 会修改 _failedWords，而 _failedWords 会被传递给 processor
+      widget.onRetryAll!(List<Word>.from(_failedWords));
+    }
+  }
+  
+  void _resumePendingWords() {
+    if (widget.onResume != null) {
+      // 收集所有 pending 状态的单词
+      final pendingWords = _wordProgressItems
+          .where((item) => item.status == 'pending')
+          .map((item) => item.word)
+          .toList();
+      
+      if (pendingWords.isNotEmpty) {
+        widget.onResume!(pendingWords);
+      }
     }
   }
 
@@ -481,8 +510,59 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
     if (mounted) {
       setState(() {
         _isCancelling = true;
-        // _currentStep = '停止中...';
+        _currentStep = '停止中...';
         _isIndeterminate = true;
+      });
+    }
+  }
+
+  /// 准备重试
+  void prepareForRetry(List<Word> retryWords) {
+    // 创建副本以避免并发修改错误
+    final wordsToRetry = List<Word>.from(retryWords);
+    
+    if (mounted) {
+      setState(() {
+        _isCompleted = false;
+        _isCancelling = false;
+        _currentStep = '准备重试...';
+        _isIndeterminate = true;
+        _detailedStatus = null;
+
+        // 更新统计数据和单词状态
+        for (final word in wordsToRetry) {
+          // 从失败列表中移除
+          _failedWords.removeWhere((w) => w.id == word.id);
+          
+          // 更新进度项状态
+          final index = _wordProgressItems.indexWhere((item) => item.word.id == word.id);
+          if (index >= 0) {
+            final oldItem = _wordProgressItems[index];
+            // 根据旧状态更新计数
+            if (oldItem.status == 'failed') _failedCount--;
+            else if (oldItem.status == 'succeeded') _succeededCount--;
+            else if (oldItem.status == 'skipped') _skippedCount--;
+            
+            // 更新为 pending
+            _wordProgressItems[index] = WordProgressItem(
+              word: word,
+              status: 'pending',
+              detailedStatus: WordExplanationDetailedStatus.queued,
+            );
+          } else {
+            // 如果不在列表中（理论上不应该发生，除非是新添加的），则添加
+            _wordProgressItems.add(WordProgressItem(
+              word: word,
+              status: 'pending',
+              detailedStatus: WordExplanationDetailedStatus.queued,
+            ));
+            _totalCount++;
+          }
+        }
+        
+        // 重新计算当前索引（设为已完成数量）
+        _currentIndex = _succeededCount + _skippedCount + _failedCount;
+        _progress = _totalCount > 0 ? _currentIndex / _totalCount : 0.0;
       });
     }
   }
@@ -535,16 +615,11 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
           default:
             _currentStep = '正在处理: ${progress.word.prompt}';
         }
-        _currentIndex = progress.current;
-        _totalCount = progress.total;
-        _skippedCount = progress.skippedExisting;
-        _succeededCount = progress.succeeded;
-        _failedCount = progress.failed;
-        _progress = progress.total > 0 ? progress.current / progress.total : 0.0;
+        
         _isIndeterminate = false;
         _detailedStatus = progress.detailedStatus;
 
-        // 更新单词进度列表
+        // 1. 更新单词进度列表
         final existingIndex = _wordProgressItems.indexWhere(
           (item) => item.word.id == progress.word.id,
         );
@@ -561,6 +636,32 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
         } else {
           _wordProgressItems.add(progressItem);
         }
+
+        // 2. 重新计算统计数据（基于本地列表，忽略 progress.current/total 以支持重试场景）
+        int succeeded = 0;
+        int failed = 0;
+        int skipped = 0;
+        int pending = 0;
+        // int processing = 0;
+
+        for (var item in _wordProgressItems) {
+          switch (item.status) {
+            case 'succeeded': succeeded++; break;
+            case 'failed': failed++; break;
+            case 'skipped': skipped++; break;
+            case 'pending': pending++; break;
+            // case 'processing': processing++; break;
+          }
+        }
+
+        _totalCount = _wordProgressItems.length;
+        _currentIndex = succeeded + failed + skipped; // 已完成总数
+        _succeededCount = succeeded;
+        _failedCount = failed;
+        _skippedCount = skipped;
+        _pendingCount = pending;
+        
+        _progress = _totalCount > 0 ? _currentIndex / _totalCount : 0.0;
 
         // 收集失败的单词
         if (progress.status == 'failed') {
@@ -626,18 +727,89 @@ class WordProgressItem {
 Future<List<Word>?> showAIBatchProgressDialog({
   required BuildContext context,
   required String title,
-  required Future<WordExplanationBatchSummary> Function({
+  required List<Word> initialWords,
+  required Future<WordExplanationBatchSummary> Function(
+    List<Word> words, {
+    bool isRetry,
     void Function(WordExplanationProgress)? onProgress,
     void Function(WordExplanationDetailedStatus)? onDetailedProgress,
     bool Function()? isCancelled,
-  }) generateFunction,
+  }) processor,
   VoidCallback? onCancel,
   bool enableRetry = true,
-  Future<void> Function(List<Word>)? onRetryAll,
-  Future<void> Function(Word)? onRetrySingle,
 }) async {
   final GlobalKey<_AIBatchProgressDialogState> dialogKey = GlobalKey<_AIBatchProgressDialogState>();
   bool isCancelled = false;
+
+  // 内部处理函数
+  Future<WordExplanationBatchSummary> runProcessor(List<Word> words, {bool isRetry = false}) async {
+    isCancelled = false; // 重置取消标志
+    
+    return await processor(
+      words,
+      isRetry: isRetry,
+      onProgress: (progress) {
+        // 即使已中断，也继续更新UI显示正在完成的任务状态
+        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+          dialogKey.currentState!.updateProgress(progress);
+          WidgetsBinding.instance.scheduleFrame();
+        }
+      },
+      onDetailedProgress: (status) {
+        // 即使已中断，也继续更新详细状态
+        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+          dialogKey.currentState!.updateDetailedStatus(status);
+          WidgetsBinding.instance.scheduleFrame();
+        }
+      },
+      isCancelled: () => isCancelled,
+    );
+  }
+
+  // 内部重试函数
+  void handleRetry(List<Word> words) {
+    if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+      // 准备重试状态
+      dialogKey.currentState!.prepareForRetry(words);
+      
+      // 异步执行重试
+      runProcessor(words, isRetry: true).then((result) {
+        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+          if (isCancelled) {
+            dialogKey.currentState!.updateStep('已中断');
+          }
+          dialogKey.currentState!.showCompletionResult();
+        }
+      }).catchError((e) {
+        // 错误处理
+        debugPrint('Error during retry: $e');
+        if (context.mounted && !isCancelled) {
+          // 可以在这里显示错误提示，或者仅仅让状态停留在错误状态
+        }
+      });
+    }
+  }
+
+  // 内部继续处理函数
+  void handleResume(List<Word> words) {
+    if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+      // 准备重试状态（其实就是准备处理状态）
+      dialogKey.currentState!.prepareForRetry(words);
+      
+      // 异步执行继续处理（isRetry = false，因为是未处理的任务）
+      runProcessor(words, isRetry: false).then((result) {
+        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
+          if (isCancelled) {
+            dialogKey.currentState!.updateStep('已中断');
+          }
+          dialogKey.currentState!.showCompletionResult();
+        }
+      }).catchError((e) {
+        // 错误处理
+        debugPrint('Error during resume: $e');
+      });
+    }
+  }
 
   // 显示对话框
   showDialog<List<Word>>(
@@ -656,16 +828,22 @@ Future<List<Word>?> showAIBatchProgressDialog({
           onCancel?.call();
         },
         showRetryButton: enableRetry,
-        onRetryAll: onRetryAll != null
+        onRetryAll: enableRetry
             ? (words) {
-                Navigator.of(context).pop();
-                onRetryAll(words);
+                // 原地重试，不关闭对话框
+                handleRetry(words);
               }
             : null,
-        onRetrySingle: onRetrySingle != null
+        onRetrySingle: enableRetry
             ? (word) {
-                Navigator.of(context).pop();
-                onRetrySingle(word);
+                // 原地重试单个单词
+                handleRetry([word]);
+              }
+            : null,
+        onResume: enableRetry
+            ? (words) {
+                // 继续处理未完成的单词
+                handleResume(words);
               }
             : null,
       );
@@ -675,27 +853,11 @@ Future<List<Word>?> showAIBatchProgressDialog({
   // 等待对话框完全构建后再执行生成操作
   await Future.delayed(const Duration(milliseconds: 100));
 
-  // 执行生成操作
+  // 执行初始生成操作
   try {
-    final result = await generateFunction(
-      onProgress: (progress) {
-        // 即使已中断，也继续更新UI显示正在完成的任务状态
-        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
-          dialogKey.currentState!.updateProgress(progress);
-          WidgetsBinding.instance.scheduleFrame();
-        }
-      },
-      onDetailedProgress: (status) {
-        // 即使已中断，也继续更新详细状态
-        if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
-          dialogKey.currentState!.updateDetailedStatus(status);
-          WidgetsBinding.instance.scheduleFrame();
-        }
-      },
-      isCancelled: () => isCancelled,
-    );
+    final result = await runProcessor(initialWords);
 
-    // 显示完成结果（不关闭对话框，让用户可以查看详情和重试）
+    // 显示完成结果
     if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
       if (isCancelled) {
         dialogKey.currentState!.updateStep('已中断');
@@ -704,6 +866,11 @@ Future<List<Word>?> showAIBatchProgressDialog({
     }
 
     // 返回失败的单词列表（如果有的话）
+    // 注意：这里返回的是初始批次的结果。如果在对话框内重试了，
+    // 实际上这个返回值可能不再准确反映最终状态，但在当前架构下，
+    // 对话框关闭是用户手动触发的，所以这里的返回值主要用于初始调用完成后的逻辑。
+    // 由于我们在对话框内部处理重试，外部调用者可能不需要关心返回的失败列表，
+    // 除非他们需要在对话框关闭后做些什么。
     return result.failedWords;
   } catch (e) {
     // 关闭对话框并重新抛出异常

@@ -104,7 +104,7 @@ class WordExplanationBatchService {
     bool Function()? isCancelled,
   }) async {
     final words = await _wordbookService.getWordbookWords(wordbookId);
-    return _generateForWords(
+    return generateForWords(
       words,
       overwriteExisting: overwriteExisting,
       sourceLanguage: sourceLanguage,
@@ -125,7 +125,7 @@ class WordExplanationBatchService {
     bool Function()? isCancelled,
   }) async {
     final words = await _wordService.getWordsByUnitId(unitId);
-    return _generateForWords(
+    return generateForWords(
       words,
       overwriteExisting: overwriteExisting,
       sourceLanguage: sourceLanguage,
@@ -145,7 +145,7 @@ class WordExplanationBatchService {
     void Function(WordExplanationDetailedStatus)? onDetailedProgress,
     bool Function()? isCancelled,
   }) async {
-    return _generateForWords(
+    return generateForWords(
       failedWords,
       overwriteExisting: true, // Always overwrite for retries
       sourceLanguage: sourceLanguage,
@@ -156,7 +156,8 @@ class WordExplanationBatchService {
     );
   }
 
-  Future<WordExplanationBatchSummary> _generateForWords(
+  /// Generate explanations for a custom list of words
+  Future<WordExplanationBatchSummary> generateForWords(
     List<Word> words, {
     required bool overwriteExisting,
     String? sourceLanguage,

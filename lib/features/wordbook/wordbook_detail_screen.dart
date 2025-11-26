@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../core/database/database_helper.dart';
 import '../../core/services/unit_service.dart';
 import '../../core/services/wordbook_service.dart';
+import '../../core/services/word_service.dart';
 import '../../core/services/ai_example_service.dart';
 import '../../core/services/example_sentence_service.dart';
 import '../../core/services/config_service.dart';
@@ -2050,41 +2051,21 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
 
     // 使用新的详细进度对话框
     final batchService = WordExplanationBatchService();
+    final wordService = WordService();
+
+    // 1. 获取单词
+    final words = await wordService.getWordsByUnitId(unit.id!);
     
-    // 定义重试函数（支持递归重试）
-    Future<void> retryWords(List<Word> words, String title) async {
-      await showAIBatchProgressDialog(
-        context: context,
-        title: title,
-        generateFunction: ({onProgress, onDetailedProgress, isCancelled}) async {
-          return await batchService.retryFailedWords(
-            words,
-            sourceLanguage: srcLangBulk,
-            targetLanguage: tgtLangBulk,
-            onProgress: onProgress,
-            onDetailedProgress: onDetailedProgress,
-            isCancelled: isCancelled,
-          );
-        },
-        enableRetry: true,
-        onRetryAll: (failedWords) async {
-          if (failedWords.isNotEmpty) {
-            await retryWords(failedWords, '重试失败的词解生成');
-          }
-        },
-        onRetrySingle: (word) async {
-          await retryWords([word], '重试单词「${word.prompt}」');
-        },
-      );
-    }
+    if (!context.mounted) return;
     
     await showAIBatchProgressDialog(
       context: context,
       title: '为单元「${unit.name}」生成词解',
-      generateFunction: ({onProgress, onDetailedProgress, isCancelled}) async {
-        return await batchService.generateForUnit(
-          unit.id!,
-          overwriteExisting: overwrite,
+      initialWords: words,
+      processor: (wordsToProcess, {isRetry = false, onProgress, onDetailedProgress, isCancelled}) async {
+        return await batchService.generateForWords(
+          wordsToProcess,
+          overwriteExisting: isRetry || overwrite,
           sourceLanguage: srcLangBulk,
           targetLanguage: tgtLangBulk,
           onProgress: onProgress,
@@ -2093,14 +2074,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
       },
       enableRetry: true,
-      onRetryAll: (failedWords) async {
-        if (failedWords.isNotEmpty) {
-          await retryWords(failedWords, '重试失败的词解生成');
-        }
-      },
-      onRetrySingle: (word) async {
-        await retryWords([word], '重试单词「${word.prompt}」');
-      },
     );
 
     // 刷新单词列表以显示新生成的释义
