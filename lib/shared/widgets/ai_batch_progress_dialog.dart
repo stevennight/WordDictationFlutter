@@ -37,6 +37,7 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   List<WordProgressItem> _wordProgressItems = [];
   bool _showDetails = true; // 默认展开详情列表
   bool _isCompleted = false;
+  bool _isCancelling = false; // 是否正在中断
   List<Word> _failedWords = [];
   int _currentPage = 0;
   static const int _itemsPerPage = 20;
@@ -100,7 +101,7 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   Widget _buildCurrentStatus() {
     String statusText = _currentStep;
     if (_detailedStatus != null) {
-      statusText = '${_detailedStatus!.displayName} - $_currentStep';
+      statusText = '$_currentStep - ${_detailedStatus!.displayName}';
     }
     
     return Text(
@@ -413,13 +414,30 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
         ),
       );
     } else {
-      // 处理中显示中断按钮（始终显示）
-      actions.add(
-        TextButton(
-          onPressed: widget.onCancel,
-          child: const Text('中断'),
-        ),
-      );
+      // 处理中显示停止按钮
+      if (_isCancelling) {
+        actions.add(
+          TextButton.icon(
+            onPressed: null, // 禁用按钮
+            icon: const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+              ),
+            ),
+            label: const Text('停止中...'),
+          ),
+        );
+      } else {
+        actions.add(
+          TextButton(
+            onPressed: widget.onCancel,
+            child: const Text('停止'),
+          ),
+        );
+      }
     }
     
     return actions;
@@ -458,6 +476,17 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
     );
   }
 
+  /// 标记为正在取消
+  void setCancelling() {
+    if (mounted) {
+      setState(() {
+        _isCancelling = true;
+        // _currentStep = '停止中...';
+        _isIndeterminate = true;
+      });
+    }
+  }
+
   /// 更新进度步骤
   void updateStep(String step) {
     if (mounted) {
@@ -481,7 +510,31 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   void updateProgress(WordExplanationProgress progress) {
     if (mounted) {
       setState(() {
-        _currentStep = '正在处理: ${progress.word.prompt}';
+        // 根据状态设置不同的步骤文本
+        switch (progress.status) {
+          case 'pending':
+            // 初始化阶段不显示单词名称，避免闪烁
+            if (progress.current == 0 && _wordProgressItems.isEmpty) {
+              _currentStep = '正在初始化单词列表...';
+            } else {
+              _currentStep = '准备处理: ${progress.word.prompt}';
+            }
+            break;
+          case 'processing':
+            _currentStep = '正在处理: ${progress.word.prompt}';
+            break;
+          case 'succeeded':
+            _currentStep = '已完成: ${progress.word.prompt}';
+            break;
+          case 'failed':
+            _currentStep = '处理失败: ${progress.word.prompt}';
+            break;
+          case 'skipped':
+            _currentStep = '已跳过: ${progress.word.prompt}';
+            break;
+          default:
+            _currentStep = '正在处理: ${progress.word.prompt}';
+        }
         _currentIndex = progress.current;
         _totalCount = progress.total;
         _skippedCount = progress.skippedExisting;
@@ -540,10 +593,15 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   void showCompletionResult() {
     if (mounted) {
       setState(() {
-        _currentStep = '生成完成';
+        if (_isCancelling) {
+          _currentStep = '生成已中断';
+        } else {
+          _currentStep = '生成完成';
+        }
         _isIndeterminate = false;
         _detailedStatus = WordExplanationDetailedStatus.completed;
         _isCompleted = true;
+        _isCancelling = false; // 重置中断状态
       });
     }
   }
@@ -593,7 +651,7 @@ Future<List<Word>?> showAIBatchProgressDialog({
           // 中断：设置标志，停止后续处理，但不关闭对话框
           isCancelled = true;
           if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
-            dialogKey.currentState!.updateStep('停止中...');
+            dialogKey.currentState!.setCancelling();
           }
           onCancel?.call();
         },
@@ -614,18 +672,21 @@ Future<List<Word>?> showAIBatchProgressDialog({
     },
   );
 
+  // 等待对话框完全构建后再执行生成操作
+  await Future.delayed(const Duration(milliseconds: 100));
+
   // 执行生成操作
   try {
     final result = await generateFunction(
       onProgress: (progress) {
-        if (isCancelled) return;
+        // 即使已中断，也继续更新UI显示正在完成的任务状态
         if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
           dialogKey.currentState!.updateProgress(progress);
           WidgetsBinding.instance.scheduleFrame();
         }
       },
       onDetailedProgress: (status) {
-        if (isCancelled) return;
+        // 即使已中断，也继续更新详细状态
         if (dialogKey.currentState != null && dialogKey.currentState!.mounted) {
           dialogKey.currentState!.updateDetailedStatus(status);
           WidgetsBinding.instance.scheduleFrame();

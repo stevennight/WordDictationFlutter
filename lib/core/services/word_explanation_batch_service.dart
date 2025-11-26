@@ -177,7 +177,8 @@ class WordExplanationBatchService {
     final concurrency = await cfg.getAIConcurrency();
 
     // 初始化所有单词为"待处理"状态
-    for (final w in words) {
+    for (int i = 0; i < words.length; i++) {
+      final w = words[i];
       onProgress?.call(WordExplanationProgress(
         current: 0,
         total: total,
@@ -188,7 +189,14 @@ class WordExplanationBatchService {
         status: 'pending',
         detailedStatus: WordExplanationDetailedStatus.queued,
       ));
+      // 每初始化10个单词就yield一次，让UI有机会更新
+      if (i % 10 == 9) {
+        await Future.delayed(Duration.zero);
+      }
     }
+    
+    // 初始化完成后稍作等待，确保UI完全更新
+    await Future.delayed(const Duration(milliseconds: 50));
 
     // 动态并发处理：一个完成就补充一个新的
     int currentIndex = 0;
