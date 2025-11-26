@@ -25,7 +25,7 @@ class AIBatchProgressDialog extends StatefulWidget {
   State<AIBatchProgressDialog> createState() => _AIBatchProgressDialogState();
 }
 
-class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
+class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> with SingleTickerProviderStateMixin {
   String _currentStep = '准备生成...';
   double _progress = 0.0;
   int _currentIndex = 0;
@@ -43,6 +43,23 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   int _currentPage = 0;
   static const int _itemsPerPage = 20;
   int _pendingCount = 0;
+  
+  late AnimationController _animationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -355,9 +372,19 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
         break;
     }
 
+    Widget leadingIcon;
+    if (item.status == 'processing') {
+      leadingIcon = RotationTransition(
+        turns: _animationController,
+        child: Icon(statusIcon, color: statusColor, size: 20),
+      );
+    } else {
+      leadingIcon = Icon(statusIcon, color: statusColor, size: 20);
+    }
+
     return ListTile(
       dense: true,
-      leading: Icon(statusIcon, color: statusColor, size: 20),
+      leading: leadingIcon,
       title: Text(
         '${item.word.prompt} - ${item.word.answer}',
         style: const TextStyle(fontSize: 14),
