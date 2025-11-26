@@ -35,9 +35,11 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
   bool _isIndeterminate = true;
   WordExplanationDetailedStatus? _detailedStatus;
   List<WordProgressItem> _wordProgressItems = [];
-  bool _showDetails = false;
+  bool _showDetails = true; // 默认展开详情列表
   bool _isCompleted = false;
   List<Word> _failedWords = [];
+  int _currentPage = 0;
+  static const int _itemsPerPage = 20;
 
   @override
   Widget build(BuildContext context) {
@@ -166,19 +168,159 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
       return const Text('暂无处理记录', style: TextStyle(color: Colors.grey));
     }
 
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: ListView.builder(
-        itemCount: _wordProgressItems.length,
-        itemBuilder: (context, index) {
-          final item = _wordProgressItems[index];
-          return _buildWordProgressItem(item);
-        },
-      ),
+    // 按状态排序：processing -> pending -> failed -> succeeded/skipped
+    final sortedItems = _getSortedWordProgressItems();
+    final totalPages = (sortedItems.length / _itemsPerPage).ceil();
+    final startIndex = _currentPage * _itemsPerPage;
+    final endIndex = Math.min(startIndex + _itemsPerPage, sortedItems.length);
+    final currentPageItems = sortedItems.sublist(startIndex, endIndex);
+
+    return Column(
+      children: [
+        // 状态统计行
+        _buildStatusSummary(sortedItems),
+        const SizedBox(height: 8),
+        
+        // 列表
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: ListView.builder(
+            itemCount: currentPageItems.length,
+            itemBuilder: (context, index) {
+              final item = currentPageItems[index];
+              return _buildWordProgressItem(item);
+            },
+          ),
+        ),
+        
+        // 分页控制
+        if (totalPages > 1) ...[
+          const SizedBox(height: 8),
+          _buildPaginationControls(totalPages, sortedItems.length),
+        ],
+      ],
+    );
+  }
+
+  /// 获取排序后的单词进度列表
+  List<WordProgressItem> _getSortedWordProgressItems() {
+    final items = List<WordProgressItem>.from(_wordProgressItems);
+    items.sort((a, b) {
+      // 状态优先级：processing(0) -> pending(1) -> failed(2) -> succeeded/skipped(3)
+      int getPriority(String status) {
+        switch (status) {
+          case 'processing':
+            return 0;
+          case 'pending':
+            return 1;
+          case 'failed':
+            return 2;
+          case 'succeeded':
+          case 'skipped':
+            return 3;
+          default:
+            return 4;
+        }
+      }
+      
+      final priorityA = getPriority(a.status);
+      final priorityB = getPriority(b.status);
+      
+      if (priorityA != priorityB) {
+        return priorityA.compareTo(priorityB);
+      }
+      
+      // 相同状态下，按照添加顺序（保持原有顺序）
+      return _wordProgressItems.indexOf(a).compareTo(_wordProgressItems.indexOf(b));
+    });
+    return items;
+  }
+
+  /// 构建状态统计摘要
+  Widget _buildStatusSummary(List<WordProgressItem> sortedItems) {
+    final processingCount = sortedItems.where((item) => item.status == 'processing').length;
+    final pendingCount = sortedItems.where((item) => item.status == 'pending').length;
+    final failedCount = sortedItems.where((item) => item.status == 'failed').length;
+    final succeededCount = sortedItems.where((item) => item.status == 'succeeded' || item.status == 'skipped').length;
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        _buildMiniStatItem('处理中', processingCount, Colors.blue),
+        _buildMiniStatItem('队列中', pendingCount, Colors.grey),
+        _buildMiniStatItem('失败', failedCount, Colors.red),
+        _buildMiniStatItem('完成', succeededCount, Colors.green),
+      ],
+    );
+  }
+
+  Widget _buildMiniStatItem(String label, int count, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$label: $count',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[700],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建分页控制器
+  Widget _buildPaginationControls(int totalPages, int totalItems) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left, size: 20),
+          onPressed: _currentPage > 0
+              ? () {
+                  setState(() {
+                    _currentPage--;
+                  });
+                }
+              : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          '第 ${_currentPage + 1} / $totalPages 页 (共 $totalItems 项)',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(width: 12),
+        IconButton(
+          icon: const Icon(Icons.chevron_right, size: 20),
+          onPressed: _currentPage < totalPages - 1
+              ? () {
+                  setState(() {
+                    _currentPage++;
+                  });
+                }
+              : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      ],
     );
   }
 
@@ -372,6 +514,11 @@ class _AIBatchProgressDialogState extends State<AIBatchProgressDialog> {
           if (!_failedWords.any((w) => w.id == progress.word.id)) {
             _failedWords.add(progress.word);
           }
+        }
+        
+        // 当开始处理新单词时，自动跳转到第一页以显示正在处理的单词
+        if (progress.status == 'processing' && _currentPage > 0) {
+          _currentPage = 0;
         }
       });
     }

@@ -18,8 +18,6 @@ import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
 import '../../shared/providers/dictation_provider.dart';
 import '../../shared/widgets/unified_dictation_config_dialog.dart';
-import '../../shared/widgets/ai_generate_examples_dialog.dart';
-import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_generate_explanations_strategy_dialog.dart';
 import 'package:flutter_word_dictation/shared/widgets/dictionary_picker_bottom_sheet.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_batch_progress_dialog.dart';
@@ -888,11 +886,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
                         onPressed: () => _startWordCopying(word),
                         tooltip: '抄写',
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.auto_awesome),
-                        onPressed: () => _showAIGenerateExamplesDialogShared(word),
-                        tooltip: 'AI生成例句',
-                      ),
                       if (word.category != null)
                         Chip(
                           label: Text(
@@ -1303,96 +1296,6 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
         );
       },
     );
-  }
-
-  // 共享对话框版本：统一两处的参数收集与生成逻辑
-  void _showAIGenerateExamplesDialogShared(Word word) async {
-    final req = await showDialog<AIGenerateExamplesRequest>(
-      context: context,
-      builder: (context) => AIGenerateExamplesDialog(
-        initialPrompt: word.prompt,
-        initialAnswer: word.answer,
-      ),
-    );
-
-    if (req == null) return;
-
-    try {
-      // 校验AI配置
-      final ok = await _ensureAIConfiguredOrRedirect();
-      if (!ok) return;
-
-      // 选择生成策略：追加 / 覆盖 / 跳过（若已存在）
-      final chosen = await pickAIGenerateExamplesStrategy(context, defaultValue: 'append');
-
-      final svc = ExampleSentenceService();
-      if (chosen == 'skip') {
-        final existing = await svc.getExamplesByWordId(word.id!);
-        if (existing.isNotEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('"${word.prompt}" 已有例句，已跳过')),
-            );
-          }
-          return;
-        }
-      }
-
-      if (chosen == 'overwrite') {
-        await svc.deleteByWordId(word.id!);
-      }
-
-      // 线性进度（单词粒度，单个词 total=1）
-      final total = 1;
-      final progress = ValueNotifier<int>(0);
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('正在生成例句'),
-          content: ValueListenableBuilder<int>(
-            valueListenable: progress,
-            builder: (context, done, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LinearProgressIndicator(value: total == 0 ? 0 : done / total),
-                const SizedBox(height: 8),
-                Text('进度：$done / $total'),
-              ],
-            ),
-          ),
-        ),
-      );
-
-      final ai = await AIExampleService.getInstance();
-      final examples = await ai.generateExamples(
-        prompt: req.prompt,
-        answer: req.answer,
-        sourceLanguage: req.sourceLanguage,
-        targetLanguage: req.targetLanguage,
-      );
-      progress.value = 1;
-
-      final withWordId = examples.map((e) => e.copyWith(wordId: word.id)).toList();
-      await svc.insertExamples(withWordId);
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已为"${word.prompt}"生成 ${withWordId.length} 条例句')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('生成失败：$e')),
-        );
-      }
-    }
   }
 
   Future<bool> _ensureAIConfiguredOrRedirect() async {

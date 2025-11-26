@@ -751,21 +751,31 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     final tgtLang = targetDropdown == 'custom'
         ? (targetCustomController.text.trim().isEmpty ? null : targetCustomController.text.trim())
         : (targetDropdown == 'auto' ? null : targetDropdown);
+    // 创建详细状态对话框
+    final ValueNotifier<String> currentStatus = ValueNotifier('准备中...');
+    
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        title: Text('正在生成词解'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            LinearProgressIndicator(),
-            SizedBox(height: 8),
-            Text('请稍候…'),
-          ],
+      builder: (context) => ValueListenableBuilder<String>(
+        valueListenable: currentStatus,
+        builder: (context, status, child) => AlertDialog(
+          title: Text('正在生成「${word.prompt}」的词解'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LinearProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                status,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
         ),
       ),
     );
+    
     try {
       final ai = await AIWordExplanationService.getInstance();
       final cfg = await ConfigService.getInstance();
@@ -773,6 +783,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       final sources = useSources
           ? await ai.collectSourcesForWord(word, dictionaryPaths: selectedDictionaryPaths)
           : (<String>[], const <Map<String, String>>[]);
+      
       var jsonData = await ai.generateExplanationJson(
         prompt: word.prompt,
         answer: word.answer,
@@ -780,6 +791,10 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
         targetLanguage: tgtLang,
         sourcesHtml: sources.$1,
         sourcesMeta: sources.$2,
+        onDetailedProgress: (status) {
+          // 更新对话框显示的状态
+          currentStatus.value = status.displayName;
+        },
       );
       
       // Embed sources in JSON if available

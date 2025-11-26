@@ -100,6 +100,8 @@ $generatedJson
    - **读音格式严格要求**：
      * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
      * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
+       * 单个词：直接写声调数字，如 ②、⑤、①
+       * 组合词（如人名、复合词）：用"+"连接各部分的声调，如 ①+①、⓪+③
      * 中文：拼音+声调符号，如 mǎi、gòu、xíng
      * 其他语言：该语言通用的发音标注
    - **读音准确性验证**：
@@ -107,6 +109,7 @@ $generatedJson
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
       * 正确示例：termHtml="<ruby><rb>購入</rb><rt>こうにゅう</rt></ruby>" → termPronunciation={"text":"⓪"}
       * 正确示例：termHtml="<ruby><rb>購入します</rb><rt>こうにゅうします</rt></ruby>" → termPronunciation={"text":"⑥"}（变形后声调变化正确）
+      * 正确示例：termHtml="<ruby><rb>李由加</rb><rt>り ゆか</rt></ruby>" → termPronunciation={"text":"①+①"}（组合词声调格式正确）
       * 错误示例：termHtml="<ruby><rb>買う</rb><rt>かう</rt></ruby>" → termPronunciation={"text":"かいます③"}（不应包含假名）
       * 错误示例：termHtml="<ruby><rb>買</rb><rt>か</rt></ruby>う" → termPronunciation={"text":"③"}（读音非termHtml中变形后的读音）
     * 英语：音标必须准确反映词汇的实际发音
@@ -183,6 +186,8 @@ synonyms
   - **读音格式严格要求**：
     * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
     * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
+      * 单个词：直接写声调数字，如 ②、⑤、①
+      * 组合词（如人名、复合词）：用"+"连接各部分的声调，如 ①+①、⓪+③
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
       * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
     * 中文：拼音+声调符号，如 mǎi、gòu、xíng
@@ -201,6 +206,8 @@ antonyms
   - **读音格式严格要求**：
     * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
     * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
+      * 单个词：直接写声调数字，如 ②、⑤、①
+      * 组合词（如人名、复合词）：用"+"连接各部分的声调，如 ①+①、⓪+③
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
       * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
     * 中文：拼音+声调符号，如 mǎi、gòu、xíng
@@ -252,7 +259,7 @@ JSON 响应示例（日语→中文）：
   "synonyms": [
     {
       "termHtml": "アルバイト",
-      "termPronunciation": {"text": "アルバイト⓪"},
+      "termPronunciation": {"text": "⓪"},
       "gloss": "兼职工作",
       "differenceHtml": "「アルバイト」多指在特定场所工作，而「<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>」则特指在家中进行的副业。",
       "selfHtml": "<ruby><rb>彼女</rb><rt>かのじょ</rt></ruby>は<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>で<ruby><rb>生活費</rb><rt>せいかつひ</rt></ruby>を<ruby><rb>稼</rb><rt>かせ</rt></ruby>いでいる。",
@@ -264,7 +271,7 @@ JSON 响应示例（日语→中文）：
   "antonyms": [
     {
       "termHtml": "<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>",
-      "termPronunciation": {"text": "ほんぎょう⓪"},
+      "termPronunciation": {"text": "⓪"},
       "gloss": "主业、正职",
       "exampleHtml": "<ruby><rb>彼</rb><rt>かれ</rt></ruby>は<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>は<ruby><rb>会社員</rb><rt>かいしゃいん</rt></ruby>だ。",
       "exampleTranslation": "他的正职是公司职员。"
