@@ -4,17 +4,15 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_word_dictation/features/word/word_detail_screen.dart';
-import 'package:flutter_word_dictation/shared/models/word_explanation.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/database/database_helper.dart';
 import '../../core/services/unit_service.dart';
 import '../../core/services/wordbook_service.dart';
 import '../../core/services/ai_example_service.dart';
-import '../../core/services/ai_word_explanation_service.dart';
-import '../../core/services/word_explanation_service.dart';
 import '../../core/services/example_sentence_service.dart';
 import '../../core/services/config_service.dart';
+import '../../core/services/word_explanation_batch_service.dart';
 import '../../shared/models/unit.dart';
 import 'package:flutter_word_dictation/shared/models/word.dart';
 import '../../shared/models/wordbook.dart';
@@ -24,6 +22,7 @@ import '../../shared/widgets/ai_generate_examples_dialog.dart';
 import '../../shared/widgets/ai_generate_examples_strategy_dialog.dart';
 import 'package:flutter_word_dictation/shared/widgets/ai_generate_explanations_strategy_dialog.dart';
 import 'package:flutter_word_dictation/shared/widgets/dictionary_picker_bottom_sheet.dart';
+import 'package:flutter_word_dictation/shared/widgets/ai_batch_progress_dialog.dart';
 import '../../core/models/dictionary.dart';
 import '../../core/services/dictionary_service.dart';
 import '../dictation/screens/copying_screen.dart';
@@ -2146,124 +2145,64 @@ class _WordbookDetailScreenState extends State<WordbookDetailScreen> {
     final strategy = await pickAIGenerateExplanationsStrategy(context, defaultValue: 'skip');
     final overwrite = strategy == 'overwrite';
 
-    // 显示按单词的进度（支持取消）
-    final total = unitWords.length;
-    final processed = ValueNotifier<int>(0);
-    final currentWord = ValueNotifier<String>('');
-    bool cancelRequested = false;
-    showDialog(
+    // 使用新的详细进度对话框
+    final batchService = WordExplanationBatchService();
+    
+    // 定义重试函数（支持递归重试）
+    Future<void> retryWords(List<Word> words, String title) async {
+      await showAIBatchProgressDialog(
+        context: context,
+        title: title,
+        generateFunction: ({onProgress, onDetailedProgress, isCancelled}) async {
+          return await batchService.retryFailedWords(
+            words,
+            sourceLanguage: srcLangBulk,
+            targetLanguage: tgtLangBulk,
+            onProgress: onProgress,
+            onDetailedProgress: onDetailedProgress,
+            isCancelled: isCancelled,
+          );
+        },
+        enableRetry: true,
+        onRetryAll: (failedWords) async {
+          if (failedWords.isNotEmpty) {
+            await retryWords(failedWords, '重试失败的词解生成');
+          }
+        },
+        onRetrySingle: (word) async {
+          await retryWords([word], '重试单词「${word.prompt}」');
+        },
+      );
+    }
+    
+    await showAIBatchProgressDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('为单元「${unit.name}」生成词解'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ValueListenableBuilder<int>(
-              valueListenable: processed,
-              builder: (context, value, _) => LinearProgressIndicator(
-                value: total == 0 ? 0 : value / total,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ValueListenableBuilder<int>(
-              valueListenable: processed,
-              builder: (context, value, _) => Text('进度：$value/$total'),
-            ),
-            const SizedBox(height: 8),
-            const Text('正在生成...'),
-          ],
-        ),
-        actions: [
-          StatefulBuilder(
-            builder: (context, setState) => TextButton(
-              onPressed: cancelRequested
-                  ? null
-                  : () => setState(() => cancelRequested = true),
-              child: const Text('中断'),
-            ),
-          ),
-        ],
-      ),
+      title: '为单元「${unit.name}」生成词解',
+      generateFunction: ({onProgress, onDetailedProgress, isCancelled}) async {
+        return await batchService.generateForUnit(
+          unit.id!,
+          overwriteExisting: overwrite,
+          sourceLanguage: srcLangBulk,
+          targetLanguage: tgtLangBulk,
+          onProgress: onProgress,
+          onDetailedProgress: onDetailedProgress,
+          isCancelled: isCancelled,
+        );
+      },
+      enableRetry: true,
+      onRetryAll: (failedWords) async {
+        if (failedWords.isNotEmpty) {
+          await retryWords(failedWords, '重试失败的词解生成');
+        }
+      },
+      onRetrySingle: (word) async {
+        await retryWords([word], '重试单词「${word.prompt}」');
+      },
     );
 
-    try {
-      final ai = await AIWordExplanationService.getInstance();
-      final expService = WordExplanationService();
-      int ok = 0, skipped = 0, fail = 0;
-      final cfg = await ConfigService.getInstance();
-      final concurrency = await cfg.getAIConcurrency();
-      for (int start = 0; start < unitWords.length; start += concurrency) {
-        final end = (start + concurrency) > unitWords.length ? unitWords.length : (start + concurrency);
-        final futures = <Future<void>>[];
-        for (int i = start; i < end; i++) {
-          final w = unitWords[i];
-          futures.add(() async {
-            if (cancelRequested) return; // 请求中断后不再启动新的任务
-            currentWord.value = w.prompt;
-
-            // 跳过逻辑（若不覆盖且已存在）
-            if (!overwrite) {
-              final existing = await expService.getByWordId(w.id!);
-              if (existing != null) {
-                skipped++;
-                processed.value = processed.value + 1;
-                return;
-              }
-            }
-
-            try {
-              final cfg2 = await ConfigService.getInstance();
-              final useSources = await cfg2.getUseDictionarySources();
-              final sources = useSources 
-                  ? await ai.collectSourcesForWord(w, dictionaryPaths: selectedDictionaryPaths)
-                  : (<String>[], const <Map<String, String>>[]);
-              final html = await ai.generateExplanationJson(
-                prompt: w.prompt,
-                answer: w.answer,
-                sourceLanguage: srcLangBulk,
-                targetLanguage: tgtLangBulk,
-                sourcesHtml: sources.$1,
-                sourcesMeta: sources.$2,
-              );
-
-              final now = DateTime.now();
-              final exp = WordExplanation(
-                id: null,
-                wordId: w.id!,
-                html: html,
-                sourceModel: null,
-                createdAt: now,
-                updatedAt: now,
-              );
-
-              await expService.upsertForWord(exp);
-              ok++;
-            } catch (_) {
-              fail++;
-            } finally {
-              processed.value = processed.value + 1;
-            }
-          }());
-        }
-        await Future.wait(futures);
-        if (cancelRequested) break; // 完成已开始的后结束
-      }
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('词解生成完成：成功 $ok，跳过 $skipped，失败 $fail')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('生成失败：$e')),
-        );
-      }
+    // 刷新单词列表以显示新生成的释义
+    if (mounted) {
+      await _loadWords();
     }
   }
 }
-// 统一导入已移至顶部，删除中部重复导入

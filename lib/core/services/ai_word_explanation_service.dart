@@ -10,6 +10,7 @@ import 'package:flutter_word_dictation/shared/models/word.dart';
 import 'ai_generators/definition_generator.dart';
 import 'ai_generators/examples_generator.dart';
 import 'ai_generators/optional_blocks_generator.dart';
+import 'word_explanation_batch_service.dart';
 
 class AIWordExplanationService {
   static AIWordExplanationService? _instance;
@@ -34,6 +35,7 @@ class AIWordExplanationService {
     String? targetLanguage,
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
+    void Function(WordExplanationDetailedStatus)? onDetailedProgress,
   }) async {
     // Use block-based generation with independent reflection for each block
     // This provides better accuracy and easier correction
@@ -44,6 +46,7 @@ class AIWordExplanationService {
       targetLanguage: targetLanguage,
       sourcesHtml: sourcesHtml,
       sourcesMeta: sourcesMeta,
+      onDetailedProgress: onDetailedProgress,
     );
   }
 
@@ -255,44 +258,67 @@ class AIWordExplanationService {
     String? targetLanguage,
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
+    void Function(WordExplanationDetailedStatus)? onDetailedProgress,
   }) async {
     debugPrint('[AIExplain] Starting block-based generation for: $prompt');
     
-    // Initialize generators
-    final definitionGen = DefinitionGenerator(_configService);
-    final examplesGen = ExamplesGenerator(_configService);
-    final optionalGen = OptionalBlocksGenerator(_configService);
-    
     try {
-      // Generate blocks in parallel for better performance
-      final results = await Future.wait([
-        definitionGen.generate(
-          prompt: prompt,
-          answer: answer,
-          sourceLanguage: sourceLanguage,
-          targetLanguage: targetLanguage,
-          sourcesHtml: sourcesHtml,
-          sourcesMeta: sourcesMeta,
-        ),
-        examplesGen.generate(
-          prompt: prompt,
-          answer: answer,
-          sourceLanguage: sourceLanguage,
-          targetLanguage: targetLanguage,
-        ),
-        optionalGen.generate(
-          prompt: prompt,
-          answer: answer,
-          sourceLanguage: sourceLanguage,
-          targetLanguage: targetLanguage,
-        ),
-      ]);
+      // Step 1: Word normalization
+      onDetailedProgress?.call(WordExplanationDetailedStatus.normalizing);
+      await Future.delayed(const Duration(milliseconds: 100)); // 让UI有时间更新
+      
+      // Step 2: Dictionary query (词典查询已在外部完成，这里只报告状态)
+      onDetailedProgress?.call(WordExplanationDetailedStatus.dictionaryQuery);
+      await Future.delayed(const Duration(milliseconds: 100)); // 让UI有时间更新
+      
+      // Initialize generators
+      final definitionGen = DefinitionGenerator(_configService);
+      final examplesGen = ExamplesGenerator(_configService);
+      final optionalGen = OptionalBlocksGenerator(_configService);
+      
+      // Step 3: Generate definition block
+      onDetailedProgress?.call(WordExplanationDetailedStatus.generatingDefinition);
+      final definitionResult = await definitionGen.generate(
+        prompt: prompt,
+        answer: answer,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+        sourcesHtml: sourcesHtml,
+        sourcesMeta: sourcesMeta,
+        onReflectionStart: () {
+          onDetailedProgress?.call(WordExplanationDetailedStatus.reflectingDefinition);
+        },
+      );
+      
+      // Step 4: Generate examples block
+      onDetailedProgress?.call(WordExplanationDetailedStatus.generatingExamples);
+      final examplesResult = await examplesGen.generate(
+        prompt: prompt,
+        answer: answer,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+        onReflectionStart: () {
+          onDetailedProgress?.call(WordExplanationDetailedStatus.reflectingExamples);
+        },
+      );
+      
+      // Step 5: Generate optional blocks (highlights, synonyms, antonyms, extras)
+      onDetailedProgress?.call(WordExplanationDetailedStatus.generatingExtended);
+      final optionalResult = await optionalGen.generate(
+        prompt: prompt,
+        answer: answer,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+        onReflectionStart: () {
+          onDetailedProgress?.call(WordExplanationDetailedStatus.reflectingExtended);
+        },
+      );
       
       // Combine all blocks
       final combinedJson = <String, dynamic>{
-        ...results[0], // definition
-        ...results[1], // examples
-        ...results[2], // highlights, synonyms, antonyms, extras
+        ...definitionResult,
+        ...examplesResult,
+        ...optionalResult,
       };
       
       // Add sources if available
@@ -308,12 +334,14 @@ class AIWordExplanationService {
         }
       }
       
+      onDetailedProgress?.call(WordExplanationDetailedStatus.completed);
       final jsonResult = jsonEncode(combinedJson);
       debugPrint('[AIExplain] Block-based generation completed successfully');
       
       return jsonResult;
     } catch (e) {
       debugPrint('[AIExplain] Block-based generation failed: $e');
+      onDetailedProgress?.call(WordExplanationDetailedStatus.failed);
       rethrow;
     }
   }

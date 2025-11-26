@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import '../config_service.dart';
 import 'package:http/http.dart' as http;
+import '../config_service.dart';
 
 /// Base class for all content block generators
 /// Provides common functionality for generation, reflection, and correction
@@ -18,6 +18,7 @@ abstract class BaseBlockGenerator {
     String? targetLanguage,
     List<String>? sourcesHtml,
     List<Map<String, String>>? sourcesMeta,
+    void Function()? onReflectionStart,
   }) async {
     final generatedJson = await generateBlock(
       prompt: prompt,
@@ -33,6 +34,9 @@ abstract class BaseBlockGenerator {
     if (!reflectionEnabled) {
       return generatedJson;
     }
+
+    // Notify that reflection is starting
+    onReflectionStart?.call();
 
     // Validate and correct with retry
     return await _validateAndCorrectWithRetry(
@@ -129,17 +133,22 @@ abstract class BaseBlockGenerator {
           debugPrint('[$blockName] Correction completed, will re-validate');
         } catch (e) {
           debugPrint('[$blockName] Corrected JSON is invalid: $e');
-          // If correction produces invalid JSON, retry with original
-          currentJson = generatedJson;
+          // If correction produces invalid JSON on last attempt, fail
+          if (attempt >= maxAttempts - 1) {
+            throw Exception('[$blockName] Correction produced invalid JSON on attempt $attempt: $e');
+          }
+          // Otherwise keep current version and retry
+          debugPrint('[$blockName] Keeping current version for next attempt');
         }
       } else {
-        // Max attempts reached
-        debugPrint('[$blockName] Max correction attempts ($maxAttempts) reached, using last version');
-        return currentJson;
+        // Max attempts reached, validation still failed
+        debugPrint('[$blockName] Max correction attempts ($maxAttempts) reached, validation failed');
+        throw Exception('[$blockName] Reflection failed after $maxAttempts attempts. Issues found: ${issues?.join(", ") ?? "unknown"}');
       }
     }
 
-    return currentJson;
+    // This should never be reached due to the loop logic, but just in case
+    throw Exception('[$blockName] Reflection validation loop ended unexpectedly');
   }
 
   /// Reflect on the AI response
