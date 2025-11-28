@@ -162,6 +162,8 @@ abstract class BaseBlockGenerator {
     final endpoint = await configService.getAIEndpoint();
     final apiKey = await configService.getAIApiKey();
     final model = await configService.getAIModel();
+    // Force low temperature for reflection to ensure strict rule checking
+    const temperature = 0.1;
 
     if (apiKey.isEmpty) {
       debugPrint('[$blockName][Reflection] No API key, skipping reflection');
@@ -188,7 +190,7 @@ abstract class BaseBlockGenerator {
           'messages': [
             {'role': 'user', 'content': reflectionPrompt}
           ],
-          'temperature': 0.1,
+          'temperature': temperature,
           'response_format': {'type': 'json_object'},
         }),
       );
@@ -259,7 +261,7 @@ abstract class BaseBlockGenerator {
     final endpoint = await configService.getAIEndpoint();
     final apiKey = await configService.getAIApiKey();
     final model = await configService.getAIModel();
-    final temperature = await configService.getAITemperature();
+    final temperature = 0.1; // Force low temperature for correction to ensure precision
 
     final issues = reflectionResult['issues'] as List;
     final issuesText = issues.map((issue) {
@@ -280,7 +282,8 @@ abstract class BaseBlockGenerator {
     }).join('\n\n');
 
     final correctionPrompt = '''
-以下是你之前生成的${blockName}内容，但存在一些问题需要修正。
+你是一个专业的辞书编辑。之前的生成内容在质量审查中被发现存在问题。
+请根据审查意见（Issues），重新生成并修正 JSON 内容。
 
 原始单词：$prompt
 词义：$answer
@@ -290,20 +293,23 @@ ${targetLanguage != null ? '目标语言（译文）：$targetLanguage' : ''}
 之前生成的JSON：
 $generatedJson
 
-发现的问题及修正建议：
+**审查意见**：
 $issuesText
 
-**修正指导**：
-1. 对于每个问题，如果提供了"建议修正"，请直接使用建议的内容替换"当前内容"
-2. 确保修正后的内容符合语言规则：
-   - highlights、extras 等说明字段：完全使用目标语言（译文）
-   - textHtml、例句等原文字段：使用源语言（原文）；仅当源语言为日语时，才允许对日语汉字加 ruby
-   - translation 等翻译字段：使用目标语言（译文），不要加 ruby
-3. 如果需要在译文说明中引用原文词汇，用「」包裹，日语原文可以在「」内加 ruby 标注
+**严格修正标准（必须遵守）**：
+1. **精准修正**：只修改审查意见中指出的错误，保持其他正确内容不变。
+2. **格式规范**：必须返回合法的 JSON，严禁破坏 JSON 结构。
+3. **语言学规则（高频错误预警）**：
+   - **Ruby 标注规则**：
+     - ❌ 错误：`<ruby>平假名<rt>...</rt></ruby>` (绝对禁止给平/片假名注音)
+     - ❌ 错误：`<ruby>中文翻译<rt>...</rt></ruby>` (绝对禁止给中文/译文注音)
+     - ✅ 正确：`<ruby>漢字<rt>かんじ</rt></ruby>` (仅给源语言中的汉字注音)
+   - **字段语言归属**：
+     - textHtml、例句原文 -> 使用源语言
+     - translation、解释说明 -> 使用目标语言
 
-请修正这些问题，返回完整的修正后的JSON。
-
-只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容；禁止使用 Markdown 代码块或 ```json 包裹。
+请输出修正后的完整 JSON。
+只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容。
 ''';
 
     try {
