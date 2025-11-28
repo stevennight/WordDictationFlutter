@@ -124,7 +124,7 @@ $generatedJson
 词性枚举（按目标语言输出；pos 必须从对应目标语言的规范标签中选择）：
 - zh（中文）：名词、动词、形容词、副词、介词、连词、代词、数词、量词、叹词、助词、连体词、助动词
 - en（英文）：noun、verb、adjective、adverb、preposition、conjunction、pronoun、numeral、determiner、interjection、auxiliary
-- ja（日文）：名詞、動詞、形容詞、形容動詞、副詞、連体詞、接続詞、感動詞、助詞、助動詞（動詞細分：一段動詞、五段動詞、サ変動詞、カ変動詞）
+- ja（日文）：名詞、動詞、形容詞、形容動詞、副詞、連体詞、接続詞、感動詞、助詞、助動詞、接尾辞、接頭辞（動詞細分：一段動詞、五段動詞、サ変動詞、カ変動詞）
 - other（其他）：noun、verb、adjective、adverb、pronoun、preposition、conjunction、interjection、determiner、particle、auxiliary、classifier
 
 POS 规范化（别名映射与示例）：
@@ -144,6 +144,8 @@ POS 规范化（别名映射与示例）：
     - 五段動詞 → 五段动词
     - サ変動詞 → サ变动词
     - カ変動詞 → カ变动词
+    - 接尾辞 → 接尾词
+    - 接頭辞 → 接头词
 - 其他语言对：若检测到不在目标语言规范标签中的别名或同义标签，应映射为该目标语言的规范标签。
 
 **验证标准**：宁可严格，不可放松。任何疑似错误都应标记为问题。
