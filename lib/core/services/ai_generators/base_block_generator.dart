@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../ai_debug_service.dart';
 import '../config_service.dart';
 
 /// Base class for all content block generators
@@ -101,6 +102,20 @@ abstract class BaseBlockGenerator {
         targetLanguage: targetLanguage,
       );
 
+      // Log reflection result
+      try {
+        final debugService = await AIDebugService.getInstance();
+        await debugService.logReflection(
+          blockName: blockName,
+          attempt: attempt,
+          prompt: prompt,
+          generatedJson: jsonEncode(currentJson),
+          reflectionResult: reflectionResult,
+        );
+      } catch (e) {
+        debugPrint('Failed to log reflection: $e');
+      }
+
       if (reflectionResult == null) {
         // Validation passed
         if (attempt == 1) {
@@ -126,6 +141,18 @@ abstract class BaseBlockGenerator {
           sourceLanguage: sourceLanguage,
           targetLanguage: targetLanguage,
         );
+
+        // Log correction result
+        try {
+          final debugService = await AIDebugService.getInstance();
+          await debugService.logCorrection(
+            blockName: blockName,
+            attempt: attempt,
+            correctedJson: correctedJson,
+          );
+        } catch (e) {
+          debugPrint('Failed to log correction: $e');
+        }
 
         // Validate the JSON format
         try {

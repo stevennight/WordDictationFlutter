@@ -272,6 +272,17 @@ class ConfigService {
     await _localConfig!.setSetting<int>('ai_reflection_max_attempts', value);
   }
 
+  // AI Debug Logs setting
+  Future<bool> getAIDebugLogsEnabled() async {
+    final v = await _localConfig!.getSetting<dynamic>('ai_debug_logs_enabled');
+    if (v is bool) return v;
+    return false; // default disabled
+  }
+
+  Future<void> setAIDebugLogsEnabled(bool value) async {
+    await _localConfig!.setSetting<bool>('ai_debug_logs_enabled', value);
+  }
+
   // References text budget (for dictionary sources passed to AI)
   Future<int> getReferencesBudget() async {
     final v = await _localConfig!.getSetting<dynamic>('references_budget');

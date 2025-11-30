@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -6,6 +7,7 @@ import '../../../shared/providers/theme_provider.dart';
 import '../../../shared/providers/history_provider.dart';
 import '../../../core/services/config_service.dart';
 import '../../../core/services/local_config_service.dart';
+import '../../../core/services/ai_debug_service.dart';
 import '../../../core/config/app_version.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
@@ -194,6 +196,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           SnackBar(content: Text('AI 反思重试次数已设置为 $value 次')),
                         );
                       }
+                    },
+                  ),
+                ),
+                SettingsTile(
+                  title: '启用 AI 调试日志',
+                  subtitle: '记录反思过程。点击打开日志目录',
+                  leading: const Icon(Icons.bug_report),
+                  onTap: () async {
+                    try {
+                      final debugService = await AIDebugService.getInstance();
+                      final path = await debugService.getLogsDirectoryPath();
+                      final dir = Directory(path);
+                      if (!await dir.exists()) {
+                        await dir.create(recursive: true);
+                      }
+                      if (Platform.isWindows) {
+                        await Process.run('explorer', [path]);
+                      } else if (Platform.isMacOS) {
+                        await Process.run('open', [path]);
+                      } else if (Platform.isLinux) {
+                        await Process.run('xdg-open', [path]);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('无法打开目录: $e')),
+                        );
+                      }
+                    }
+                  },
+                  trailing: FutureBuilder<bool>(
+                    future: ConfigService.getInstance().then((c) => c.getAIDebugLogsEnabled()),
+                    initialData: false,
+                    builder: (context, snapshot) {
+                      return Switch(
+                        value: snapshot.data ?? false,
+                        onChanged: (v) async {
+                          final cfg = await ConfigService.getInstance();
+                          await cfg.setAIDebugLogsEnabled(v);
+                          // Force rebuild to update UI state properly
+                          setState(() {});
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(v ? '已开启 AI 调试日志' : '已关闭 AI 调试日志')),
+                            );
+                          }
+                        },
+                      );
                     },
                   ),
                 ),
