@@ -40,7 +40,7 @@ abstract class BaseBlockGenerator {
     onReflectionStart?.call();
 
     // Validate and correct with retry
-    return await _validateAndCorrectWithRetry(
+    return await validateAndCorrectWithRetry(
       prompt: prompt,
       answer: answer,
       generatedJson: generatedJson,
@@ -81,7 +81,7 @@ abstract class BaseBlockGenerator {
   String get blockName;
 
   /// Validate and correct with retry mechanism (configurable max attempts)
-  Future<Map<String, dynamic>> _validateAndCorrectWithRetry({
+  Future<Map<String, dynamic>> validateAndCorrectWithRetry({
     required String prompt,
     required String answer,
     required Map<String, dynamic> generatedJson,
