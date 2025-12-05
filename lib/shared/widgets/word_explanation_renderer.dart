@@ -173,7 +173,11 @@ class WordExplanationRenderer extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  _getString(pronunciation, 'text'),
+                  (() {
+                    final t = _getString(pronunciation, 'text');
+                    final tone = _getString(pronunciation, 'tone');
+                    return tone.isNotEmpty ? (t + ' ' + tone) : t;
+                  })(),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: Theme.of(context).colorScheme.primary,
                   ),
