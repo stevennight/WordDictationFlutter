@@ -777,67 +777,97 @@ $generatedJson
 **重要**：每个问题必须包含 current（当前错误内容）和 suggested（建议修正内容），以便修正AI能够准确替换。
 ''';
 
-    try {
-      final response = await http.post(
-        Uri.parse('$endpoint/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'messages': [
-            {'role': 'user', 'content': reflectionPrompt}
-          ],
-          'temperature': 0.1,
-          // 'max_tokens': 4096,  // Large enough for detailed issue descriptions
-          'response_format': {'type': 'json_object'},
-        }),
-      );
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$endpoint/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': reflectionPrompt}
+            ],
+            'temperature': 0.1,
+            // 'max_tokens': 4096,  // Large enough for detailed issue descriptions
+            'response_format': {'type': 'json_object'},
+          }),
+        );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
-        final choice = jsonResponse['choices'][0];
-        final content = choice['message']['content'] as String;
-        final finishReason = choice['finish_reason'] as String?;
-        
-        debugPrint('[AIExplain][Reflection] Result: $content');
-        debugPrint('[AIExplain][Reflection] Finish reason: $finishReason');
-        
-        // Check if response was truncated
-        if (finishReason == 'length') {
-          debugPrint('[AIExplain][Reflection] Warning: Response truncated due to max_tokens limit');
-          // Treat truncated response as valid to avoid blocking
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+          final choice = jsonResponse['choices'][0];
+          final content = choice['message']['content'] as String;
+          final finishReason = choice['finish_reason'] as String?;
+          
+          debugPrint('[AIExplain][Reflection] Result: $content');
+          debugPrint('[AIExplain][Reflection] Finish reason: $finishReason');
+          
+          // Check if response was truncated
+          if (finishReason == 'length') {
+            debugPrint('[AIExplain][Reflection] Warning: Response truncated due to max_tokens limit');
+            // Treat truncated response as valid to avoid blocking
+            return null;
+          }
+          
+          // Parse JSON directly (response_format ensures pure JSON)
+          try {
+            final result = jsonDecode(content) as Map<String, dynamic>;
+            final isValid = result['valid'] == true;
+            
+            if (isValid) {
+              debugPrint('[AIExplain][Reflection] Validation passed');
+              return null;
+            } else {
+              final issues = result['issues'] as List?;
+              debugPrint('[AIExplain][Reflection] Validation failed with ${issues?.length ?? 0} issues');
+              return result;
+            }
+          } catch (e) {
+            debugPrint('[AIExplain][Reflection] Failed to parse JSON: $e');
+            debugPrint('[AIExplain][Reflection] Content: $content');
+            debugPrint('[AIExplain][Reflection] This may indicate response was truncated or malformed');
+            return null; // Treat parse errors as valid to avoid blocking
+          }
+        } else {
+          // Check if error is retryable (5xx server errors)
+          final isRetryable = response.statusCode >= 500 && response.statusCode < 600;
+          debugPrint('[AIExplain][Reflection] API error: ${response.statusCode}');
+          
+          if (isRetryable && attempt < maxRetries) {
+            final delayMs = 1000 * (1 << (attempt - 1));
+            debugPrint('[AIExplain][Reflection] Retrying in ${delayMs}ms...');
+            await Future.delayed(Duration(milliseconds: delayMs));
+            continue;
+          }
+          
+          // Non-retryable error or max retries reached
           return null;
         }
+      } catch (e) {
+        debugPrint('[AIExplain][Reflection] Exception on attempt $attempt/$maxRetries: $e');
         
-        // Parse JSON directly (response_format ensures pure JSON)
-        try {
-          final result = jsonDecode(content) as Map<String, dynamic>;
-          final isValid = result['valid'] == true;
-          
-          if (isValid) {
-            debugPrint('[AIExplain][Reflection] Validation passed');
-            return null;
-          } else {
-            final issues = result['issues'] as List?;
-            debugPrint('[AIExplain][Reflection] Validation failed with ${issues?.length ?? 0} issues');
-            return result;
-          }
-        } catch (e) {
-          debugPrint('[AIExplain][Reflection] Failed to parse JSON: $e');
-          debugPrint('[AIExplain][Reflection] Content: $content');
-          debugPrint('[AIExplain][Reflection] This may indicate response was truncated or malformed');
-          return null; // Treat parse errors as valid to avoid blocking
+        // Only retry on network errors or 5xx errors
+        if (attempt < maxRetries && (e.toString().contains('500') || e.toString().contains('502') || 
+            e.toString().contains('503') || e.toString().contains('504') || 
+            e.toString().contains('SocketException') || e.toString().contains('TimeoutException'))) {
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[AIExplain][Reflection] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
         }
-      } else {
-        debugPrint('[AIExplain][Reflection] API error: ${response.statusCode}');
+        
+        // Non-retryable error or max retries reached
         return null;
       }
-    } catch (e) {
-      debugPrint('[AIExplain][Reflection] Exception: $e');
-      return null;
     }
+    
+    // All retries exhausted
+    debugPrint('[AIExplain][Reflection] All retry attempts exhausted');
+    return null;
   }
 
   /// Correct the generated JSON based on reflection issues
@@ -899,38 +929,70 @@ $issuesText
 只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容；禁止使用 Markdown 代码块或 ```json 包裹。
 ''';
 
-    try {
-      final response = await http.post(
-        Uri.parse('$endpoint/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'messages': [
-            {'role': 'user', 'content': correctionPrompt}
-          ],
-          'temperature': temperature,
-          'response_format': {'type': 'json_object'},
-        }),
-      );
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$endpoint/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': correctionPrompt}
+            ],
+            'temperature': temperature,
+            'response_format': {'type': 'json_object'},
+          }),
+        );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
-        final content = jsonResponse['choices'][0]['message']['content'] as String;
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+          final content = jsonResponse['choices'][0]['message']['content'] as String;
+          
+          debugPrint('[AIExplain][Correction] Corrected JSON generated');
+          // response_format ensures pure JSON, return directly
+          return content.trim();
+        } else {
+          // Check if error is retryable (5xx server errors)
+          final isRetryable = response.statusCode >= 500 && response.statusCode < 600;
+          debugPrint('[AIExplain][Correction] API error: ${response.statusCode}');
+          
+          if (isRetryable && attempt < maxRetries) {
+            final delayMs = 1000 * (1 << (attempt - 1));
+            debugPrint('[AIExplain][Correction] Retrying in ${delayMs}ms...');
+            await Future.delayed(Duration(milliseconds: delayMs));
+            continue;
+          }
+          
+          // Non-retryable error or max retries reached
+          debugPrint('[AIExplain][Correction] Returning original JSON after $attempt attempts');
+          return generatedJson; // Return original if correction fails
+        }
+      } catch (e) {
+        debugPrint('[AIExplain][Correction] Exception on attempt $attempt/$maxRetries: $e');
         
-        debugPrint('[AIExplain][Correction] Corrected JSON generated');
-        // response_format ensures pure JSON, return directly
-        return content.trim();
-      } else {
-        debugPrint('[AIExplain][Correction] API error: ${response.statusCode}');
-        return generatedJson; // Return original if correction fails
+        // Only retry on network errors or 5xx errors
+        if (attempt < maxRetries && (e.toString().contains('500') || e.toString().contains('502') || 
+            e.toString().contains('503') || e.toString().contains('504') || 
+            e.toString().contains('SocketException') || e.toString().contains('TimeoutException'))) {
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[AIExplain][Correction] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        
+        // Non-retryable error or max retries reached
+        debugPrint('[AIExplain][Correction] Returning original JSON after exception');
+        return generatedJson;
       }
-    } catch (e) {
-      debugPrint('[AIExplain][Correction] Exception: $e');
-      return generatedJson;
     }
+    
+    // All retries exhausted
+    debugPrint('[AIExplain][Correction] All retry attempts exhausted, returning original JSON');
+    return generatedJson;
   }
 
   String _renderExplanationHtmlFromJson(Map<String, dynamic> data, List<Map<String, String>> metas, {required String prompt, required String answer, String? sourceLanguage}) {

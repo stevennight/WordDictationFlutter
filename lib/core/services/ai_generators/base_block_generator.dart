@@ -205,75 +205,105 @@ abstract class BaseBlockGenerator {
       targetLanguage: targetLanguage,
     );
 
-    try {
-      final response = await http.post(
-        Uri.parse('$endpoint/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'messages': [
-            {'role': 'user', 'content': reflectionPrompt}
-          ],
-          'temperature': temperature,
-          'response_format': {'type': 'json_object'},
-        }),
-      );
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$endpoint/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': reflectionPrompt}
+            ],
+            'temperature': temperature,
+            'response_format': {'type': 'json_object'},
+          }),
+        );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
-        final choice = jsonResponse['choices'][0];
-        final content = choice['message']['content'] as String;
-        final finishReason = choice['finish_reason'] as String?;
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+          final choice = jsonResponse['choices'][0];
+          final content = choice['message']['content'] as String;
+          final finishReason = choice['finish_reason'] as String?;
 
-        debugPrint('[$blockName][Reflection] Finish reason: $finishReason');
+          debugPrint('[$blockName][Reflection] Finish reason: $finishReason');
 
-        // Check if response was truncated
-        if (finishReason == 'length') {
-          debugPrint('[$blockName][Reflection] Warning: Response truncated');
-          return null;
-        }
-
-        // Parse JSON
-        try {
-          final decoded = jsonDecode(content);
-          
-          // Debug: Print the actual AI response
-          debugPrint('[$blockName][Reflection] AI response type: ${decoded.runtimeType}');
-          debugPrint('[$blockName][Reflection] AI response content: $decoded');
-          
-          // Handle both Map and List responses
-          if (decoded is List) {
-            debugPrint('[$blockName][Reflection] AI returned List instead of Map, treating as validation passed');
+          // Check if response was truncated
+          if (finishReason == 'length') {
+            debugPrint('[$blockName][Reflection] Warning: Response truncated');
             return null;
           }
-          
-          final result = decoded as Map<String, dynamic>;
-          final isValid = result['valid'] == true;
 
-          if (isValid) {
-            debugPrint('[$blockName][Reflection] Validation passed');
+          // Parse JSON
+          try {
+            final decoded = jsonDecode(content);
+            
+            // Debug: Print the actual AI response
+            debugPrint('[$blockName][Reflection] AI response type: ${decoded.runtimeType}');
+            debugPrint('[$blockName][Reflection] AI response content: $decoded');
+            
+            // Handle both Map and List responses
+            if (decoded is List) {
+              debugPrint('[$blockName][Reflection] AI returned List instead of Map, treating as validation passed');
+              return null;
+            }
+            
+            final result = decoded as Map<String, dynamic>;
+            final isValid = result['valid'] == true;
+
+            if (isValid) {
+              debugPrint('[$blockName][Reflection] Validation passed');
+              return null;
+            } else {
+              final issues = result['issues'] as List?;
+              debugPrint('[$blockName][Reflection] Validation failed with ${issues?.length ?? 0} issues');
+              return result;
+            }
+          } catch (e) {
+            debugPrint('[$blockName][Reflection] Failed to parse JSON: $e');
+            debugPrint('[$blockName][Reflection] Raw content: $content');
             return null;
-          } else {
-            final issues = result['issues'] as List?;
-            debugPrint('[$blockName][Reflection] Validation failed with ${issues?.length ?? 0} issues');
-            return result;
           }
-        } catch (e) {
-          debugPrint('[$blockName][Reflection] Failed to parse JSON: $e');
-          debugPrint('[$blockName][Reflection] Raw content: $content');
+        } else {
+          // Check if error is retryable (5xx server errors)
+          final isRetryable = response.statusCode >= 500 && response.statusCode < 600;
+          debugPrint('[$blockName][Reflection] API error: ${response.statusCode}');
+          
+          if (isRetryable && attempt < maxRetries) {
+            final delayMs = 1000 * (1 << (attempt - 1));
+            debugPrint('[$blockName][Reflection] Retrying in ${delayMs}ms...');
+            await Future.delayed(Duration(milliseconds: delayMs));
+            continue;
+          }
+          
+          // Non-retryable error or max retries reached
           return null;
         }
-      } else {
-        debugPrint('[$blockName][Reflection] API error: ${response.statusCode}');
+      } catch (e) {
+        debugPrint('[$blockName][Reflection] Exception on attempt $attempt/$maxRetries: $e');
+        
+        // Only retry on network errors or 5xx errors
+        if (attempt < maxRetries && (e.toString().contains('500') || e.toString().contains('502') || 
+            e.toString().contains('503') || e.toString().contains('504') || 
+            e.toString().contains('SocketException') || e.toString().contains('TimeoutException'))) {
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[$blockName][Reflection] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        
+        // Non-retryable error or max retries reached
         return null;
       }
-    } catch (e) {
-      debugPrint('[$blockName][Reflection] Exception: $e');
-      return null;
     }
+    
+    // All retries exhausted
+    debugPrint('[$blockName][Reflection] All retry attempts exhausted');
+    return null;
   }
 
   /// Correct the generated JSON based on reflection issues
@@ -339,44 +369,90 @@ $issuesText
 只返回一个 JSON 对象，严禁输出除 JSON 外的任何内容。
 ''';
 
-    try {
-      final response = await http.post(
-        Uri.parse('$endpoint/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'messages': [
-            {'role': 'user', 'content': correctionPrompt}
-          ],
-          'temperature': temperature,
-          'response_format': {'type': 'json_object'},
-        }),
-      );
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$endpoint/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'user', 'content': correctionPrompt}
+            ],
+            'temperature': temperature,
+            'response_format': {'type': 'json_object'},
+          }),
+        );
 
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
-        final content = jsonResponse['choices'][0]['message']['content'] as String;
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+          final content = jsonResponse['choices'][0]['message']['content'] as String;
 
-        debugPrint('[$blockName][Correction] Corrected JSON generated');
-        return content.trim();
-      } else {
-        debugPrint('[$blockName][Correction] API error: ${response.statusCode}');
+          debugPrint('[$blockName][Correction] Corrected JSON generated');
+          return content.trim();
+        } else {
+          // Check if error is retryable (5xx server errors)
+          final isRetryable = response.statusCode >= 500 && response.statusCode < 600;
+          debugPrint('[$blockName][Correction] API error: ${response.statusCode}');
+          
+          if (isRetryable && attempt < maxRetries) {
+            final delayMs = 1000 * (1 << (attempt - 1));
+            debugPrint('[$blockName][Correction] Retrying in ${delayMs}ms...');
+            await Future.delayed(Duration(milliseconds: delayMs));
+            continue;
+          }
+          
+          // Non-retryable error or max retries reached
+          debugPrint('[$blockName][Correction] Returning original JSON after $attempt attempts');
+          return generatedJson;
+        }
+      } catch (e) {
+        debugPrint('[$blockName][Correction] Exception on attempt $attempt/$maxRetries: $e');
+        
+        // Only retry on network errors or 5xx errors
+        if (attempt < maxRetries && (e.toString().contains('500') || e.toString().contains('502') || 
+            e.toString().contains('503') || e.toString().contains('504') || 
+            e.toString().contains('SocketException') || e.toString().contains('TimeoutException'))) {
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[$blockName][Correction] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        
+        // Non-retryable error or max retries reached
+        debugPrint('[$blockName][Correction] Returning original JSON after exception');
         return generatedJson;
       }
-    } catch (e) {
-      debugPrint('[$blockName][Correction] Exception: $e');
-      return generatedJson;
     }
+    
+    // All retries exhausted
+    debugPrint('[$blockName][Correction] All retry attempts exhausted, returning original JSON');
+    return generatedJson;
   }
 
-  /// Common helper to call AI API
+  /// Common helper to call AI API with retry mechanism
   Future<Map<String, dynamic>> callAI({
     required String systemPrompt,
     required String userPrompt,
     String? referencesText,
+  }) async {
+    return _callAIWithRetry(
+      systemPrompt: systemPrompt,
+      userPrompt: userPrompt,
+      referencesText: referencesText,
+    );
+  }
+
+  /// Internal method to call AI API with retry logic
+  Future<Map<String, dynamic>> _callAIWithRetry({
+    required String systemPrompt,
+    required String userPrompt,
+    String? referencesText,
+    int maxRetries = 3,
   }) async {
     final endpoint = await configService.getAIEndpoint();
     final apiKey = await configService.getAIApiKey();
@@ -390,28 +466,65 @@ $issuesText
       {'role': 'user', 'content': userPrompt},
     ];
 
-    final response = await http.post(
-      Uri.parse('$endpoint/chat/completions'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': messages,
-        'temperature': temperature,
-        'response_format': {'type': 'json_object'},
-      }),
-    );
+    Exception? lastException;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$endpoint/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $apiKey',
+          },
+          body: jsonEncode({
+            'model': model,
+            'messages': messages,
+            'temperature': temperature,
+            'response_format': {'type': 'json_object'},
+          }),
+        );
 
-    if (response.statusCode != 200) {
-      throw Exception('AI request failed: ${response.statusCode}');
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
+          final content = jsonResponse['choices'][0]['message']['content'] as String;
+          return jsonDecode(content) as Map<String, dynamic>;
+        }
+
+        // Check if error is retryable (5xx server errors)
+        final isRetryable = response.statusCode >= 500 && response.statusCode < 600;
+        if (!isRetryable) {
+          throw Exception('AI request failed: ${response.statusCode} ${response.body}');
+        }
+
+        // Retryable error
+        lastException = Exception('AI request failed: ${response.statusCode}');
+        debugPrint('[$blockName] API error ${response.statusCode} on attempt $attempt/$maxRetries');
+        
+        if (attempt < maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[$blockName] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+        }
+      } catch (e) {
+        lastException = e is Exception ? e : Exception(e.toString());
+        debugPrint('[$blockName] Exception on attempt $attempt/$maxRetries: $e');
+        
+        // Only retry on network errors or 5xx errors
+        if (attempt < maxRetries && (e.toString().contains('500') || e.toString().contains('502') || 
+            e.toString().contains('503') || e.toString().contains('504') || 
+            e.toString().contains('SocketException') || e.toString().contains('TimeoutException'))) {
+          final delayMs = 1000 * (1 << (attempt - 1));
+          debugPrint('[$blockName] Retrying in ${delayMs}ms...');
+          await Future.delayed(Duration(milliseconds: delayMs));
+        } else {
+          // Non-retryable error or max retries reached
+          rethrow;
+        }
+      }
     }
 
-    final jsonResponse = jsonDecode(utf8.decode(response.bodyBytes));
-    final content = jsonResponse['choices'][0]['message']['content'] as String;
-
-    return jsonDecode(content) as Map<String, dynamic>;
+    // All retries exhausted
+    throw lastException ?? Exception('AI request failed after $maxRetries attempts');
   }
 
   /// Build references text from sources HTML (sync, with optional budget)
