@@ -923,7 +923,6 @@ class _WordExplanationRendererState extends State<WordExplanationRenderer> {
   ) {
     final plainText = _extractPlainText(termHtml);
     final baseStyle = style ?? Theme.of(context).textTheme.bodyLarge!;
-    final underlineColor = baseStyle.color ?? Theme.of(context).colorScheme.onSurface;
     
     return GestureDetector(
       onTap: () {
@@ -937,28 +936,13 @@ class _WordExplanationRendererState extends State<WordExplanationRenderer> {
       },
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: IntrinsicWidth(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildRichText(
-                context,
-                termHtml,
-                sourceIsJa: sourceIsJa,
-                style: baseStyle,
-              ),
-              const SizedBox(height: 3), // 下划线与文字的距离
-              SizedBox(
-                height: 1,
-                child: CustomPaint(
-                  size: Size.infinite,
-                  painter: _DashedUnderlinePainter(
-                    color: underlineColor,
-                  ),
-                ),
-              ),
-            ],
+        child: _buildRichText(
+          context,
+          termHtml,
+          sourceIsJa: sourceIsJa,
+          style: baseStyle.copyWith(
+            decoration: TextDecoration.underline,
+            decorationStyle: TextDecorationStyle.dotted,
           ),
         ),
       ),
@@ -1137,44 +1121,3 @@ class _RubyCharacter extends StatelessWidget {
   }
 }
 
-/// Custom painter for drawing dashed underline
-class _DashedUnderlinePainter extends CustomPainter {
-  final Color color;
-  static const double _dashWidth = 4.0;
-  static const double _dashSpace = 2.0;
-  static const double _strokeWidth = 1.0;
-
-  _DashedUnderlinePainter({
-    required this.color,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = _strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    double x = 0;
-    bool drawDash = true;
-
-    while (x < size.width) {
-      if (drawDash) {
-        path.moveTo(x, size.height / 2);
-        path.lineTo(x + _dashWidth, size.height / 2);
-        x += _dashWidth;
-      } else {
-        x += _dashSpace;
-      }
-      drawDash = !drawDash;
-    }
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_DashedUnderlinePainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
