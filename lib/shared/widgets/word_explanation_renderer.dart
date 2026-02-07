@@ -4,28 +4,59 @@ import 'package:flutter/material.dart';
 import '../../features/dictionary/screens/dictionary_query_screen.dart';
 
 /// Renders word explanation from JSON data structure
-class WordExplanationRenderer extends StatelessWidget {
+class WordExplanationRenderer extends StatefulWidget {
   final String jsonData;
   final String? sourceLanguage;
+  final ValueChanged<String>? onDataChanged;
 
   const WordExplanationRenderer({
     super.key,
     required this.jsonData,
     this.sourceLanguage,
+    this.onDataChanged,
   });
 
   @override
-  Widget build(BuildContext context) {
-    Map<String, dynamic> data;
+  State<WordExplanationRenderer> createState() => _WordExplanationRendererState();
+}
+
+class _WordExplanationRendererState extends State<WordExplanationRenderer> {
+  late Map<String, dynamic> _data;
+  late String _currentJsonData;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentJsonData = widget.jsonData;
+    _parseData();
+  }
+
+  @override
+  void didUpdateWidget(WordExplanationRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.jsonData != widget.jsonData) {
+      _currentJsonData = widget.jsonData;
+      _parseData();
+    }
+  }
+
+  void _parseData() {
     try {
-      debugPrint('[Renderer] Parsing JSON data...');
-      debugPrint('[Renderer] JSON length: ${jsonData.length}');
-      debugPrint('[Renderer] JSON preview: ${jsonData.substring(0, jsonData.length > 200 ? 200 : jsonData.length)}');
-      data = jsonDecode(jsonData) as Map<String, dynamic>;
-      debugPrint('[Renderer] JSON parsed successfully');
+      _data = jsonDecode(_currentJsonData) as Map<String, dynamic>;
     } catch (e) {
-      debugPrint('[Renderer] JSON parse error: $e');
-      debugPrint('[Renderer] Failed JSON: $jsonData');
+      _data = {};
+    }
+  }
+
+  void _updateData() {
+    _currentJsonData = jsonEncode(_data);
+    widget.onDataChanged?.call(_currentJsonData);
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_data.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -38,7 +69,7 @@ class WordExplanationRenderer extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '错误详情: $e',
+            '无法解析 JSON 数据',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
@@ -49,49 +80,49 @@ class WordExplanationRenderer extends StatelessWidget {
     }
 
     // Infer language from JSON metadata if not provided
-    final inferredLanguage = sourceLanguage ?? _inferLanguageFromJson(data);
+    final inferredLanguage = widget.sourceLanguage ?? _inferLanguageFromJson(_data);
     final sourceIsJa = _isJapanese(inferredLanguage);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Definition section
-        _buildDefinition(context, data, sourceIsJa),
+        _buildDefinition(context, _data, sourceIsJa),
         
         // Highlights section
-        if (_hasHighlights(data)) ...[
+        if (_hasHighlights(_data)) ...[
           const SizedBox(height: 16),
-          _buildHighlights(context, data, sourceIsJa),
+          _buildHighlights(context, _data, sourceIsJa),
         ],
         
         // Synonyms section
-        if (_hasSynonyms(data)) ...[
+        if (_hasSynonyms(_data)) ...[
           const SizedBox(height: 16),
-          _buildSynonyms(context, data, sourceIsJa),
+          _buildSynonyms(context, _data, sourceIsJa),
         ],
         
         // Antonyms section
-        if (_hasAntonyms(data)) ...[
+        if (_hasAntonyms(_data)) ...[
           const SizedBox(height: 16),
-          _buildAntonyms(context, data, sourceIsJa),
+          _buildAntonyms(context, _data, sourceIsJa),
         ],
         
         // Extras section
-        if (_hasExtras(data)) ...[
+        if (_hasExtras(_data)) ...[
           const SizedBox(height: 16),
-          _buildExtras(context, data, sourceIsJa),
+          _buildExtras(context, _data, sourceIsJa),
         ],
         
         // Examples section (at bottom)
-        if (_hasExamples(data)) ...[
+        if (_hasExamples(_data)) ...[
           const SizedBox(height: 24),
-          _buildExamples(context, data, sourceIsJa),
+          _buildExamples(context, _data, sourceIsJa),
         ],
         
         // Sources section
-        if (_hasSources(data)) ...[
+        if (_hasSources(_data)) ...[
           const SizedBox(height: 16),
-          _buildSources(context, data),
+          _buildSources(context, _data),
         ],
       ],
     );
@@ -173,15 +204,14 @@ class WordExplanationRenderer extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  (() {
-                    final t = _getString(pronunciation, 'text');
-                    final tone = _getString(pronunciation, 'tone');
-                    return tone.isNotEmpty ? (t + ' ' + tone) : t;
-                  })(),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                child: _buildEditablePronunciation(
+                  context,
+                  pronunciation,
+                  onChanged: (newText, newTone) {
+                    pronunciation['text'] = newText;
+                    pronunciation['tone'] = newTone;
+                    _updateData();
+                  },
                 ),
               ),
             ],
@@ -509,9 +539,15 @@ class WordExplanationRenderer extends StatelessWidget {
                     ),
                     if (termPronText.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      Text(
-                        termPronText,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      _buildEditablePronunciation(
+                        context,
+                        termPron,
+                        onChanged: (newText, newTone) {
+                          termPron['text'] = newText;
+                          termPron['tone'] = newTone;
+                          _updateData();
+                        },
+                        textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -605,9 +641,15 @@ class WordExplanationRenderer extends StatelessWidget {
                     ),
                     if (termPronText.isNotEmpty) ...[
                       const SizedBox(width: 8),
-                      Text(
-                        termPronText,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      _buildEditablePronunciation(
+                        context,
+                        termPron,
+                        onChanged: (newText, newTone) {
+                          termPron['text'] = newText;
+                          termPron['tone'] = newTone;
+                          _updateData();
+                        },
+                        textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -755,6 +797,109 @@ class WordExplanationRenderer extends StatelessWidget {
 
   String _stripHtmlTags(String html) {
     return html.replaceAll(RegExp(r'<[^>]+>'), '');
+  }
+
+  /// Builds an editable pronunciation widget
+  Widget _buildEditablePronunciation(
+    BuildContext context,
+    Map<String, dynamic> pronunciation, {
+    required void Function(String text, String tone) onChanged,
+    TextStyle? textStyle,
+  }) {
+    final text = _getString(pronunciation, 'text');
+    final tone = _getString(pronunciation, 'tone');
+    final displayText = tone.isNotEmpty ? (text + ' ' + tone) : text;
+    final baseStyle = textStyle ?? Theme.of(context).textTheme.bodyLarge?.copyWith(
+      color: Theme.of(context).colorScheme.primary,
+    );
+    
+    return GestureDetector(
+      onTap: () => _showPronunciationEditDialog(
+        context,
+        initialText: text,
+        initialTone: tone,
+        onSave: (newText, newTone) {
+          onChanged(newText, newTone);
+        },
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              displayText,
+              style: baseStyle?.copyWith(
+                decoration: TextDecoration.underline,
+                decorationStyle: TextDecorationStyle.dotted,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.edit,
+              size: 14,
+              color: (baseStyle?.color ?? Theme.of(context).colorScheme.primary).withOpacity(0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Shows a dialog to edit pronunciation
+  Future<void> _showPronunciationEditDialog(
+    BuildContext context, {
+    required String initialText,
+    required String initialTone,
+    required void Function(String text, String tone) onSave,
+  }) async {
+    final textController = TextEditingController(text: initialText);
+    final toneController = TextEditingController(text: initialTone);
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑读音'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: textController,
+              decoration: const InputDecoration(
+                labelText: '读音',
+                hintText: '请输入读音',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: toneController,
+              decoration: const InputDecoration(
+                labelText: '声调（可选）',
+                hintText: '请输入声调',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true) {
+      onSave(
+        textController.text.trim(),
+        toneController.text.trim(),
+      );
+    }
   }
 
   /// Extracts plain text from HTML, including ruby tags (extracts base text from ruby)

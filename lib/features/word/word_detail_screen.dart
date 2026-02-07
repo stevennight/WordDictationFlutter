@@ -393,6 +393,25 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
     return WordExplanationRenderer(
       jsonData: html,
       sourceLanguage: null, // Language will be inferred from JSON content
+      onDataChanged: (newJsonData) async {
+        // Save the updated explanation
+        if (_explanation != null && _currentWord.id != null) {
+          final updated = _explanation!.copyWith(
+            html: newJsonData,
+            updatedAt: DateTime.now(),
+          );
+          await _explanationService.upsertForWord(updated);
+          final latest = await _explanationService.getByWordId(_currentWord.id!);
+          if (mounted) {
+            setState(() {
+              _explanation = latest;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('已保存修改')),
+            );
+          }
+        }
+      },
     );
   }
 
