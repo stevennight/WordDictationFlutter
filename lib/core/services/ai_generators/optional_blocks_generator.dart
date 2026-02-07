@@ -107,11 +107,12 @@ $generatedJson
    - **读音准确性验证**：
     * 日语：声调必须与termHtml中的词汇完全匹配，如果termHtml中包含变形，termPronunciation中必须为变形后的读音。
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
-      * 正确示例：termHtml="<ruby><rb>購入</rb><rt>こうにゅう</rt></ruby>" → termPronunciation={"text":"⓪"}
-      * 正确示例：termHtml="<ruby><rb>購入します</rb><rt>こうにゅうします</rt></ruby>" → termPronunciation={"text":"⑥"}（变形后声调变化正确）
-      * 正确示例：termHtml="<ruby><rb>李由加</rb><rt>り ゆか</rt></ruby>" → termPronunciation={"text":"①+①"}（组合词声调格式正确）
-      * 错误示例：termHtml="<ruby><rb>買う</rb><rt>かう</rt></ruby>" → termPronunciation={"text":"かいます③"}（不应包含假名）
-      * 错误示例：termHtml="<ruby><rb>買</rb><rt>か</rt></ruby>う" → termPronunciation={"text":"③"}（读音非termHtml中变形后的读音）
+      * **重要：text 字段必须包含假名，tone 字段必须包含声调数字，两者必须分开**
+      * 正确示例：termHtml="<ruby><rb>購入</rb><rt>こうにゅう</rt></ruby>" → termPronunciation={"text":"こうにゅう","tone":"⓪"}
+      * 正确示例：termHtml="<ruby><rb>購入します</rb><rt>こうにゅうします</rt></ruby>" → termPronunciation={"text":"こうにゅうします","tone":"⑥"}（变形后声调变化正确）
+      * 正确示例：termHtml="<ruby><rb>李由加</rb><rt>り ゆか</rt></ruby>" → termPronunciation={"text":"りゆか","tone":"①+①"}（组合词声调格式正确）
+      * 错误示例：termHtml="<ruby><rb>買う</rb><rt>かう</rt></ruby>" → termPronunciation={"text":"かいます③","tone":""}（声调数字不能放在text中）
+      * 错误示例：termHtml="<ruby><rb>買</rb><rt>か</rt></ruby>う" → termPronunciation={"text":"③","tone":""}（text必须包含假名，不能只有声调数字）
     * 英语：音标必须准确反映词汇的实际发音
     * 中文：拼音声调必须正确
    - **近义词和反义词都必须提供读音标注，不能遗漏**
@@ -185,16 +186,19 @@ highlights
 synonyms
 - 数组，0–5项，尽可能多。每项对象：
   - termHtml: 近义词词形（源语言（原文）；如果是日语必须有 ruby）。
-  - termPronunciation: 近义词读音，要求必须有读音标注（对象，必须包含 text 字段）。
+  - termPronunciation: 近义词读音，要求必须有读音标注（对象，必须包含 text 和 tone 两个字段）。
   - **读音格式严格要求**：
-    * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
-    * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
-      * 单个词：直接写声调数字，如 ②、⑤、①
-      * 组合词（如人名、复合词）：用"+"连接各部分的声调，如 ①+①、⓪+③
+    * 英语：text 为 IPA 音标，如 /bʌɪ/ 或 /ˈkæpɪtl/；tone 为空字符串（因为IPA已包含重读信息）
+    * 日语：text 为假名字符串（如 "かいます"、"こうにゅうします"），tone 为声调数字⓪①②③④⑤
+      * 单个词：tone 直接写声调数字，如 "②"、"⑤"、"①"
+      * 组合词（如人名、复合词）：tone 用"+"连接各部分的声调，如 "①+①"、"⓪+③"
+      * **重要：text 和 tone 必须分开，不能将声调数字放在 text 中**
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
-      * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
-    * 中文：拼音+声调符号，如 mǎi、gòu、xíng
-    * 其他语言：该语言通用的发音标注
+      * 正确示例：{"text": "かいます", "tone": "③"}（買います）
+      * 正确示例：{"text": "こうにゅうします", "tone": "⑥"}（購入します）
+      * 错误示例：{"text": "かいます③", "tone": ""} 或 {"text": "③", "tone": ""}
+    * 中文：text 为拼音（含声调符号），如 "mǎi"、"gòu"；tone 可置空
+    * 其他语言：text 为该语言通用的发音标注，tone 根据语言特点设置
   - gloss: 近义词简要含义。
   - differenceHtml: 与当前词的区别（目标语言（译文）；允许在「…」中引述少量原文，日语原文可以在「」内带 ruby）。
   - selfHtml: 使用当前词的例句（源语言（原文）；允许 ruby）。
@@ -205,16 +209,19 @@ synonyms
 antonyms
 - 数组，0–5项，尽可能多。每项对象：
   - termHtml: 反义词词形（源语言（原文）；如果是日语必须有 ruby）。
-  - termPronunciation: 反义词读音，要求必须有读音标注（对象，必须包含 text 字段）。
+  - termPronunciation: 反义词读音，要求必须有读音标注（对象，必须包含 text 和 tone 两个字段）。
   - **读音格式严格要求**：
-    * 英语：IPA音标，如 /bʌɪ/ 或 /ˈkæpɪtl/
-    * 日语：仅声调数字⓪①②③④⑤（假名已在ruby中显示，无需重复），如 ②、⑤、①
-      * 单个词：直接写声调数字，如 ②、⑤、①
-      * 组合词（如人名、复合词）：用"+"连接各部分的声调，如 ①+①、⓪+③
+    * 英语：text 为 IPA 音标，如 /bʌɪ/ 或 /ˈkæpɪtl/；tone 为空字符串（因为IPA已包含重读信息）
+    * 日语：text 为假名字符串（如 "かいます"、"こうにゅうします"），tone 为声调数字⓪①②③④⑤
+      * 单个词：tone 直接写声调数字，如 "②"、"⑤"、"①"
+      * 组合词（如人名、复合词）：tone 用"+"连接各部分的声调，如 "①+①"、"⓪+③"
+      * **重要：text 和 tone 必须分开，不能将声调数字放在 text 中**
       * **重要：日语动词变形后声调会自然变化，这是正确的语音现象**
-      * 例如：購入⓪ → 購入します⑥、買う⓪ → 買います③
-    * 中文：拼音+声调符号，如 mǎi、gòu、xíng
-    * 其他语言：该语言通用的发音标注
+      * 正确示例：{"text": "かいます", "tone": "③"}（買います）
+      * 正确示例：{"text": "こうにゅうします", "tone": "⑥"}（購入します）
+      * 错误示例：{"text": "かいます③", "tone": ""} 或 {"text": "③", "tone": ""}
+    * 中文：text 为拼音（含声调符号），如 "mǎi"、"gòu"；tone 可置空
+    * 其他语言：text 为该语言通用的发音标注，tone 根据语言特点设置
   - gloss: 反义词简要含义。
   - exampleHtml: 使用反义词的例句（源语言（原文）；允许 ruby）。
   - exampleTranslation: 上述例句译文。
@@ -268,7 +275,7 @@ JSON 响应示例（日语→中文）：
   "synonyms": [
     {
       "termHtml": "アルバイト",
-      "termPronunciation": {"text": "⓪"},
+      "termPronunciation": {"text": "あるばいと", "tone": "⓪"},
       "gloss": "兼职工作",
       "differenceHtml": "「アルバイト」多指在特定场所工作，而「<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>」则特指在家中进行的副业。",
       "selfHtml": "<ruby><rb>彼女</rb><rt>かのじょ</rt></ruby>は<ruby><rb>内職</rb><rt>ないしょく</rt></ruby>で<ruby><rb>生活費</rb><rt>せいかつひ</rt></ruby>を<ruby><rb>稼</rb><rt>かせ</rt></ruby>いでいる。",
@@ -280,7 +287,7 @@ JSON 响应示例（日语→中文）：
   "antonyms": [
     {
       "termHtml": "<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>",
-      "termPronunciation": {"text": "⓪"},
+      "termPronunciation": {"text": "ほんぎょう", "tone": "⓪"},
       "gloss": "主业、正职",
       "exampleHtml": "<ruby><rb>彼</rb><rt>かれ</rt></ruby>は<ruby><rb>本業</rb><rt>ほんぎょう</rt></ruby>は<ruby><rb>会社員</rb><rt>かいしゃいん</rt></ruby>だ。",
       "exampleTranslation": "他的正职是公司职员。"
