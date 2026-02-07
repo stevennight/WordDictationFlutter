@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../features/dictionary/screens/dictionary_query_screen.dart';
 
 /// Renders word explanation from JSON data structure
 class WordExplanationRenderer extends StatelessWidget {
@@ -498,11 +499,11 @@ class WordExplanationRenderer extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    _buildRichText(
+                    _buildClickableWord(
                       context,
                       termHtml,
-                      sourceIsJa: sourceIsJa,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      sourceIsJa,
+                      Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -594,11 +595,11 @@ class WordExplanationRenderer extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    _buildRichText(
+                    _buildClickableWord(
                       context,
                       termHtml,
-                      sourceIsJa: sourceIsJa,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      sourceIsJa,
+                      Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -754,6 +755,69 @@ class WordExplanationRenderer extends StatelessWidget {
 
   String _stripHtmlTags(String html) {
     return html.replaceAll(RegExp(r'<[^>]+>'), '');
+  }
+
+  /// Extracts plain text from HTML, including ruby tags (extracts base text from ruby)
+  String _extractPlainText(String html) {
+    // First extract base text from ruby tags
+    final rubyRegex = RegExp(r'<ruby><rb>(.*?)</rb><rt>.*?</rt></ruby>');
+    var text = html.replaceAllMapped(rubyRegex, (match) {
+      return match.group(1) ?? '';
+    });
+    // Then strip all remaining HTML tags
+    text = text.replaceAll(RegExp(r'<[^>]+>'), '');
+    return text.trim();
+  }
+
+  /// Builds a clickable word widget with dashed underline that navigates to dictionary query
+  Widget _buildClickableWord(
+    BuildContext context,
+    String termHtml,
+    bool sourceIsJa,
+    TextStyle? style,
+  ) {
+    final plainText = _extractPlainText(termHtml);
+    final baseStyle = style ?? Theme.of(context).textTheme.bodyLarge!;
+    final underlineColor = baseStyle.color ?? Theme.of(context).colorScheme.onSurface;
+    
+    return GestureDetector(
+      onTap: () {
+        if (plainText.isNotEmpty) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => DictionaryQueryScreen(initialQuery: plainText),
+            ),
+          );
+        }
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: IntrinsicWidth(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildRichText(
+                context,
+                termHtml,
+                sourceIsJa: sourceIsJa,
+                style: baseStyle,
+              ),
+              const SizedBox(height: 3), // 下划线与文字的距离
+              SizedBox(
+                height: 1,
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: _DashedUnderlinePainter(
+                    color: underlineColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSources(BuildContext context, Map<String, dynamic> data) {
@@ -925,5 +989,47 @@ class _RubyCharacter extends StatelessWidget {
         Text(base, style: baseStyle),
       ],
     );
+  }
+}
+
+/// Custom painter for drawing dashed underline
+class _DashedUnderlinePainter extends CustomPainter {
+  final Color color;
+  static const double _dashWidth = 4.0;
+  static const double _dashSpace = 2.0;
+  static const double _strokeWidth = 1.0;
+
+  _DashedUnderlinePainter({
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = _strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    double x = 0;
+    bool drawDash = true;
+
+    while (x < size.width) {
+      if (drawDash) {
+        path.moveTo(x, size.height / 2);
+        path.lineTo(x + _dashWidth, size.height / 2);
+        x += _dashWidth;
+      } else {
+        x += _dashSpace;
+      }
+      drawDash = !drawDash;
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_DashedUnderlinePainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
